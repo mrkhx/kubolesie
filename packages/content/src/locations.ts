@@ -45,6 +45,21 @@ export const LOCATIONS: Record<string, LocationTemplate> = {
     name: 'Сажевая расселина',
     text: 'Чёрные кубы, запах гари. Уголь берётся деревянной киркой. Железо ей не по зубам.',
   },
+  ashen_wedge: {
+    id: 'ashen_wedge',
+    name: 'Сизый клин',
+    text: 'Хвойный гребень кубов. Смола пахнет железом. На входе три зарубки — чужие ежедневные метки.',
+  },
+  rival_camp_edge: {
+    id: 'rival_camp_edge',
+    name: 'Край стана Яры',
+    text: 'Колья и вешки. Живых нет. След отвечает, когда тебя нет.',
+  },
+  seal_forecourt: {
+    id: 'seal_forecourt',
+    name: 'Преддверие печати',
+    text: 'Затвор кривой. Цепь стонет. Это не шахта.',
+  },
 };
 
 export const DEFAULT_LOCATION = 'forest_clearing';

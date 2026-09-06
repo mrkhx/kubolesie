@@ -89,6 +89,53 @@ export const CRAFT_RECIPES: Record<string, CraftRecipe> = {
     cost: { LOG: 3, STICK: 3, COAL: 1 },
     output: { kind: 'item', templateId: 'campfire' },
   },
+  wooden_sword: {
+    id: 'wooden_sword',
+    name: 'Деревянный меч',
+    cost: { PLANK: 2, STICK: 1 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'wooden_sword' },
+  },
+  stone_sword: {
+    id: 'stone_sword',
+    name: 'Каменный меч',
+    cost: { COBBLESTONE: 2, STICK: 1 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'stone_sword' },
+  },
+  hide_tunic: {
+    id: 'hide_tunic',
+    name: 'Туника из шкуры',
+    cost: { HIDE: 8 },
+    output: { kind: 'item', templateId: 'hide_tunic' },
+  },
+  furnace: {
+    id: 'furnace',
+    name: 'Печь',
+    cost: { COBBLESTONE: 8 },
+    output: { kind: 'item', templateId: 'furnace' },
+  },
+  iron_pickaxe: {
+    id: 'iron_pickaxe',
+    name: 'Железная кирка',
+    cost: { IRON_INGOT: 3, STICK: 2 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'iron_pickaxe' },
+  },
+  iron_axe: {
+    id: 'iron_axe',
+    name: 'Железный топор',
+    cost: { IRON_INGOT: 3, STICK: 2 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'iron_axe' },
+  },
+  iron_sword: {
+    id: 'iron_sword',
+    name: 'Железный меч',
+    cost: { IRON_INGOT: 2, STICK: 1 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'iron_sword' },
+  },
 };
 
 export const CRAFT_PIPELINE = [
@@ -100,6 +147,9 @@ export const CRAFT_PIPELINE = [
   'stone_pickaxe',
   'stone_axe',
 ] as const;
+
+export const IRON_TOOL_RECIPES = ['iron_pickaxe', 'iron_axe', 'iron_sword'] as const;
+export const DAILY_CRAFT_RECIPES = ['torch', 'stone_sword', 'hide_tunic'] as const;
 
 export function getRecipe(id: string): CraftRecipe | undefined {
   return CRAFT_RECIPES[id];

@@ -273,6 +273,7 @@ export const DAY2_NODES: Record<string, DialogueNode> = {
       'Продолжение скоро будет доступно.',
     ].join('\n'),
     choices: [
+      { id: 'day3', label: 'Начать День 3', command: 'BEGIN_DAY_3' },
       { id: 'camp', label: 'К стану', command: 'OPEN_CAMP' },
       { id: 'look', label: 'Осмотреться', command: 'EXPLORE' },
     ],

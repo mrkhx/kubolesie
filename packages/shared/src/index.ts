@@ -6,6 +6,8 @@ export const ENERGY_PER_INTERVAL = 1;
 export const STARTING_HP = 100;
 export const STARTING_ENERGY = 20;
 export const XP_TO_LEVEL_2 = 40;
+/** Cumulative XP to reach the indexed level. L2=40 … L8=640. */
+export const XP_THRESHOLDS = [0, 0, 40, 90, 160, 250, 360, 490, 640] as const;
 export const STARTING_STATS = {
   attack: 5,
   defense: 0,
@@ -47,6 +49,24 @@ export const GAME_COMMANDS = [
   'PLACE_CAMP_TABLE',
   'LIGHT_CAMP',
   'COMPLETE_DAY_2',
+  'BEGIN_DAY_3',
+  'BEGIN_DAY_4',
+  'BEGIN_DAY_5',
+  'BEGIN_DAY_6',
+  'BEGIN_DAY_7',
+  'COMPLETE_DAY_3',
+  'COMPLETE_DAY_4',
+  'COMPLETE_DAY_5',
+  'COMPLETE_DAY_6',
+  'COMPLETE_DAY_7',
+  'FURNACE_ACT',
+  'TRADE_ACT',
+  'PAY_TRIBUTE',
+  'START_PVP',
+  'BUILD_BARRICADE',
+  'HELP_PET',
+  'REPAIR_LANTERN',
+  'SALVAGE_ITEM',
 ] as const;
 
 export type GameCommandType = (typeof GAME_COMMANDS)[number];
@@ -104,7 +124,8 @@ export type ResourceType =
   | 'LOG'
   | 'PLANK'
   | 'STICK'
-  | 'COBBLESTONE';
+  | 'COBBLESTONE'
+  | 'IRON_INGOT';
 
 export const RESOURCE_TYPES: ResourceType[] = [
   'WOOD',
@@ -123,6 +144,7 @@ export const RESOURCE_TYPES: ResourceType[] = [
   'PLANK',
   'STICK',
   'COBBLESTONE',
+  'IRON_INGOT',
 ];
 
 export type Rarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' | 'MYTHIC';

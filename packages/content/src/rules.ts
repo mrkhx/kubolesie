@@ -54,6 +54,13 @@ export const COMBAT_XP = {
   wild_shrew: 18,
   mine_crawler: 24,
   stone_scavenger: 12,
+  moss_boar: 16,
+  needle_runner: 14,
+  pitch_mite: 20,
+  resin_brute: 28,
+  stumpfang: 40,
+  soot_mite: 8,
+  wenzel_warden: 80,
 } as const;
 
 export interface CommandRequirement {
@@ -67,19 +74,19 @@ export interface CommandRequirement {
 }
 
 export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequirement>> = {
-  GATHER_WOOD: { locations: ['forest_clearing', 'rem_camp', 'player_camp'] },
+  GATHER_WOOD: { locations: ['forest_clearing', 'rem_camp', 'player_camp', 'ashen_wedge'] },
   GATHER_STONE: {
     locations: ['stone_scree'],
-    itemsAny: ['wooden_pickaxe', 'stone_pickaxe'],
+    itemsAny: ['wooden_pickaxe', 'stone_pickaxe', 'iron_pickaxe'],
   },
   GATHER_IRON: {
     locations: ['old_adit'],
-    itemsAny: ['stone_pickaxe'],
-    quest: { id: 'iron_for_gate', statuses: ['ACTIVE'] },
+    itemsAny: ['stone_pickaxe', 'iron_pickaxe'],
+    quest: { id: 'iron_for_gate', statuses: ['ACTIVE', 'CLAIMED', 'COMPLETED'] },
   },
   GATHER_COAL: {
-    locations: ['soot_fissure'],
-    itemsAny: ['wooden_pickaxe', 'stone_pickaxe'],
+    locations: ['soot_fissure', 'old_adit'],
+    itemsAny: ['wooden_pickaxe', 'stone_pickaxe', 'iron_pickaxe'],
   },
   BUILD_TEMP_SHELTER: { locations: ['forest_clearing'], once: { rewardType: 'structure', rewardRef: 'temp_shelter' } },
   FEED_SCAVENGER: { locations: ['stone_scree'] },
@@ -95,6 +102,23 @@ export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequir
   PLACE_CAMP_TABLE: { locations: ['player_camp'], flagsAll: ['player_camp_founded'] },
   LIGHT_CAMP: { locations: ['player_camp'], flagsAll: ['player_camp_founded'] },
   COMPLETE_DAY_2: { flagsAll: ['player_camp_founded'] },
+  BEGIN_DAY_3: { flagsAll: ['day_2_complete'] },
+  BEGIN_DAY_4: { flagsAll: ['day_3_complete'] },
+  BEGIN_DAY_5: { flagsAll: ['day_4_complete'] },
+  BEGIN_DAY_6: { flagsAll: ['day_5_complete'] },
+  BEGIN_DAY_7: { flagsAll: ['day_6_complete'] },
+  COMPLETE_DAY_3: { flagsAll: ['visited_ashen_wedge'] },
+  COMPLETE_DAY_4: { flagsAll: ['furnace_placed'] },
+  COMPLETE_DAY_5: { flagsAll: ['met_vel'] },
+  COMPLETE_DAY_6: { flagsAll: ['yara_claim_seen'] },
+  COMPLETE_DAY_7: { flagsAll: ['wenzel_defeated'] },
+  FURNACE_ACT: { flagsAny: ['furnace_placed', 'furnace_built'] },
+  TRADE_ACT: { flagsAll: ['met_vel'] },
+  PAY_TRIBUTE: { flagsAll: ['yara_claim_seen'] },
+  START_PVP: { flagsAll: ['yara_claim_seen'] },
+  BUILD_BARRICADE: { flagsAll: ['day_6_complete'] },
+  REPAIR_LANTERN: { flagsAll: ['met_vel'] },
+  SALVAGE_ITEM: { flagsAny: ['met_vel', 'salvage_unlocked'] },
   INSPECT_TOKEN: { itemsAny: ['rusty_token'] },
   OPEN_CRATE: { locations: ['forest_clearing'] },
 };
@@ -102,5 +126,15 @@ export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequir
 export const COMBAT_REQUIREMENTS: Record<string, CommandRequirement> = {
   wild_shrew: { locations: ['forest_clearing'] },
   stone_scavenger: { locations: ['stone_scree'] },
-  mine_crawler: { locations: ['old_adit'], itemsAny: ['stone_pickaxe'] },
+  mine_crawler: { locations: ['old_adit'], itemsAny: ['stone_pickaxe', 'iron_pickaxe'] },
+  soot_mite: { locations: ['soot_fissure'] },
+  moss_boar: { locations: ['ashen_wedge'] },
+  needle_runner: { locations: ['ashen_wedge'] },
+  pitch_mite: { locations: ['ashen_wedge'] },
+  resin_brute: { locations: ['ashen_wedge'] },
+  stumpfang: { locations: ['ashen_wedge'] },
+  yara_trace: { locations: ['stone_scree', 'rival_camp_edge'] },
+  wedge_scout: { locations: ['stone_scree', 'rival_camp_edge'] },
+  foreign_post: { locations: ['stone_scree', 'rival_camp_edge'] },
+  wenzel_warden: { locations: ['seal_forecourt', 'node_7'] },
 };

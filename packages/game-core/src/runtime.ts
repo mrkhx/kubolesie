@@ -3,6 +3,7 @@ import {
   BALANCE_VERSION,
   STARTING_ENERGY,
   STARTING_STATS,
+  XP_THRESHOLDS,
   XP_TO_LEVEL_2,
   type GameButton,
   type GameCommand,
@@ -77,6 +78,21 @@ import type {
   PlayerQuestRecord,
   PlayerRecord,
 } from './store';
+import {
+  afterCraftFlags,
+  afterWenzelMoveFlags,
+  applyWeekLoot,
+  applyWenzelVictory,
+  dispatchWeek,
+  furnaceCraftLocationOk,
+  isWeekMenu,
+  noteDailyCraft,
+  noteDailyGather,
+  openWeekMenu,
+  WEEK_COMMANDS,
+  wenzelModifiers,
+  type WeekHost,
+} from './week';
 
 const NAV: GameButton[] = [
   { label: '👁 Осмотреться', action: 'EXPLORE' },
@@ -210,7 +226,12 @@ export class GameRuntime {
       case 'TALK_NPC':
         return this.talkNpc(ctx, String(command.payload?.npcId ?? 'rem'));
       case 'START_PVE':
-        return this.startPve(ctx, String(command.payload?.enemyId ?? 'wild_shrew'), eventId);
+        return this.startPve(
+          ctx,
+          String(command.payload?.enemyId ?? 'wild_shrew'),
+          eventId,
+          command.payload,
+        );
       case 'CLAIM_REWARD':
         return this.claimReward(ctx, String(command.payload?.rewardType ?? ''), String(command.payload?.rewardRef ?? ''));
       case 'OPEN_CRATE':
@@ -246,8 +267,25 @@ export class GameRuntime {
       case 'COMPLETE_DAY_2':
         return this.completeDay2(ctx);
       default:
+        if ((WEEK_COMMANDS as readonly string[]).includes(command.type)) {
+          return dispatchWeek(this.weekHost(), ctx, command, eventId);
+        }
         throw new UnknownCommandError((command as GameCommand).type);
     }
+  }
+
+  private weekHost(): WeekHost {
+    return {
+      store: this.store,
+      now: this.now,
+      respond: this.respond.bind(this),
+      renderNode: this.renderNode.bind(this),
+      load: (player) => this.load(player),
+      addXp: this.addXp.bind(this),
+      spend: this.spend.bind(this),
+      changeCoins: this.changeCoins.bind(this),
+      effectiveStats: (weekCtx) => this.effectiveStats(weekCtx as Ctx),
+    };
   }
 
   private assertAllowed(command: GameCommand, ctx: Ctx): void {
@@ -259,6 +297,11 @@ export class GameRuntime {
       'OPEN_INVENTORY',
       'OPEN_MENU',
       'BEGIN_DAY_2',
+      'BEGIN_DAY_3',
+      'BEGIN_DAY_4',
+      'BEGIN_DAY_5',
+      'BEGIN_DAY_6',
+      'BEGIN_DAY_7',
       'EQUIP_ITEM',
       'USE_ITEM',
     ];
@@ -329,19 +372,41 @@ export class GameRuntime {
     if (loc === 'player_camp' && ctx.flags.player_camp_founded) {
       return this.exploreCamp(ctx);
     }
-    if (loc === 'soot_fissure') return this.renderNode(ctx.player, 'soot_fissure_look');
+    if (loc === 'soot_fissure') {
+      if (
+        ctx.flags.day_3_complete &&
+        !ctx.flags.emberkit_rescued &&
+        !ctx.flags.scavenger_bonded &&
+        !ctx.flags.emberkit_notice_seen &&
+        (ctx.flags.defeated_stone_scavenger || ctx.flags.scavenger_left_d4)
+      ) {
+        await this.store.setFlag(ctx.player.id, 'emberkit_notice_seen', '1');
+        return this.renderNode(ctx.player, 'emberkit_notice');
+      }
+      return this.renderNode(ctx.player, 'soot_fissure_look');
+    }
+    if (loc === 'ashen_wedge') return openWeekMenu(this.weekHost(), ctx, 'wedge');
+    if (loc === 'seal_forecourt') return openWeekMenu(this.weekHost(), ctx, 'prep');
+    if (loc === 'rival_camp_edge') return this.renderNode(ctx.player, 'yara_edge');
     if (loc === 'rem_camp' && ctx.flags.met_rem) {
+      if (ctx.flags.week_1_complete) return this.renderNode(ctx.player, 'week1_complete');
       if (ctx.flags.day_1_complete && !ctx.flags.day_2_complete) {
         return this.renderNode(ctx.player, 'rem_day2');
       }
       return this.renderNode(ctx.player, 'rem_camp');
     }
-    if (loc === 'stone_scree') return this.renderNode(ctx.player, 'stone_scree');
+    if (loc === 'stone_scree') {
+      if (ctx.flags.yara_claim_seen && !ctx.flags.day_6_complete) {
+        return openWeekMenu(this.weekHost(), ctx, 'pvp');
+      }
+      return this.renderNode(ctx.player, 'stone_scree');
+    }
     if (loc === 'old_adit') return this.renderNode(ctx.player, 'old_adit');
     if (loc === 'secret_chamber') return this.renderNode(ctx.player, 'secret_chamber');
     if (loc === 'node_7' && !ctx.flags.node7_gate_closed && ctx.flags.activated_node7_token) {
       return this.renderNode(ctx.player, 'rem_gate');
     }
+    if (ctx.flags.week_1_complete) return this.renderNode(ctx.player, 'week1_complete');
     if (ctx.flags.day_2_complete) return this.renderNode(ctx.player, 'day2_complete');
     if (ctx.flags.player_camp_founded) {
       ctx.player.currentLocation = 'player_camp';
@@ -364,9 +429,21 @@ export class GameRuntime {
 
   private async exploreCamp(ctx: Ctx): Promise<GameResponse> {
     if (
+      ctx.flags.day_3_complete &&
+      !ctx.flags.day_4_complete &&
       ctx.flags.fed_stone_scavenger &&
       !ctx.flags.defeated_stone_scavenger &&
-      !ctx.flags.scavenger_day2_visit
+      !ctx.flags.scavenger_bonded &&
+      !ctx.flags.scavenger_rejected_d4 &&
+      !ctx.flags.scavenger_left_d4
+    ) {
+      return this.renderNode(ctx.player, 'scavenger_wounded');
+    }
+    if (
+      ctx.flags.fed_stone_scavenger &&
+      !ctx.flags.defeated_stone_scavenger &&
+      !ctx.flags.scavenger_day2_visit &&
+      !ctx.flags.day_3_complete
     ) {
       await this.store.setFlag(ctx.player.id, 'scavenger_day2_visit', '1');
       return this.renderNode(ctx.player, 'scavenger_day2');
@@ -402,6 +479,9 @@ export class GameRuntime {
         payload: { nodeId: 'camp_look', choiceId: 'scavenger' },
       });
     }
+    if (buttons.length < 5 && ctx.flags.day_2_complete && !ctx.flags.week_1_complete) {
+      buttons.push({ label: '🌲 Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
+    }
     if (buttons.length < 5) {
       buttons.push({ label: '🏕 Стан', action: 'OPEN_MENU', payload: { menu: 'camp' } });
     }
@@ -415,6 +495,7 @@ export class GameRuntime {
   }
 
   private async openMenu(ctx: Ctx, menu: ActionMenuId, extraText?: string): Promise<GameResponse> {
+    if (isWeekMenu(menu)) return openWeekMenu(this.weekHost(), ctx, menu);
     const built = buildActionMenu(menu, this.snapshot(ctx));
     const text = extraText ?? (menu === 'hub' ? this.hubCampText(ctx) : built.text);
     return this.respond(ctx.player, text, built.buttons);
@@ -494,11 +575,13 @@ export class GameRuntime {
     const tokenNote = await this.tryGrantToken(ctx);
     const axeNote = stats.woodYieldBonus > 0 ? ' Топор дал бонус.' : '';
     void eventId;
+    const daily = await noteDailyGather(this.weekHost(), ctx);
+    const dailyNote = daily.length ? ` ${daily.join(' ')}` : '';
     const fresh = await this.load(ctx.player);
     const menu = buildActionMenu('gather', this.snapshot(fresh));
     return this.respond(
       ctx.player,
-      `Ты рубишь дерево. +${amount} брёвен (всего ${total}). −${GATHER_WOOD.energyCost} энергии.${axeNote}${tokenNote}`,
+      `Ты рубишь дерево. +${amount} брёвен (всего ${total}). −${GATHER_WOOD.energyCost} энергии.${axeNote}${tokenNote}${dailyNote}`,
       menu.buttons,
     );
   }
@@ -518,9 +601,11 @@ export class GameRuntime {
     const total = await this.store.addResource(ctx.player.id, 'COBBLESTONE', amount);
     await this.store.savePlayer(ctx.player);
     const tokenNote = await this.tryGrantToken(ctx);
+    const daily = await noteDailyGather(this.weekHost(), ctx);
+    const dailyNote = daily.length ? ` ${daily.join(' ')}` : '';
     const fresh = await this.load(ctx.player);
     const menu = buildActionMenu('gather', this.snapshot(fresh));
-    return this.respond(ctx.player, `Ты ломаешь булыжник. +${amount} (всего ${total}).${extraNote}${tokenNote}`, menu.buttons);
+    return this.respond(ctx.player, `Ты ломаешь булыжник. +${amount} (всего ${total}).${extraNote}${tokenNote}${dailyNote}`, menu.buttons);
   }
 
   private async gatherIron(ctx: Ctx, eventId: string): Promise<GameResponse> {
@@ -569,11 +654,13 @@ export class GameRuntime {
       await this.store.setFlag(ctx.player.id, 'found_coal', '1');
       ctx.flags.found_coal = '1';
     }
+    const daily = await noteDailyGather(this.weekHost(), ctx);
+    const dailyNote = daily.length ? ` ${daily.join(' ')}` : '';
     const fresh = await this.load(ctx.player);
     const menu = buildActionMenu('gather', this.snapshot(fresh));
     return this.respond(
       ctx.player,
-      `Ты ломаешь сажу. +${amount} угля (всего ${total}). −${GATHER_COAL.energyCost} энергии.`,
+      `Ты ломаешь сажу. +${amount} угля (всего ${total}). −${GATHER_COAL.energyCost} энергии.${dailyNote}`,
       menu.buttons,
     );
   }
@@ -597,6 +684,29 @@ export class GameRuntime {
     }
     if (recipe.id === 'chest' && ctx.flags.camp_chest_built) {
       throw new ActionRejectedError('Сундук уже есть.');
+    }
+    if (recipe.id === 'furnace') {
+      if (!ctx.flags.day_3_complete) {
+        throw new ActionRejectedError('Печь — после Сизого клина. Сначала День 3.');
+      }
+      if (!furnaceCraftLocationOk(ctx)) {
+        throw new ActionRejectedError('Печь ставится на своём стане. Или у костра Рема, если стана нет.');
+      }
+      if (ctx.flags.furnace_placed || ctx.flags.furnace_built) {
+        throw new ActionRejectedError('Печь уже стоит.');
+      }
+    }
+    if (
+      (recipe.id === 'wooden_sword' || recipe.id === 'stone_sword' || recipe.id === 'hide_tunic') &&
+      !ctx.flags.day_2_complete
+    ) {
+      throw new ActionRejectedError('Это оружие — после стана. Сначала День 2.');
+    }
+    if (
+      (recipe.id === 'iron_pickaxe' || recipe.id === 'iron_axe' || recipe.id === 'iron_sword') &&
+      !ctx.flags.first_ingot
+    ) {
+      throw new ActionRejectedError('Сначала выплави слиток в печи.');
     }
     const cost = effectiveRecipeCost(recipe, this.snapshot(ctx));
     for (const [resource, need] of Object.entries(cost)) {
@@ -658,6 +768,11 @@ export class GameRuntime {
     if (recipe.id === 'chest') {
       await this.store.setFlag(ctx.player.id, 'camp_chest_built', '1');
     }
+    for (const flag of afterCraftFlags(recipe.id, ctx.flags)) {
+      await this.store.setFlag(ctx.player.id, flag, '1');
+      ctx.flags[flag] = '1';
+    }
+    const dailyNotes = await noteDailyCraft(this.weekHost(), ctx, recipe.id);
     const fresh = await this.load(ctx.player);
     const group = recipe.id === 'campfire' ? 'camp' : recipeGroup(recipe.id) ?? 'items';
     const menu = buildActionMenu(group, this.snapshot(fresh));
@@ -667,7 +782,8 @@ export class GameRuntime {
     }
     buttons.push(...menu.buttons);
     const made = amount > 1 ? `Скрафчено: ${template.name} ×${amount}.` : `Скрафчено: ${template.name}.`;
-    return this.respond(ctx.player, made, buttons);
+    const extra = dailyNotes.length ? ` ${dailyNotes.join(' ')}` : '';
+    return this.respond(ctx.player, `${made}${extra}`, buttons);
   }
 
   private async equipItem(ctx: Ctx, itemId: string): Promise<GameResponse> {
@@ -716,11 +832,30 @@ export class GameRuntime {
   }
 
   private async talkNpc(ctx: Ctx, npcId: string): Promise<GameResponse> {
+    if (npcId === 'vel') {
+      if (!ctx.flags.met_vel) throw new ActionRejectedError('Вела ещё нет.');
+      return openWeekMenu(this.weekHost(), ctx, 'trade');
+    }
+    if (npcId === 'yara') {
+      ctx.player.currentLocation = 'rival_camp_edge';
+      await this.store.savePlayer(ctx.player);
+      await this.store.setFlag(ctx.player.id, 'seen_yara_camp', '1');
+      await this.store.upsertDiscovery({
+        playerId: ctx.player.id,
+        discoveryId: 'yara_camp',
+        title: 'Стан Яры',
+        seen: true,
+        defeated: false,
+      });
+      return this.renderNode(ctx.player, 'yara_edge');
+    }
     if (npcId !== 'rem') return this.respond(ctx.player, 'Здесь никого нет.', NAV);
     if (ctx.flags.day_1_complete) {
       ctx.player.currentLocation = 'rem_camp';
       await this.store.savePlayer(ctx.player);
-      if (ctx.flags.day_2_complete) return this.renderNode(ctx.player, 'rem_day2');
+      if (ctx.flags.week_1_complete) return this.renderNode(ctx.player, 'week1_complete');
+      if (ctx.flags.day_6_complete) return this.renderNode(ctx.player, 'day7_start');
+      if (!ctx.flags.day_2_complete) return this.renderNode(ctx.player, 'rem_day2');
       return this.renderNode(ctx.player, 'rem_day2');
     }
     if (!ctx.flags.activated_node7_token) return this.renderNode(ctx.player, 'abandoned_camp');
@@ -982,37 +1117,72 @@ export class GameRuntime {
     return node;
   }
 
-  private async startPve(ctx: Ctx, enemyId: string, eventId: string): Promise<GameResponse> {
+  private async startPve(
+    ctx: Ctx,
+    enemyId: string,
+    eventId: string,
+    payload: Record<string, unknown> = {},
+  ): Promise<GameResponse> {
     const enemy = getEnemy(enemyId) ?? ENEMIES.wild_shrew;
     if (enemyId === 'mine_crawler') await this.spend(ctx.player, 2);
+    if (enemyId === 'stumpfang' && payload.torch) {
+      const torch = ctx.items.find((item) => item.templateId === 'torch');
+      if (!torch) throw new ActionRejectedError('Факела нет.');
+      await this.store.removeItem(torch.id);
+      await this.store.setFlag(ctx.player.id, 'burned_torch_at_stumpfang', '1');
+      ctx.flags.burned_torch_at_stumpfang = '1';
+      ctx.items = ctx.items.filter((item) => item.id !== torch.id);
+    }
+    if (enemyId === 'wenzel_warden') {
+      ctx.player.currentLocation = 'seal_forecourt';
+      await this.store.savePlayer(ctx.player);
+      const move = String(payload.move ?? 'hinge');
+      for (const flag of afterWenzelMoveFlags(move)) {
+        await this.store.setFlag(ctx.player.id, flag, '1');
+        ctx.flags[flag] = '1';
+      }
+    }
     const stats = await this.effectiveStats(ctx);
+    const mods = enemyId === 'wenzel_warden' ? wenzelModifiers(ctx, String(payload.move ?? 'hinge')) : null;
     const playerSnap: CombatantSnapshot = {
       id: ctx.player.id,
       name: ctx.player.name,
       hp: ctx.player.hp,
       maxHp: ctx.player.maxHp,
       attack: stats.attack,
-      defense: stats.defense,
+      defense: stats.defense + (mods?.player.defense ?? 0),
       speed: stats.speed + (enemyId === 'mine_crawler' && ctx.flags.heard_mine_crawler ? 5 : 0),
-      critChance: stats.critChance,
+      critChance: stats.critChance + (mods?.player.critChance ?? 0),
       critDamage: stats.critDamage,
-      dodge: stats.dodge + (enemyId === 'mine_crawler' && ctx.flags.heard_mine_crawler ? 10 : 0),
+      dodge: stats.dodge + (mods?.player.dodge ?? 0) + (enemyId === 'mine_crawler' && ctx.flags.heard_mine_crawler ? 10 : 0),
       accuracy: stats.accuracy,
       luck: stats.luck,
-      minDamage: stats.minDamage,
-      maxDamage: stats.maxDamage,
+      minDamage: mods?.player.minDamage ?? stats.minDamage,
+      maxDamage: mods?.player.maxDamage ?? stats.maxDamage,
     };
+    let enemyHp = enemy.hp;
+    let enemyDef = enemy.defense;
+    let enemyDodge = enemy.dodge;
+    if (enemyId === 'stumpfang' && ctx.flags.burned_torch_at_stumpfang) {
+      enemyHp = Math.floor(enemy.hp * 0.75);
+      enemyDef = Math.max(0, enemy.defense - 3);
+    }
+    if (mods) {
+      enemyHp += mods.enemy.hp ?? 0;
+      enemyDef = Math.max(0, enemyDef + (mods.enemy.defense ?? 0));
+      if (mods.enemy.dodge != null) enemyDodge = mods.enemy.dodge;
+    }
     const enemySnap: CombatantSnapshot = {
       id: enemy.id,
       name: enemy.name,
-      hp: enemy.hp,
-      maxHp: enemy.hp,
+      hp: enemyHp,
+      maxHp: enemyHp,
       attack: enemy.minDamage,
-      defense: enemy.defense,
+      defense: enemyDef,
       speed: enemy.speed,
       critChance: enemy.critChance,
       critDamage: enemy.critDamage,
-      dodge: enemy.dodge,
+      dodge: enemyDodge,
       accuracy: enemy.accuracy - (enemyId === 'mine_crawler' && ctx.flags.heard_mine_crawler ? 15 : 0),
       luck: 0,
       minDamage: enemy.minDamage,
@@ -1044,10 +1214,10 @@ export class GameRuntime {
     }
     await this.store.savePlayer(ctx.player);
     const log = formatCombatLog(battle, ctx.player.id, ctx.player.name, enemy.name);
-    let extra = '';
+    let extra = mods?.note ? `\n${mods.note}.` : '';
     const buttons: GameButton[] = [...NAV];
     if (battle.result === 'WIN') {
-      extra = await this.applyCombatLoot(ctx, enemyId, eventId, buttons);
+      extra += await this.applyCombatLoot(ctx, enemyId, eventId, buttons);
       await this.store.upsertDiscovery({
         playerId: ctx.player.id,
         discoveryId: enemy.id,
@@ -1055,8 +1225,25 @@ export class GameRuntime {
         seen: true,
         defeated: true,
       });
+      if (enemyId === 'wenzel_warden') {
+        const winNotes = await applyWenzelVictory(this.weekHost(), ctx);
+        extra += `\n${winNotes.join(' ')}`;
+        buttons.unshift({ label: 'К двери', action: 'COMPLETE_DAY_7' });
+      }
+      if (enemyId === 'stumpfang' || enemyId === 'moss_boar' || enemyId === 'resin_brute') {
+        buttons.unshift({ label: 'Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
+      }
     } else {
-      extra = '\nПредметы при тебе. Можно восстановиться и попробовать снова.';
+      extra += '\nПредметы при тебе. Можно восстановиться и попробовать снова.';
+      if (enemyId === 'stumpfang') {
+        await this.store.setFlag(ctx.player.id, 'stumpfang_failed', '1');
+        extra += ' Рем не смеётся.';
+        buttons.unshift({ label: 'Край клина', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
+      }
+      if (enemyId === 'wenzel_warden') {
+        await this.store.setFlag(ctx.player.id, 'wenzel_failed_attempt', '1');
+        buttons.unshift({ label: 'Подготовиться', action: 'OPEN_MENU', payload: { menu: 'prep' } });
+      }
     }
     return this.respond(ctx.player, `${log}${extra}`, buttons);
   }
@@ -1105,6 +1292,11 @@ export class GameRuntime {
         notes.push(await this.addXp(ctx.player, 12));
       }
     }
+    if (['moss_boar', 'needle_runner', 'pitch_mite', 'resin_brute', 'stumpfang', 'soot_mite'].includes(enemyId)) {
+      const first = await this.store.tryClaimReward(ctx.player.id, 'combat_loot', `${enemyId}:first`);
+      const weekNotes = await applyWeekLoot(this.weekHost(), ctx, enemyId, eventId, first);
+      notes.push(...weekNotes);
+    }
     return notes.length ? `\n${notes.filter(Boolean).join(' ')}` : '';
   }
 
@@ -1150,13 +1342,14 @@ export class GameRuntime {
   private async addXp(player: PlayerRecord, amount: number): Promise<string> {
     player.xp += amount;
     let note = `+${amount} XP.`;
-    if (player.level === 1 && player.xp >= XP_TO_LEVEL_2) {
-      player.level = 2;
+    while (player.level < XP_THRESHOLDS.length - 1 && player.xp >= XP_THRESHOLDS[player.level + 1]!) {
+      player.level += 1;
       player.maxHp += LEVEL_UP.maxHpGain;
       player.maxEnergy += LEVEL_UP.maxEnergyGain;
       if (LEVEL_UP.fillHpToMax) player.hp = player.maxHp;
       player.energy = Math.min(player.maxEnergy, player.energy + LEVEL_UP.maxEnergyGain);
-      note += ` Уровень 2! Макс. HP +${LEVEL_UP.maxHpGain}, макс. энергия +${LEVEL_UP.maxEnergyGain}. HP восстановлено.`;
+      note += ` Уровень ${player.level}! Макс. HP +${LEVEL_UP.maxHpGain}, макс. энергия +${LEVEL_UP.maxEnergyGain}.`;
+      if (player.level === 2) note += ' HP восстановлено.';
     }
     await this.store.savePlayer(player);
     return note;
@@ -1209,6 +1402,7 @@ export class GameRuntime {
       stats.woodYieldBonus += template.woodYieldBonus ?? 0;
       stats.stoneYieldBonus += template.stoneYieldBonus ?? 0;
       stats.oreYieldBonus += template.oreYieldBonus ?? 0;
+      stats.dodge += template.dodgeBonus ?? 0;
       if (template.minDamage != null && template.maxDamage != null) {
         stats.minDamage = template.minDamage;
         stats.maxDamage = template.maxDamage;

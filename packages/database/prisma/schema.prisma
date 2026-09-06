@@ -25,6 +25,7 @@ enum ResourceType {
   PLANK
   STICK
   COBBLESTONE
+  IRON_INGOT
 }
 
 enum Rarity {

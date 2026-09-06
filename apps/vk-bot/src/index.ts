@@ -60,6 +60,14 @@ const TEXT_MENU_ALIASES: Record<string, string> = {
   предметы: 'items',
   стан: 'camp',
   назад: 'hub',
+  клин: 'wedge',
+  ежедневки: 'daily',
+  печь: 'furnace',
+  торговля: 'trade',
+  весы: 'trade',
+  стычка: 'pvp',
+  осыпь: 'pvp',
+  подготовка: 'prep',
 };
 
 export function parseMockVkEvent(input: MockVkEvent): NormalizedIncomingEvent {
@@ -77,6 +85,12 @@ export function parseMockVkEvent(input: MockVkEvent): NormalizedIncomingEvent {
   let command: GameCommand;
   if (action && isGameCommandType(action)) {
     command = { type: action, payload };
+  } else if (text === 'вел') {
+    command = { type: 'TALK_NPC', payload: { npcId: 'vel' } };
+  } else if (text === 'яра') {
+    command = { type: 'TALK_NPC', payload: { npcId: 'yara' } };
+  } else if (text === 'дань') {
+    command = { type: 'PAY_TRIBUTE', payload };
   } else if (text && TEXT_MENU_ALIASES[text]) {
     command = { type: 'OPEN_MENU', payload: { menu: TEXT_MENU_ALIASES[text] } };
   } else if (text && TEXT_ALIASES[text]) {

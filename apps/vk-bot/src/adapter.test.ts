@@ -48,5 +48,15 @@ describe('vk adapter', () => {
     expect(station.command).toEqual({ type: 'OPEN_MENU', payload: { menu: 'camp' } });
     const coal = parseMockVkEvent({ event_id: 'e-coal', vk_user_id: 1, text: 'уголь' });
     expect(coal.command.type).toBe('GATHER_COAL');
+    const wedge = parseMockVkEvent({ event_id: 'e-w', vk_user_id: 1, text: 'клин' });
+    expect(wedge.command).toEqual({ type: 'OPEN_MENU', payload: { menu: 'wedge' } });
+    const furnace = parseMockVkEvent({ event_id: 'e-f', vk_user_id: 1, text: 'печь' });
+    expect(furnace.command).toEqual({ type: 'OPEN_MENU', payload: { menu: 'furnace' } });
+    const vel = parseMockVkEvent({ event_id: 'e-vel', vk_user_id: 1, text: 'вел' });
+    expect(vel.command).toEqual({ type: 'TALK_NPC', payload: { npcId: 'vel' } });
+    const yara = parseMockVkEvent({ event_id: 'e-y', vk_user_id: 1, text: 'яра' });
+    expect(yara.command).toEqual({ type: 'TALK_NPC', payload: { npcId: 'yara' } });
+    const tribute = parseMockVkEvent({ event_id: 'e-t', vk_user_id: 1, text: 'дань' });
+    expect(tribute.command.type).toBe('PAY_TRIBUTE');
   });
 });

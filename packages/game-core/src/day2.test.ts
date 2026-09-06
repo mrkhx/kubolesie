@@ -385,9 +385,9 @@ describe('day 2 campfire and torch', () => {
     const used = await act(runtime, vkUserId, 'USE_ITEM', { itemId: lantern.id });
     expect(used.text).toMatch(/Вел носит стёкла/i);
     expect(await itemCount(store, player.id, 'broken_lantern')).toBe(1);
-    expect(ITEM_TEMPLATES.lit_lantern).toBeUndefined();
-    expect(CRAFT_RECIPES.furnace).toBeUndefined();
+    expect(await itemCount(store, player.id, 'lit_lantern')).toBe(0);
     expect(CRAFT_RECIPES.glass).toBeUndefined();
+    expect(CRAFT_RECIPES.smelt_iron).toBeUndefined();
   });
 
   it('owning coal does not light the camp', async () => {
@@ -504,19 +504,21 @@ describe('day 2 quest, menus, safety', () => {
     expect(again.text).toMatch(/Продолжение скоро будет доступно/i);
   });
 
-  it('27. Day 3 is not started', async () => {
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_3')).toBe(false);
-    expect(LOCATIONS.ashen_wedge).toBeUndefined();
-    expect(LOCATIONS.wedge_edge).toBeUndefined();
-    expect(ITEM_TEMPLATES.wooden_sword).toBeUndefined();
-    expect(CRAFT_RECIPES.furnace).toBeUndefined();
-    expect(CRAFT_RECIPES.iron_pickaxe).toBeUndefined();
+  it('27. Day 3 is gated until Day 2 is complete', async () => {
+    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_3')).toBe(true);
+    expect(LOCATIONS.ashen_wedge).toBeDefined();
+    expect(ITEM_TEMPLATES.wooden_sword).toBeDefined();
+    expect(CRAFT_RECIPES.furnace).toBeDefined();
     const { store, runtime, player, vkUserId } = await startCamp({ log: 3, stick: 3, coal: 1 });
+    const early = await act(runtime, vkUserId, 'BEGIN_DAY_3');
+    expect(early.text).toMatch(/нельзя|Сначала закрой/i);
     await act(runtime, vkUserId, 'PLACE_CAMP_TABLE');
     await act(runtime, vkUserId, 'CRAFT_ITEM', { recipeId: 'campfire' });
     const done = await act(runtime, vkUserId, 'COMPLETE_DAY_2');
     expect(done.text).toContain('Продолжение скоро будет доступно');
+    expect(hasLabel(done, 'День 3')).toBe(true);
     expect((await store.getFlags(player.id)).day_3_complete).toBeUndefined();
+    expect((await store.getFlags(player.id)).day_2_complete).toBe('1');
     expect((await reload(store, player.id)).currentLocation).toBe('player_camp');
   });
 
@@ -560,8 +562,9 @@ describe('day 2 quest, menus, safety', () => {
     expect(CRAFT_RECIPES.crafting_table.cost).toEqual({ PLANK: 4 });
     expect(CRAFT_RECIPES.wooden_pickaxe.cost).toEqual({ PLANK: 3, STICK: 2 });
     expect(CRAFT_RECIPES.stone_pickaxe.cost).toEqual({ COBBLESTONE: 3, STICK: 2 });
-    expect(CRAFT_RECIPES.wooden_sword).toBeUndefined();
+    expect(CRAFT_RECIPES.wooden_sword.cost).toEqual({ PLANK: 2, STICK: 1 });
     expect(CRAFT_RECIPES.iron_ingot).toBeUndefined();
+    expect(CRAFT_RECIPES.smelt_iron).toBeUndefined();
     const { store, runtime, player, vkUserId } = await boot();
     await store.addResource(player.id, 'LOG', 1);
     const planks = await act(runtime, vkUserId, 'CRAFT_ITEM', { recipeId: 'planks' });
@@ -750,7 +753,8 @@ describe('day 2 mock playthrough', () => {
     expect(flags.camp_chest_built).toBeUndefined();
     expect(flags.day_1_complete).toBe('1');
     expect(done.text).toContain('Продолжение скоро будет доступно');
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_3')).toBe(false);
+    expect(hasLabel(done, 'День 3')).toBe(true);
+    expect((await store.getFlags(player.id)).day_3_complete).toBeUndefined();
   });
 
   it('shelter + scavenger path still completes without a chest', async () => {

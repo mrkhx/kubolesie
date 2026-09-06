@@ -11,7 +11,7 @@ import type {
   ResourceType,
 } from '@kubolesie/shared';
 
-export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp';
+export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep';
 
 export const ACTION_MENUS: readonly ActionMenuId[] = [
   'hub',
@@ -21,12 +21,28 @@ export const ACTION_MENUS: readonly ActionMenuId[] = [
   'weapons',
   'items',
   'camp',
+  'wedge',
+  'daily',
+  'furnace',
+  'trade',
+  'pvp',
+  'prep',
 ];
 
 export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly string[]> = {
-  tools: ['wooden_pickaxe', 'wooden_axe', 'stone_pickaxe', 'stone_axe'],
-  weapons: [],
-  items: ['planks', 'sticks', 'crafting_table', 'salvage_wood', 'salvage_stone', 'chest', 'torch'],
+  tools: ['wooden_pickaxe', 'wooden_axe', 'stone_pickaxe', 'stone_axe', 'iron_pickaxe', 'iron_axe'],
+  weapons: ['wooden_sword', 'stone_sword', 'iron_sword'],
+  items: [
+    'planks',
+    'sticks',
+    'crafting_table',
+    'salvage_wood',
+    'salvage_stone',
+    'chest',
+    'torch',
+    'hide_tunic',
+    'furnace',
+  ],
 };
 
 const RECIPE_LABELS: Record<string, string> = {
@@ -42,6 +58,13 @@ const RECIPE_LABELS: Record<string, string> = {
   chest: '📦 Сундук',
   torch: '🔦 Факелы ×4',
   campfire: '🔥 Костёр',
+  wooden_sword: '⚔ Деревянный меч',
+  stone_sword: '⚔ Каменный меч',
+  hide_tunic: '🧥 Туника',
+  furnace: '🔥 Печь',
+  iron_pickaxe: '⛏ Железная кирка',
+  iron_axe: '🪓 Железный топор',
+  iron_sword: '⚔ Железный меч',
 };
 
 const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
@@ -52,6 +75,12 @@ const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
   weapons: 'craft',
   items: 'craft',
   camp: 'hub',
+  wedge: 'hub',
+  daily: 'wedge',
+  furnace: 'hub',
+  trade: 'hub',
+  pvp: 'hub',
+  prep: 'hub',
 };
 
 export interface MenuSnapshot {
@@ -156,6 +185,21 @@ export function visibleRecipeButtons(group: 'tools' | 'weapons' | 'items', ctx: 
     if (recipeId === 'crafting_table' && hasCraftingTable(ctx.items)) continue;
     if (recipeId === 'chest' && ctx.flags.camp_chest_built) continue;
     if (recipeId === 'campfire' && ctx.flags.camp_fire_built) continue;
+    if (recipeId === 'furnace' && (ctx.flags.furnace_placed || ctx.flags.furnace_built)) continue;
+    if (
+      (recipeId === 'iron_pickaxe' || recipeId === 'iron_axe' || recipeId === 'iron_sword') &&
+      !ctx.flags.first_ingot &&
+      !(ctx.resources.IRON_INGOT ?? 0)
+    ) {
+      continue;
+    }
+    if (
+      (recipeId === 'wooden_sword' || recipeId === 'stone_sword' || recipeId === 'hide_tunic') &&
+      !ctx.flags.day_2_complete
+    ) {
+      continue;
+    }
+    if (recipeId === 'furnace' && !ctx.flags.day_3_complete) continue;
     if (!canAffordRecipe(recipe, ctx)) continue;
     const button = recipeButton(recipeId);
     if (button) buttons.push(button);
@@ -172,6 +216,10 @@ export function hubButtons(ctx: MenuSnapshot): GameButton[] {
   ];
   if (ctx.flags.player_camp_founded && ctx.currentLocation === 'player_camp') {
     buttons.push({ label: '🏕 Стан', action: 'OPEN_MENU', payload: { menu: 'camp' } });
+  } else if (ctx.currentLocation === 'ashen_wedge') {
+    buttons.push({ label: '🌲 Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
+  } else if (ctx.flags.met_vel && ctx.currentLocation !== 'player_camp') {
+    buttons.push({ label: '⚖ Вел', action: 'TALK_NPC', payload: { npcId: 'vel' } });
   } else if (ctx.flags.met_rem) {
     buttons.push({ label: '👤 К Рему', action: 'TALK_NPC', payload: { npcId: 'rem' } });
   }
@@ -228,6 +276,17 @@ export function campButtons(ctx: MenuSnapshot): GameButton[] {
   ) {
     buttons.push({ label: '✅ Завершить обустройство', action: 'COMPLETE_DAY_2' });
   }
+  if (ctx.flags.furnace_placed || ctx.flags.furnace_built) {
+    buttons.push({ label: '🔥 Печь', action: 'FURNACE_ACT', payload: { act: 'open' } });
+  } else if (ctx.flags.day_3_complete) {
+    const recipe = getRecipe('furnace');
+    if (recipe && canAffordRecipe(recipe, ctx)) {
+      buttons.push({ label: '🔥 Печь', action: 'CRAFT_ITEM', payload: { recipeId: 'furnace' } });
+    }
+  }
+  if (ctx.flags.met_vel && buttons.length < 4) {
+    buttons.push({ label: '⚖ Вел', action: 'TALK_NPC', payload: { npcId: 'vel' } });
+  }
   buttons.push(backButton('camp'));
   return buttons;
 }
@@ -273,6 +332,13 @@ export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText
       id: 'camp',
       text: extraText || 'Стан. Только нужное.',
       buttons: campButtons(ctx),
+    };
+  }
+  if (menu === 'wedge' || menu === 'daily' || menu === 'furnace' || menu === 'trade' || menu === 'pvp' || menu === 'prep') {
+    return {
+      id: menu,
+      text: extraText || '…',
+      buttons: [backButton(menu)],
     };
   }
   const group = menu as 'tools' | 'weapons' | 'items';
