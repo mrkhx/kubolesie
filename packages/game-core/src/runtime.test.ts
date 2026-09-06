@@ -74,33 +74,39 @@ describe('dialogue start', () => {
 });
 
 describe('craft', () => {
-  it('crafts a stone axe when resources are enough', async () => {
+  it('crafts planks from a log', async () => {
     const { store, runtime, player } = await boot();
-    await store.addResource(player.id, 'WOOD', 2);
-    await store.addResource(player.id, 'STONE', 2);
+    await store.addResource(player.id, 'LOG', 1);
     const response = await runtime.handle(
-      event('CRAFT_ITEM', { templateId: 'stone_axe' }, 'craft-axe-1'),
+      event('CRAFT_ITEM', { recipeId: 'planks' }, 'craft-planks-1'),
     );
-    expect(response.text).toContain('Каменный топор');
-    const items = await store.listItems(player.id);
-    expect(items.some((item) => item.templateId === 'stone_axe')).toBe(true);
+    expect(response.text).toContain('Доски');
     const resources = await store.getResources(player.id);
-    expect(resources.WOOD).toBe(0);
-    expect(resources.STONE).toBe(0);
+    expect(resources.LOG).toBe(0);
+    expect(resources.PLANK).toBe(4);
+    expect(resources.WOOD ?? 0).toBe(0);
+    expect(resources.STONE ?? 0).toBe(0);
   });
 
-  it('rejects craft when resources are missing', async () => {
+  it('rejects the old WOOD+STONE pickaxe shortcut and missing resources', async () => {
     const { store, runtime, player } = await boot();
-    await store.addResource(player.id, 'WOOD', 1);
+    await store.addResource(player.id, 'WOOD', 10);
+    await store.addResource(player.id, 'STONE', 10);
+    const shortcut = await runtime.handle(
+      event('CRAFT_ITEM', { templateId: 'stone_pickaxe' }, 'craft-old-shortcut'),
+    );
+    expect(shortcut.text).toMatch(/верстак|Не хватает/);
+    const items = await store.listItems(player.id);
+    expect(items.some((item) => item.templateId === 'stone_pickaxe')).toBe(false);
+    expect(items.some((item) => item.templateId === 'stone_axe')).toBe(false);
     await expect(
-      runtime.handle(event('CRAFT_ITEM', { templateId: 'stone_axe' }, 'craft-fail-1')),
+      runtime.handle(event('CRAFT_ITEM', { recipeId: 'planks' }, 'craft-fail-1')),
     ).resolves.toMatchObject({
       text: expect.stringContaining('Не хватает'),
     });
-    const items = await store.listItems(player.id);
-    expect(items.some((item) => item.templateId === 'stone_axe')).toBe(false);
-    const resources = await store.getResources(player.id);
-    expect(resources.WOOD).toBe(1);
+    const after = await store.getResources(player.id);
+    expect(after.WOOD).toBe(10);
+    expect(after.LOG ?? 0).toBe(0);
   });
 });
 
@@ -113,7 +119,8 @@ describe('idempotency', () => {
     const second = await runtime.handle(event('GATHER_WOOD', {}, 'wood-dup'));
     expect(second).toEqual(first);
     const resources = await store.getResources(player.id);
-    expect(resources.WOOD).toBe(6);
+    expect(resources.LOG).toBe(6);
+    expect(resources.WOOD ?? 0).toBe(0);
     const after = await store.findPlayerById(player.id);
     expect(after?.energy).toBe(18);
   });
@@ -176,16 +183,18 @@ describe('gather and crate', () => {
   it('gathers wood and spends energy', async () => {
     const { store, runtime, player } = await boot();
     const response = await runtime.handle(event('GATHER_WOOD', {}, 'wood-1'));
-    expect(response.text).toContain('+6 дерево');
+    expect(response.text).toContain('+6 бр');
     const resources = await store.getResources(player.id);
-    expect(resources.WOOD).toBe(6);
+    expect(resources.LOG).toBe(6);
+    expect(resources.WOOD ?? 0).toBe(0);
   });
 
-  it('opens the crate once and grants knife, rusk, wood and stone', async () => {
+  it('opens the crate once and grants knife, rusk and logs — not stone', async () => {
     const { store, runtime, player } = await boot();
     const first = await runtime.handle(event('OPEN_CRATE', {}, 'crate-1'));
     expect(first.text).toContain('каменный нож');
-    expect(first.text).toContain('дерево ×6');
+    expect(first.text).toContain('бревно ×2');
+    expect(first.text).not.toContain('камень ×');
     const flags = await store.getFlags(player.id);
     expect(flags.opened_start_crate).toBe('1');
     expect(flags.found_rusty_token).toBeUndefined();
@@ -194,23 +203,24 @@ describe('gather and crate', () => {
     expect(items.some((item) => item.templateId === 'dry_rusk')).toBe(true);
     expect(items.some((item) => item.templateId === 'rusty_token')).toBe(false);
     const resources = await store.getResources(player.id);
-    expect(resources.WOOD).toBe(6);
-    expect(resources.STONE).toBe(3);
+    expect(resources.LOG).toBe(2);
+    expect(resources.WOOD ?? 0).toBe(0);
+    expect(resources.STONE ?? 0).toBe(0);
     const second = await runtime.handle(event('OPEN_CRATE', {}, 'crate-2'));
     expect(second.text).toContain('уже забрал');
   });
 
-  it('adds 25% wood yield with a stone axe equipped', async () => {
+  it('adds 25% wood yield with a wooden axe equipped', async () => {
     const { store, runtime, player } = await boot();
-    await store.addResource(player.id, 'WOOD', 2);
-    await store.addResource(player.id, 'STONE', 2);
-    await runtime.handle(event('CRAFT_ITEM', { templateId: 'stone_axe' }, 'axe-for-wood'));
-    const items = await store.listItems(player.id);
-    const axe = items.find((item) => item.templateId === 'stone_axe')!;
+    const axe = await store.createItem({
+      playerId: player.id,
+      templateId: 'wooden_axe',
+      rarity: 'COMMON',
+    });
     await runtime.handle(event('EQUIP_ITEM', { itemId: axe.id }, 'equip-axe'));
     await runtime.handle(event('GATHER_WOOD', {}, 'wood-axe'));
     const resources = await store.getResources(player.id);
-    expect(resources.WOOD).toBe(7);
+    expect(resources.LOG).toBe(7);
   });
 });
 

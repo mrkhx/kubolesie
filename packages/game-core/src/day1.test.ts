@@ -62,6 +62,65 @@ async function refill(store: MemoryGameStore, playerId: string) {
   await store.savePlayer(player);
 }
 
+async function hasItem(store: MemoryGameStore, playerId: string, templateId: string) {
+  return (await store.listItems(playerId)).some((item) => item.templateId === templateId);
+}
+
+async function craftUntil(
+  runtime: GameRuntime,
+  store: MemoryGameStore,
+  playerId: string,
+  vkUserId: string,
+  target: 'wooden_pickaxe' | 'stone_pickaxe',
+) {
+  for (let i = 0; i < 24; i += 1) {
+    if (await hasItem(store, playerId, target)) return;
+    const resources = await store.getResources(playerId);
+    const table = await hasItem(store, playerId, 'crafting_table');
+    const log = resources.LOG ?? 0;
+    const plank = resources.PLANK ?? 0;
+    const stick = resources.STICK ?? 0;
+    const cobble = resources.COBBLESTONE ?? 0;
+
+    let recipeId = '';
+    if (!table) {
+      if (plank >= 4) recipeId = 'crafting_table';
+      else if (log >= 1) recipeId = 'planks';
+      else recipeId = 'gather';
+    } else if (stick < 2) {
+      if (plank >= 2) recipeId = 'sticks';
+      else if (log >= 1) recipeId = 'planks';
+      else recipeId = 'gather';
+    } else if (target === 'wooden_pickaxe') {
+      if (plank < 3) recipeId = log >= 1 ? 'planks' : 'gather';
+      else recipeId = 'wooden_pickaxe';
+    } else if (cobble < 3) {
+      recipeId = 'cobble';
+    } else {
+      recipeId = 'stone_pickaxe';
+    }
+
+    if (recipeId === 'gather') {
+      const player = await reload(store, playerId);
+      player.currentLocation = 'rem_camp';
+      await store.savePlayer(player);
+      await refill(store, playerId);
+      await act(runtime, vkUserId, 'GATHER_WOOD');
+      continue;
+    }
+    if (recipeId === 'cobble') {
+      const player = await reload(store, playerId);
+      player.currentLocation = 'stone_scree';
+      await store.savePlayer(player);
+      await refill(store, playerId);
+      await act(runtime, vkUserId, 'GATHER_STONE');
+      continue;
+    }
+    await act(runtime, vkUserId, 'CRAFT_ITEM', { recipeId });
+  }
+  expect(await hasItem(store, playerId, target)).toBe(true);
+}
+
 type GateHelp = 'stones' | 'boards' | 'mech' | 'ask';
 type NightPlace = 'rem' | 'shelter';
 
@@ -128,8 +187,8 @@ async function playToDay1Complete(options: PlayOptions = {}) {
   await refill(store, id);
   await act(runtime, vkUserId, 'GATHER_WOOD');
   if (shelter) {
-    const wood = (await store.getResources(id)).WOOD ?? 0;
-    if (wood < 6) await act(runtime, vkUserId, 'GATHER_WOOD');
+    const logs = (await store.getResources(id)).LOG ?? 0;
+    if (logs < 6) await act(runtime, vkUserId, 'GATHER_WOOD');
     await act(runtime, vkUserId, 'BUILD_TEMP_SHELTER');
   }
 
@@ -165,27 +224,14 @@ async function playToDay1Complete(options: PlayOptions = {}) {
   }
 
   await refill(store, id);
-  let stone = (await store.getResources(id)).STONE ?? 0;
-  let guard = 0;
-  while (stone < 3 && guard < 6) {
-    await act(runtime, vkUserId, 'GATHER_STONE');
-    stone = (await store.getResources(id)).STONE ?? 0;
-    guard += 1;
-  }
-
-  let wood = (await store.getResources(id)).WOOD ?? 0;
-  guard = 0;
-  while (wood < 2 && guard < 4) {
-    const current = await reload(store, id);
-    current.currentLocation = 'rem_camp';
-    await store.savePlayer(current);
-    await refill(store, id);
-    await act(runtime, vkUserId, 'GATHER_WOOD');
-    wood = (await store.getResources(id)).WOOD ?? 0;
-    guard += 1;
-  }
-
-  await act(runtime, vkUserId, 'CRAFT_ITEM', { templateId: 'stone_pickaxe' });
+  const backToRem = await reload(store, id);
+  backToRem.currentLocation = 'rem_camp';
+  await store.savePlayer(backToRem);
+  await craftUntil(runtime, store, id, vkUserId, 'wooden_pickaxe');
+  const toScree = await reload(store, id);
+  toScree.currentLocation = 'stone_scree';
+  await store.savePlayer(toScree);
+  await craftUntil(runtime, store, id, vkUserId, 'stone_pickaxe');
   const currentLoc = await reload(store, id);
   currentLoc.currentLocation = 'rem_camp';
   await store.savePlayer(currentLoc);
@@ -221,7 +267,7 @@ async function playToDay1Complete(options: PlayOptions = {}) {
 
   await refill(store, id);
   let ore = (await store.getResources(id)).IRON_ORE ?? 0;
-  guard = 0;
+  let guard = 0;
   let lastIron = { text: '' };
   while (ore < 8 && guard < 10) {
     lastIron = await act(runtime, vkUserId, 'GATHER_IRON');
@@ -270,8 +316,9 @@ describe('day 1 crate and consumables', () => {
     const secondItems = await store.listItems(player.id);
     expect(secondItems).toHaveLength(firstItems.length);
     const resources = await store.getResources(player.id);
-    expect(resources.WOOD).toBe(6);
-    expect(resources.STONE).toBe(3);
+    expect(resources.LOG).toBe(2);
+    expect(resources.STONE ?? 0).toBe(0);
+    expect(resources.WOOD ?? 0).toBe(0);
   });
 
   it('2. dry rusk restores energy and does not exceed max', async () => {
@@ -299,12 +346,12 @@ describe('day 1 crate and consumables', () => {
 describe('day 1 shelter and token', () => {
   it('3. shelter cannot be built twice', async () => {
     const { store, runtime, player, vkUserId } = await boot();
-    await store.addResource(player.id, 'WOOD', 12);
+    await store.addResource(player.id, 'LOG', 12);
     const first = await act(runtime, vkUserId, 'BUILD_TEMP_SHELTER');
     expect(first.text).toContain('крыша');
     const second = await act(runtime, vkUserId, 'BUILD_TEMP_SHELTER');
     expect(second.text).toMatch(/уже/);
-    expect((await store.getResources(player.id)).WOOD).toBe(6);
+    expect((await store.getResources(player.id)).LOG).toBe(6);
   });
 
   it('4. rusty token is granted only once', async () => {
@@ -664,7 +711,7 @@ describe('day 1 validation idempotency branches persist', () => {
       expect(flags.opened_start_crate).toBe('1');
       expect(flags.found_rusty_token).toBe('1');
       expect(flags.activated_node7_token).toBe('1');
-      expect((await restored.getResources(loaded.id)).WOOD).toBeGreaterThanOrEqual(6);
+      expect((await restored.getResources(loaded.id)).LOG).toBeGreaterThanOrEqual(6);
       expect((await restored.listItems(loaded.id)).some((item) => item.templateId === 'stone_knife')).toBe(true);
       const resumed = await again.handle(event('START_GAME', {}, 'p-resume', vkUserId));
       expect(resumed.state?.playerId).toBe(loaded.id);
@@ -675,12 +722,72 @@ describe('day 1 validation idempotency branches persist', () => {
   });
 });
 
+describe('day 1 crafting pipeline', () => {
+  it('cannot gather cobblestone without a wooden pickaxe', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    player.currentLocation = 'stone_scree';
+    await store.savePlayer(player);
+    const denied = await act(runtime, vkUserId, 'GATHER_STONE');
+    expect(denied.text).toContain('нельзя');
+    expect((await store.getResources(player.id)).COBBLESTONE ?? 0).toBe(0);
+    expect((await store.getResources(player.id)).STONE ?? 0).toBe(0);
+  });
+
+  it('wooden pickaxe cannot mine iron', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    player.currentLocation = 'old_adit';
+    await store.savePlayer(player);
+    await store.createItem({ playerId: player.id, templateId: 'wooden_pickaxe', rarity: 'COMMON' });
+    await store.upsertPlayerQuest({
+      playerId: player.id,
+      questId: 'iron_for_gate',
+      status: 'ACTIVE',
+      progress: {},
+    });
+    const denied = await act(runtime, vkUserId, 'GATHER_IRON');
+    expect(denied.text).toContain('нельзя');
+    expect((await store.getResources(player.id)).IRON_ORE ?? 0).toBe(0);
+  });
+
+  it('WOOD + STONE never crafts a stone pickaxe', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    await store.addResource(player.id, 'WOOD', 20);
+    await store.addResource(player.id, 'STONE', 20);
+    await store.createItem({ playerId: player.id, templateId: 'crafting_table', rarity: 'COMMON' });
+    const attempt = await act(runtime, vkUserId, 'CRAFT_ITEM', { templateId: 'stone_pickaxe' });
+    expect(attempt.text).toMatch(/Не хватает|верстак/);
+    expect((await store.listItems(player.id)).some((item) => item.templateId === 'stone_pickaxe')).toBe(false);
+  });
+
+  it('walks LOG → PLANK → STICK → table → wooden pickaxe → cobble → stone pickaxe', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    await store.addResource(player.id, 'LOG', 3);
+    await craftUntil(runtime, store, player.id, vkUserId, 'wooden_pickaxe');
+    expect(await hasItem(store, player.id, 'crafting_table')).toBe(true);
+    expect(await hasItem(store, player.id, 'wooden_pickaxe')).toBe(true);
+    const afterWood = await store.getResources(player.id);
+    expect(afterWood.WOOD ?? 0).toBe(0);
+    expect(afterWood.STONE ?? 0).toBe(0);
+
+    const loc = await reload(store, player.id);
+    loc.currentLocation = 'stone_scree';
+    await store.savePlayer(loc);
+    await craftUntil(runtime, store, player.id, vkUserId, 'stone_pickaxe');
+    expect(await hasItem(store, player.id, 'stone_pickaxe')).toBe(true);
+    const afterStone = await store.getResources(player.id);
+    expect(afterStone.COBBLESTONE ?? 0).toBeGreaterThanOrEqual(0);
+    expect(afterStone.STONE ?? 0).toBe(0);
+  });
+});
+
 describe('day 1 content contracts', () => {
   it('stone knife is the strongest starting weapon', () => {
     expect(ITEM_TEMPLATES.stone_knife.minDamage).toBe(3);
     expect(ITEM_TEMPLATES.stone_knife.maxDamage).toBe(5);
     expect(ITEM_TEMPLATES.stone_axe.maxDamage).toBe(4);
     expect(ITEM_TEMPLATES.stone_pickaxe.maxDamage).toBe(3);
+    expect(ITEM_TEMPLATES.wooden_pickaxe.oreYieldBonus ?? 0).toBe(0);
+    expect(ITEM_TEMPLATES.stone_pickaxe.oreYieldBonus).toBe(0.3);
   });
 
   it('START_GAME shows HUD and three start choices', async () => {

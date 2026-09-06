@@ -21,6 +21,10 @@ enum ResourceType {
   CHITIN_PLATE
   SHINY_STONE
   FOOD
+  LOG
+  PLANK
+  STICK
+  COBBLESTONE
 }
 
 enum Rarity {

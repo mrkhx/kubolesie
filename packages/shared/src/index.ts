@@ -1,5 +1,5 @@
-export const BALANCE_VERSION = '0.0.2';
-export const PROTOTYPE_VERSION = '0.0.2';
+export const BALANCE_VERSION = '0.0.3';
+export const PROTOTYPE_VERSION = '0.0.3';
 
 export const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
 export const ENERGY_PER_INTERVAL = 1;
@@ -94,7 +94,11 @@ export type ResourceType =
   | 'SHREW_FUR'
   | 'CHITIN_PLATE'
   | 'SHINY_STONE'
-  | 'FOOD';
+  | 'FOOD'
+  | 'LOG'
+  | 'PLANK'
+  | 'STICK'
+  | 'COBBLESTONE';
 
 export const RESOURCE_TYPES: ResourceType[] = [
   'WOOD',
@@ -109,6 +113,10 @@ export const RESOURCE_TYPES: ResourceType[] = [
   'CHITIN_PLATE',
   'SHINY_STONE',
   'FOOD',
+  'LOG',
+  'PLANK',
+  'STICK',
+  'COBBLESTONE',
 ];
 
 export type Rarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' | 'MYTHIC';

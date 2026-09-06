@@ -39,6 +39,10 @@ export function resourceLabel(resource: ResourceType): string {
     CHITIN_PLATE: 'Хитиновая пластина',
     SHINY_STONE: 'Блестящий камень',
     FOOD: 'Еда',
+    LOG: 'Бревно',
+    PLANK: 'Доски',
+    STICK: 'Палки',
+    COBBLESTONE: 'Булыжник',
   };
   return labels[resource];
 }

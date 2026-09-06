@@ -1,0 +1,5 @@
+-- AlterEnum
+ALTER TYPE "ResourceType" ADD VALUE 'LOG';
+ALTER TYPE "ResourceType" ADD VALUE 'PLANK';
+ALTER TYPE "ResourceType" ADD VALUE 'STICK';
+ALTER TYPE "ResourceType" ADD VALUE 'COBBLESTONE';

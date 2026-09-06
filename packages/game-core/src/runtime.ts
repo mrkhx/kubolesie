@@ -15,6 +15,7 @@ import {
 import {
   COMBAT_REQUIREMENTS,
   COMMAND_REQUIREMENTS,
+  CRAFT_PIPELINE,
   DIALOGUE_NODES,
   ENEMIES,
   GATHER_IRON,
@@ -26,6 +27,7 @@ import {
   LOCATIONS,
   NIGHT_REST,
   SHELTER,
+  START_CRATE,
   getDialogueNode,
   getEnemy,
   getItemTemplate,
@@ -33,6 +35,7 @@ import {
   getRecipe,
   resourceLabel,
   type CommandRequirement,
+  type CraftRecipe,
   type DialogueAction,
   type DialogueChoice,
   type DialogueCondition,
@@ -181,7 +184,10 @@ export class GameRuntime {
       case 'GATHER_IRON':
         return this.gatherIron(ctx, eventId);
       case 'CRAFT_ITEM':
-        return this.craftItem(ctx, String(command.payload?.templateId ?? ''));
+        return this.craftItem(
+          ctx,
+          String(command.payload?.recipeId ?? command.payload?.templateId ?? ''),
+        );
       case 'EQUIP_ITEM':
         return this.equipItem(ctx, String(command.payload?.itemId ?? ''));
       case 'USE_ITEM':
@@ -310,6 +316,15 @@ export class GameRuntime {
     return this.renderNode(ctx.player, ctx.flags.day_1_complete ? 'day1_complete' : 'forest_hub');
   }
 
+  private hasCraftingTable(ctx: Ctx): boolean {
+    return ctx.items.some((item) => item.templateId === 'crafting_table');
+  }
+
+  private canAffordRecipe(recipe: CraftRecipe, ctx: Ctx): boolean {
+    if (recipe.station === 'crafting_table' && !this.hasCraftingTable(ctx)) return false;
+    return Object.entries(recipe.cost).every(([resource, need]) => (ctx.resources[resource as ResourceType] ?? 0) >= (need ?? 0));
+  }
+
   private async openCamp(ctx: Ctx): Promise<GameResponse> {
     const resourceLines = Object.entries(ctx.resources)
       .filter(([, amount]) => (amount ?? 0) > 0)
@@ -320,20 +335,35 @@ export class GameRuntime {
       `Лагерь. ${location}`,
       this.hud(ctx),
       resourceLines ? `Ресурсы:\n${resourceLines}` : 'Ресурсов пока нет.',
-      'Крафт: топор (2 дерева + 2 камня), кирка (2 дерева + 3 камня).',
+      'Цепочка: бревно → доски → палки → верстак → деревянная кирка → булыжник → каменная кирка → железо.',
+      this.hasCraftingTable(ctx) ? 'Верстак стоит.' : 'Верстака нет — сначала доски.',
     ].join('\n');
-    const buttons: GameButton[] = [
-      { label: 'Крафт: топор', action: 'CRAFT_ITEM', payload: { templateId: 'stone_axe' } },
-      { label: 'Крафт: кирка', action: 'CRAFT_ITEM', payload: { templateId: 'stone_pickaxe' } },
-      { label: 'Инвентарь', action: 'OPEN_INVENTORY' },
-      { label: 'Оглядеться', action: 'EXPLORE' },
-    ];
+    const buttons: GameButton[] = [];
+    for (const recipeId of CRAFT_PIPELINE) {
+      const recipe = getRecipe(recipeId);
+      if (!recipe) continue;
+      if (recipeId === 'crafting_table' && this.hasCraftingTable(ctx)) continue;
+      if (!this.canAffordRecipe(recipe, ctx)) continue;
+      buttons.push({
+        label: `Крафт: ${recipe.name}`,
+        action: 'CRAFT_ITEM',
+        payload: { recipeId: recipe.id },
+      });
+    }
+    if ((ctx.resources.WOOD ?? 0) > 0) {
+      buttons.push({ label: 'Дерево → брёвна', action: 'CRAFT_ITEM', payload: { recipeId: 'salvage_wood' } });
+    }
+    if ((ctx.resources.STONE ?? 0) > 0) {
+      buttons.push({ label: 'Камень → булыжник', action: 'CRAFT_ITEM', payload: { recipeId: 'salvage_stone' } });
+    }
     if (ctx.player.currentLocation === 'forest_clearing' || ctx.player.currentLocation === 'rem_camp') {
       buttons.unshift({ label: 'Рубить дерево', action: 'GATHER_WOOD' });
     }
     if (ctx.player.currentLocation === 'stone_scree') {
-      buttons.unshift({ label: 'Добывать камень', action: 'GATHER_STONE' });
+      buttons.unshift({ label: 'Добывать булыжник', action: 'GATHER_STONE' });
     }
+    buttons.push({ label: 'Инвентарь', action: 'OPEN_INVENTORY' });
+    buttons.push({ label: 'Оглядеться', action: 'EXPLORE' });
     if (ctx.flags.met_rem) buttons.push({ label: 'К Рему', action: 'TALK_NPC', payload: { npcId: 'rem' } });
     return this.respond(ctx.player, text, buttons);
   }
@@ -370,16 +400,16 @@ export class GameRuntime {
     await this.spend(ctx.player, GATHER_WOOD.energyCost);
     const stats = await this.effectiveStats(ctx);
     const amount = Math.floor(GATHER_WOOD.baseYield * (1 + stats.woodYieldBonus));
-    const total = await this.store.addResource(ctx.player.id, 'WOOD', amount);
+    const total = await this.store.addResource(ctx.player.id, 'LOG', amount);
     ctx.player.currentState = 'gather_wood';
     ctx.player.currentLocation = ctx.player.currentLocation === 'rem_camp' ? 'rem_camp' : 'forest_clearing';
     await this.store.savePlayer(ctx.player);
     const tokenNote = await this.tryGrantToken(ctx);
-    const axeNote = stats.woodYieldBonus > 0 ? ' Каменный топор дал бонус.' : '';
+    const axeNote = stats.woodYieldBonus > 0 ? ' Топор дал бонус.' : '';
     void eventId;
     return this.respond(
       ctx.player,
-      `Ты рубишь дерево. +${amount} дерево (всего ${total}). −${GATHER_WOOD.energyCost} энергии.${axeNote}${tokenNote}`,
+      `Ты рубишь дерево. +${amount} брёвен (всего ${total}). −${GATHER_WOOD.energyCost} энергии.${axeNote}${tokenNote}`,
       [
         { label: 'Рубить ещё', action: 'GATHER_WOOD' },
         { label: 'Собрать укрытие', action: 'BUILD_TEMP_SHELTER' },
@@ -398,13 +428,13 @@ export class GameRuntime {
       amount += 1;
       await this.store.setFlag(ctx.player.id, 'scavenger_extra_stone', '1');
       ctx.flags.scavenger_extra_stone = '1';
-      extraNote = ' Падальщик не мешает: +1 камень.';
+      extraNote = ' Падальщик не мешает: +1 булыжник.';
     }
-    const total = await this.store.addResource(ctx.player.id, 'STONE', amount);
+    const total = await this.store.addResource(ctx.player.id, 'COBBLESTONE', amount);
     await this.store.savePlayer(ctx.player);
     const tokenNote = await this.tryGrantToken(ctx);
-    return this.respond(ctx.player, `Ты берёшь камень. +${amount} (всего ${total}).${extraNote}${tokenNote}`, [
-      { label: 'Ещё камень', action: 'GATHER_STONE' },
+    return this.respond(ctx.player, `Ты ломаешь булыжник. +${amount} (всего ${total}).${extraNote}${tokenNote}`, [
+      { label: 'Ещё булыжник', action: 'GATHER_STONE' },
       { label: 'Падальщик', action: 'DIALOGUE_CHOICE', payload: { nodeId: 'stone_scree', choiceId: 'scavenger' } },
       ...NAV,
     ]);
@@ -448,10 +478,12 @@ export class GameRuntime {
     ]);
   }
 
-  private async craftItem(ctx: Ctx, templateId: string): Promise<GameResponse> {
-    const recipe = getRecipe(templateId);
-    const template = getItemTemplate(templateId);
-    if (!recipe || !template) return this.respond(ctx.player, 'Такого рецепта нет.', NAV);
+  private async craftItem(ctx: Ctx, recipeId: string): Promise<GameResponse> {
+    const recipe = getRecipe(recipeId);
+    if (!recipe) return this.respond(ctx.player, 'Такого рецепта нет.', NAV);
+    if (recipe.station === 'crafting_table' && !this.hasCraftingTable(ctx)) {
+      throw new ActionRejectedError('Нужен верстак.');
+    }
     for (const [resource, need] of Object.entries(recipe.cost)) {
       const have = ctx.resources[resource as ResourceType] ?? 0;
       if (have < (need ?? 0)) {
@@ -463,21 +495,40 @@ export class GameRuntime {
     for (const [resource, need] of Object.entries(recipe.cost)) {
       await this.store.addResource(ctx.player.id, resource as ResourceType, -(need ?? 0));
     }
+    if (recipe.output.kind === 'resource') {
+      const total = await this.store.addResource(
+        ctx.player.id,
+        recipe.output.resource,
+        recipe.output.amount,
+      );
+      return this.respond(
+        ctx.player,
+        `Скрафчено: ${recipe.name}. +${recipe.output.amount} ${resourceLabel(recipe.output.resource)} (всего ${total}).`,
+        [
+          { label: 'Лагерь / крафт', action: 'OPEN_CAMP' },
+          ...NAV,
+        ],
+      );
+    }
+    const template = getItemTemplate(recipe.output.templateId);
+    if (!template) return this.respond(ctx.player, 'Такого рецепта нет.', NAV);
     const item = await this.store.createItem({
       playerId: ctx.player.id,
-      templateId,
+      templateId: template.id,
       rarity: template.rarity,
     });
     await this.store.recordItemHistory({
       itemId: item.id,
       playerId: ctx.player.id,
       type: 'CREATED',
-      meta: { recipe: templateId },
+      meta: { recipe: recipe.id },
     });
-    return this.respond(ctx.player, `Скрафчено: ${template.name}.`, [
-      { label: 'Надеть', action: 'EQUIP_ITEM', payload: { itemId: item.id } },
-      ...NAV,
-    ]);
+    const buttons: GameButton[] = [];
+    if (template.slot) {
+      buttons.push({ label: 'Надеть', action: 'EQUIP_ITEM', payload: { itemId: item.id } });
+    }
+    buttons.push({ label: 'Лагерь / крафт', action: 'OPEN_CAMP' }, ...NAV);
+    return this.respond(ctx.player, `Скрафчено: ${template.name}.`, buttons);
   }
 
   private async equipItem(ctx: Ctx, itemId: string): Promise<GameResponse> {
@@ -546,13 +597,22 @@ export class GameRuntime {
 
   private async buildShelter(ctx: Ctx): Promise<GameResponse> {
     if (ctx.flags.temporary_shelter_level) throw new ActionRejectedError('Укрытие уже стоит.');
-    const wood = ctx.resources.WOOD ?? 0;
-    if (wood < SHELTER.woodCost) {
-      throw new InsufficientResourcesError(`Нужно ${SHELTER.woodCost} дерева, есть ${wood}.`);
+    const logs = ctx.resources.LOG ?? 0;
+    const legacyWood = ctx.resources.WOOD ?? 0;
+    if (logs + legacyWood < SHELTER.woodCost) {
+      throw new InsufficientResourcesError(`Нужно ${SHELTER.woodCost} брёвен, есть ${logs + legacyWood}.`);
     }
     const ok = await this.store.tryClaimReward(ctx.player.id, 'structure', 'temp_shelter');
     if (!ok) throw new RewardAlreadyClaimedError('Укрытие уже построено.');
-    await this.store.addResource(ctx.player.id, 'WOOD', -SHELTER.woodCost);
+    let remaining = SHELTER.woodCost;
+    const takeLogs = Math.min(logs, remaining);
+    if (takeLogs > 0) {
+      await this.store.addResource(ctx.player.id, 'LOG', -takeLogs);
+      remaining -= takeLogs;
+    }
+    if (remaining > 0) {
+      await this.store.addResource(ctx.player.id, 'WOOD', -remaining);
+    }
     await this.store.setFlag(ctx.player.id, 'temporary_shelter_level', '1');
     return this.renderNode(ctx.player, 'shelter_built');
   }
@@ -586,8 +646,7 @@ export class GameRuntime {
     if (claimed) return this.renderNode(ctx.player, 'open_crate_empty');
     const ok = await this.store.tryClaimReward(ctx.player.id, 'crate', 'start_crate');
     if (!ok) throw new RewardAlreadyClaimedError();
-    await this.store.addResource(ctx.player.id, 'WOOD', 6);
-    await this.store.addResource(ctx.player.id, 'STONE', 3);
+    await this.store.addResource(ctx.player.id, 'LOG', START_CRATE.log);
     const knife = await this.store.createItem({
       playerId: ctx.player.id,
       templateId: 'stone_knife',
@@ -605,7 +664,7 @@ export class GameRuntime {
     await this.store.savePlayer(ctx.player);
     return this.respond(
       ctx.player,
-      `${DIALOGUE_NODES.open_crate.text}\n\nПолучено: дерево ×6, камень ×3, сухарь, каменный нож.`,
+      `${DIALOGUE_NODES.open_crate.text}\n\nПолучено: бревно ×${START_CRATE.log}, сухарь, каменный нож.`,
       this.choicesToButtons('open_crate', DIALOGUE_NODES.open_crate.choices),
     );
   }

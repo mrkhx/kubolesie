@@ -148,7 +148,7 @@ export const FOREST_NODES: Record<string, DialogueNode> = {
   },
   open_crate: {
     id: 'open_crate',
-    text: 'В ящике — обломки, камень, сухарь и каменный нож. На рукояти выцарапан странный знак.',
+    text: 'В ящике — два бревна, сухарь и каменный нож. На рукояти выцарапан странный знак.',
     choices: [
       { id: 'knife', label: 'Осмотреть нож', nextNode: 'inspect_knife' },
       { id: 'hub', label: 'Оглядеться', nextNode: 'forest_hub' },
@@ -214,7 +214,7 @@ export const FOREST_NODES: Record<string, DialogueNode> = {
   },
   shelter_built: {
     id: 'shelter_built',
-    text: 'Из шести палок и упрямства получается крыша. Ночью здесь можно пережить холод.',
+    text: 'Из шести брёвен и упрямства получается крыша. Ночью здесь можно пережить холод.',
     choices: [{ id: 'hub', label: 'Оглядеться', nextNode: 'forest_hub' }],
   },
 };

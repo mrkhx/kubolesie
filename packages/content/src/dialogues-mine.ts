@@ -3,7 +3,7 @@ import type { DialogueNode } from './dialogue-types';
 export const MINE_NODES: Record<string, DialogueNode> = {
   stone_scree: {
     id: 'stone_scree',
-    text: 'Каменная осыпь. Серые кубы, осыпающаяся крошка. Чуть в стороне копошится каменный падальщик. Он тебя не атакует.',
+    text: 'Каменная осыпь. Серые кубы. Голыми руками булыжник не взять — нужна хотя бы деревянная кирка. Чуть в стороне копошится каменный падальщик. Он тебя не атакует.',
     choices: [
       { id: 'gather', label: 'Добывать камень', command: 'GATHER_STONE' },
       { id: 'scavenger', label: 'Подойти к падальщику', nextNode: 'scavenger' },

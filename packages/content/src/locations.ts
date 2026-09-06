@@ -18,7 +18,7 @@ export const LOCATIONS: Record<string, LocationTemplate> = {
   stone_scree: {
     id: 'stone_scree',
     name: 'Каменная осыпь',
-    text: 'Склон из серых кубов. Здесь добывают камень.',
+    text: 'Склон из серых кубов. Булыжник берётся деревянной или каменной киркой.',
   },
   old_adit: {
     id: 'old_adit',

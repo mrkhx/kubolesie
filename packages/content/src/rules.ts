@@ -23,6 +23,10 @@ export const GATHER_IRON = {
   collapseMaxHp: 10,
 } as const;
 
+export const START_CRATE = {
+  log: 2,
+} as const;
+
 export const SHELTER = {
   woodCost: 6,
   nightEnergyBonus: 6,
@@ -58,8 +62,15 @@ export interface CommandRequirement {
 
 export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequirement>> = {
   GATHER_WOOD: { locations: ['forest_clearing', 'rem_camp'] },
-  GATHER_STONE: { locations: ['stone_scree'] },
-  GATHER_IRON: { locations: ['old_adit'], itemsAny: ['stone_pickaxe'], quest: { id: 'iron_for_gate', statuses: ['ACTIVE'] } },
+  GATHER_STONE: {
+    locations: ['stone_scree'],
+    itemsAny: ['wooden_pickaxe', 'stone_pickaxe'],
+  },
+  GATHER_IRON: {
+    locations: ['old_adit'],
+    itemsAny: ['stone_pickaxe'],
+    quest: { id: 'iron_for_gate', statuses: ['ACTIVE'] },
+  },
   BUILD_TEMP_SHELTER: { locations: ['forest_clearing'], once: { rewardType: 'structure', rewardRef: 'temp_shelter' } },
   FEED_SCAVENGER: { locations: ['stone_scree'] },
   RETURN_IRON: { quest: { id: 'iron_for_gate', statuses: ['ACTIVE'] } },
