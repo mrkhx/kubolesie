@@ -93,6 +93,7 @@ import {
   wenzelModifiers,
   type WeekHost,
 } from './week';
+import { dispatchMeta, grantMetaAchievement, isMetaMenu, META_COMMANDS, noteActivity, openMetaMenu } from './meta';
 
 const NAV: GameButton[] = [
   { label: '👁 Осмотреться', action: 'EXPLORE' },
@@ -267,6 +268,9 @@ export class GameRuntime {
       case 'COMPLETE_DAY_2':
         return this.completeDay2(ctx);
       default:
+        if ((META_COMMANDS as readonly string[]).includes(command.type)) {
+          return dispatchMeta(this.store, player, command, this.now());
+        }
         if ((WEEK_COMMANDS as readonly string[]).includes(command.type)) {
           return dispatchWeek(this.weekHost(), ctx, command, eventId);
         }
@@ -304,6 +308,10 @@ export class GameRuntime {
       'BEGIN_DAY_7',
       'EQUIP_ITEM',
       'USE_ITEM',
+      'OPEN_PROFILE',
+      'CLAN_ACT',
+      'COSMETIC_ACT',
+      'LEADERBOARD_PAGE',
     ];
     if (ctx.player.currentState.startsWith('night_') && !nightAllowed.includes(type)) {
       throw new ActionRejectedError('Сейчас ночь. Дождись утра.');
@@ -495,6 +503,7 @@ export class GameRuntime {
   }
 
   private async openMenu(ctx: Ctx, menu: ActionMenuId, extraText?: string): Promise<GameResponse> {
+    if (isMetaMenu(menu)) return openMetaMenu(this.store, ctx.player, menu, this.now());
     if (isWeekMenu(menu)) return openWeekMenu(this.weekHost(), ctx, menu);
     const built = buildActionMenu(menu, this.snapshot(ctx));
     const text = extraText ?? (menu === 'hub' ? this.hubCampText(ctx) : built.text);
@@ -577,6 +586,7 @@ export class GameRuntime {
     void eventId;
     const daily = await noteDailyGather(this.weekHost(), ctx);
     const dailyNote = daily.length ? ` ${daily.join(' ')}` : '';
+    await noteActivity(this.store, ctx.player, { type: 'gather', amount });
     const fresh = await this.load(ctx.player);
     const menu = buildActionMenu('gather', this.snapshot(fresh));
     return this.respond(
@@ -603,6 +613,7 @@ export class GameRuntime {
     const tokenNote = await this.tryGrantToken(ctx);
     const daily = await noteDailyGather(this.weekHost(), ctx);
     const dailyNote = daily.length ? ` ${daily.join(' ')}` : '';
+    await noteActivity(this.store, ctx.player, { type: 'gather', amount });
     const fresh = await this.load(ctx.player);
     const menu = buildActionMenu('gather', this.snapshot(fresh));
     return this.respond(ctx.player, `Ты ломаешь булыжник. +${amount} (всего ${total}).${extraNote}${tokenNote}${dailyNote}`, menu.buttons);
@@ -635,10 +646,12 @@ export class GameRuntime {
     }
     if (total >= IRON_FOR_GATE_TARGET && !ctx.flags.found_blue_light) {
       await this.store.setFlag(ctx.player.id, 'found_blue_light', '1');
+      await noteActivity(this.store, ctx.player, { type: 'gather', amount });
       const node = await this.renderNode(ctx.player, 'adit_blue_light');
       node.text = `${extra}\n\n${node.text}`;
       return node;
     }
+    await noteActivity(this.store, ctx.player, { type: 'gather', amount });
     return this.respond(ctx.player, extra, [
       { label: '⛏ Искать ещё', action: 'GATHER_IRON' },
       { label: 'Штольня', action: 'DIALOGUE_CHOICE', payload: { nodeId: 'old_adit', choiceId: 'leave' } },
@@ -656,6 +669,7 @@ export class GameRuntime {
     }
     const daily = await noteDailyGather(this.weekHost(), ctx);
     const dailyNote = daily.length ? ` ${daily.join(' ')}` : '';
+    await noteActivity(this.store, ctx.player, { type: 'gather', amount });
     const fresh = await this.load(ctx.player);
     const menu = buildActionMenu('gather', this.snapshot(fresh));
     return this.respond(
@@ -737,6 +751,7 @@ export class GameRuntime {
       const fresh = await this.load(ctx.player);
       const group = recipeGroup(recipe.id) ?? 'items';
       const menu = buildActionMenu(group, this.snapshot(fresh));
+      await noteActivity(this.store, ctx.player, { type: 'craft', count: 1 });
       return this.respond(
         ctx.player,
         `Скрафчено: ${recipe.name}. +${recipe.output.amount} ${resourceLabel(recipe.output.resource)} (всего ${total}).`,
@@ -773,6 +788,7 @@ export class GameRuntime {
       ctx.flags[flag] = '1';
     }
     const dailyNotes = await noteDailyCraft(this.weekHost(), ctx, recipe.id);
+    await noteActivity(this.store, ctx.player, { type: 'craft', count: amount });
     const fresh = await this.load(ctx.player);
     const group = recipe.id === 'campfire' ? 'camp' : recipeGroup(recipe.id) ?? 'items';
     const menu = buildActionMenu(group, this.snapshot(fresh));
@@ -1049,6 +1065,7 @@ export class GameRuntime {
     ctx.player.currentLocation = 'player_camp';
     ctx.player.currentState = 'camp_founded';
     await this.store.savePlayer(ctx.player);
+    await grantMetaAchievement(this.store, ctx.player.id, 'FIRST_CAMP');
     const roof = useShelter
       ? 'Ты ставишь стан на укрытие. Крыша уже есть — костру нужно меньше брёвен.'
       : 'Пустая клетка. Всё с нуля. Костёр возьмёт полный набор брёвен.';
@@ -1112,6 +1129,8 @@ export class GameRuntime {
     });
     await this.store.setFlag(ctx.player.id, 'day_2_complete', '1');
     const xpNote = await this.addXp(ctx.player, CAMP_QUEST_XP);
+    await noteActivity(this.store, ctx.player, { type: 'quest', id: 'found_a_camp' });
+    await noteActivity(this.store, ctx.player, { type: 'day', day: 2 });
     const node = await this.renderNode(ctx.player, 'day2_complete');
     node.text = `${node.text}\n${xpNote}`;
     return node;
@@ -1207,6 +1226,11 @@ export class GameRuntime {
       finishedAt: this.now(),
     });
     await this.store.addCombatEvents(match.id, battle.events);
+    await noteActivity(this.store, ctx.player, {
+      type: 'pve',
+      result: battle.result,
+      enemyId: enemy.id,
+    });
     if (battle.result === 'LOSS') {
       ctx.player.hp = Math.max(1, Math.floor(ctx.player.maxHp * 0.2));
     } else {
@@ -1280,6 +1304,7 @@ export class GameRuntime {
             rarity: 'COMMON',
           });
           await this.store.recordItemHistory({ itemId: gloves.id, playerId: ctx.player.id, type: 'LOOTED' });
+          await noteActivity(this.store, ctx.player, { type: 'loot', count: 1 });
           notes.push('Потёртые перчатки!');
           buttons.unshift({ label: 'Надеть перчатки', action: 'EQUIP_ITEM', payload: { itemId: gloves.id } });
         }
@@ -1336,6 +1361,7 @@ export class GameRuntime {
     });
     player.coins = next;
     await this.store.savePlayer(player);
+    await noteActivity(this.store, player, { type: 'coins', amount });
     return player;
   }
 
@@ -1596,6 +1622,7 @@ export class GameRuntime {
     await this.store.setFlag(player.id, 'day_1_complete', '1');
     player.currentState = 'day1_complete';
     await this.store.savePlayer(player);
+    await noteActivity(this.store, player, { type: 'day', day: 1 });
     const ctx = await this.load(player);
     const pack = await this.store.tryClaimReward(player.id, 'day1', 'survivor_pack');
     let packNote = '';

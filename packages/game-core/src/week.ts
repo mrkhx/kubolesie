@@ -38,6 +38,7 @@ import {
 } from './errors';
 import { formatCombatLog } from './combat-log';
 import type { GameStore, InventoryItemRecord, PlayerQuestRecord, PlayerRecord } from './store';
+import { grantMetaAchievement, noteActivity } from './meta';
 
 export const WEEK_MENUS = ['wedge', 'daily', 'furnace', 'trade', 'pvp', 'prep'] as const;
 export type WeekMenuId = (typeof WEEK_MENUS)[number];
@@ -157,6 +158,7 @@ async function bumpDaily(
   }
   if (done && !ctx.flags[flag]) {
     await setFlag(host, ctx, flag);
+    await noteActivity(host.store, ctx.player, { type: 'quest', id: questId, daily: true });
     note.push(`Ежедневка закрыта: ${kind === 'kill' ? 'бой' : kind === 'gather' ? 'добыча' : 'крафт'}.`);
   }
   if (ctx.flags.daily_kill_d3 && ctx.flags.daily_gather_d3 && ctx.flags.daily_craft_d3 && !ctx.flags.daily_crate_d3) {
@@ -395,6 +397,8 @@ async function completeDay3(host: WeekHost, ctx: WeekCtx): Promise<GameResponse>
   }
   await setFlag(host, ctx, 'day_3_complete');
   const xp = await host.addXp(ctx.player, 25);
+  await noteActivity(host.store, ctx.player, { type: 'quest', id: 'day_3' });
+  await noteActivity(host.store, ctx.player, { type: 'day', day: 3 });
   const node = await host.renderNode(ctx.player, 'day3_complete');
   node.text = `${node.text}\n${xp}`;
   if (ctx.flags.wedge_map_fragment_poor && !ctx.flags.wedge_map_fragment) {
@@ -420,6 +424,8 @@ async function completeDay4(host: WeekHost, ctx: WeekCtx): Promise<GameResponse>
     await host.addXp(ctx.player, FURNACE_QUEST_XP);
   }
   await setFlag(host, ctx, 'day_4_complete');
+  await noteActivity(host.store, ctx.player, { type: 'quest', id: 'light_the_furnace' });
+  await noteActivity(host.store, ctx.player, { type: 'day', day: 4 });
   return host.renderNode(ctx.player, 'day4_complete');
 }
 
@@ -440,6 +446,8 @@ async function completeDay5(host: WeekHost, ctx: WeekCtx): Promise<GameResponse>
     await host.addXp(ctx.player, 20);
   }
   await setFlag(host, ctx, 'day_5_complete');
+  await noteActivity(host.store, ctx.player, { type: 'quest', id: 'deal_with_vel' });
+  await noteActivity(host.store, ctx.player, { type: 'day', day: 5 });
   return host.renderNode(ctx.player, 'day5_complete');
 }
 
@@ -461,6 +469,8 @@ async function completeDay6(host: WeekHost, ctx: WeekCtx): Promise<GameResponse>
   }
   await setFlag(host, ctx, 'day_6_complete');
   await setFlag(host, ctx, 'gate_failing');
+  await noteActivity(host.store, ctx.player, { type: 'quest', id: 'yara_claim' });
+  await noteActivity(host.store, ctx.player, { type: 'day', day: 6 });
   return host.renderNode(ctx.player, 'day6_complete');
 }
 
@@ -484,6 +494,8 @@ async function completeDay7(host: WeekHost, ctx: WeekCtx): Promise<GameResponse>
     seen: true,
     defeated: false,
   });
+  await noteActivity(host.store, ctx.player, { type: 'day', day: 7 });
+  await noteActivity(host.store, ctx.player, { type: 'week' });
   return host.renderNode(ctx.player, 'seven_seals');
 }
 
@@ -601,7 +613,10 @@ async function furnaceAct(host: WeekHost, ctx: WeekCtx, act: string): Promise<Ga
     const nextOut = output + 1;
     await setFlag(host, ctx, 'furnace_fuel', String(nextFuel));
     await setFlag(host, ctx, 'furnace_output', String(nextOut));
-    if (!ctx.flags.first_ingot) await setFlag(host, ctx, 'first_ingot');
+    if (!ctx.flags.first_ingot) {
+      await setFlag(host, ctx, 'first_ingot');
+      await grantMetaAchievement(host.store, ctx.player.id, 'FIRST_IRON');
+    }
     return furnaceScreen(host, await host.load(ctx.player), `Плавка. Слиток в золе. Топливо ${nextFuel}.`);
   }
   if (act === 'take') {
@@ -659,6 +674,7 @@ async function tradeAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, un
     await setFlag(host, ctx, 'sold_rusty_token');
     await setFlag(host, ctx, 'traded_with_vel');
     await host.store.adjustNpcRelation(ctx.player.id, 'rem', -3, 0);
+    await noteActivity(host.store, ctx.player, { type: 'trade' });
     return host.respond(
       ctx.player,
       `Вел прячет жетон. +${TOKEN_SALE_PRICE} монет. Рем этого не простит. Узел уже активирован.`,
@@ -674,6 +690,7 @@ async function tradeAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, un
     await host.changeCoins(ctx.player, TOOTH_SALE_PRICE, 'vel_tooth', 'stumpfang_tooth');
     await setFlag(host, ctx, 'sold_stumpfang_tooth');
     await setFlag(host, ctx, 'traded_with_vel');
+    await noteActivity(host.store, ctx.player, { type: 'trade' });
     return host.respond(
       ctx.player,
       `Вел: «Зуб пня. На гребне такие вешают на двери.» +${TOOTH_SALE_PRICE} монет.`,
@@ -702,6 +719,7 @@ async function tradeAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, un
       await host.store.addResource(ctx.player.id, sku.resource, sku.amount ?? 1);
     }
     await setFlag(host, ctx, 'traded_with_vel');
+    await noteActivity(host.store, ctx.player, { type: 'trade' });
     return host.respond(ctx.player, `Куплено: ${sku.name}. −${sku.price} монет.`, tradeButtons(await host.load(ctx.player)));
   }
   if (act === 'sell') {
@@ -712,6 +730,7 @@ async function tradeAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, un
     await host.store.addResource(ctx.player.id, sku.resource, -1);
     await host.changeCoins(ctx.player, sku.price, 'vel_sell', sku.resource);
     await setFlag(host, ctx, 'traded_with_vel');
+    await noteActivity(host.store, ctx.player, { type: 'trade' });
     return host.respond(
       ctx.player,
       `Продано: ${resourceLabel(sku.resource)}. +${sku.price} монет.`,
@@ -856,6 +875,11 @@ async function startPvp(host: WeekHost, ctx: WeekCtx, eventId: string, rivalId: 
     finishedAt: host.now(),
   });
   await host.store.addCombatEvents(match.id, battle.events);
+  await noteActivity(host.store, ctx.player, {
+    type: 'pvp',
+    result: battle.result,
+    rivalId: rival.id,
+  });
   if (battle.result === 'LOSS') ctx.player.hp = Math.max(1, Math.floor(ctx.player.maxHp * 0.2));
   else ctx.player.hp = Math.max(1, battle.playerHp);
   await host.store.savePlayer(ctx.player);
@@ -1128,6 +1152,11 @@ export async function applyWeekLoot(
       });
       await host.store.recordItemHistory({ itemId: item.id, playerId: ctx.player.id, type: 'LOOTED' });
       notes.push(`Получено: ${template.name}.`);
+      await noteActivity(host.store, ctx.player, {
+        type: 'loot',
+        count: 1,
+        rare: template.rarity === 'RARE' || template.rarity === 'EPIC' || template.rarity === 'LEGENDARY' || template.rarity === 'MYTHIC',
+      });
     }
   }
   if (first && spec.firstFlags) {
@@ -1144,9 +1173,13 @@ export async function applyWeekLoot(
       await host.store.recordItemHistory({ itemId: item.id, playerId: ctx.player.id, type: 'LOOTED' });
       await setFlag(host, ctx, spec.rare.flag);
       notes.push(`Редкое: ${template.name}!`);
+      await noteActivity(host.store, ctx.player, { type: 'loot', count: 1, rare: true });
     }
   }
   if (spec.dailyKill) await bumpDaily(host, ctx, 'kill', notes);
+  if (enemyId === 'stumpfang' && first) {
+    await noteActivity(host.store, ctx.player, { type: 'quest', id: 'stumpfang_hunt' });
+  }
   return notes;
 }
 
@@ -1181,6 +1214,8 @@ export async function applyWenzelVictory(host: WeekHost, ctx: WeekCtx): Promise<
       seen: true,
       defeated: true,
     });
+    await noteActivity(host.store, ctx.player, { type: 'loot', count: 3, rare: true });
+    await noteActivity(host.store, ctx.player, { type: 'quest', id: 'hold_the_hinges' });
   } else {
     notes.push('Сюжетный лут уже получен.');
   }

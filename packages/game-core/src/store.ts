@@ -1,8 +1,11 @@
 import type {
+  ApplicationStatus,
+  ClanRole,
   CombatResult,
   CurrencyCode,
   EquipmentSlot,
   GameResponse,
+  InviteStatus,
   ItemHistoryType,
   QuestStatus,
   Rarity,
@@ -87,6 +90,120 @@ export interface CombatMatchRecord {
   finishedAt: Date | null;
 }
 
+export interface PlayerStatisticsRecord {
+  playerId: string;
+  pveWins: number;
+  pveLosses: number;
+  pvpWins: number;
+  pvpLosses: number;
+  bossWins: number;
+  bossLosses: number;
+  craftedItems: number;
+  resourcesGathered: number;
+  itemsLooted: number;
+  rareItemsFound: number;
+  coinsEarned: number;
+  coinsSpent: number;
+  tradesCompleted: number;
+  questsCompleted: number;
+  dailyQuestsCompleted: number;
+  daysCompleted: number;
+}
+
+export type StatisticsDelta = Partial<Omit<PlayerStatisticsRecord, 'playerId'>>;
+
+export interface PlayerRatingRecord {
+  playerId: string;
+  pvpRating: number;
+  lifetimeScore: number;
+  weeklyScore: number;
+  weeklyPeriod: string;
+  seasonId: string;
+  weeklyPvpOpponents: string;
+}
+
+export interface PlayerBossStatRecord {
+  playerId: string;
+  bossId: string;
+  wins: number;
+  losses: number;
+}
+
+export interface ClanRecord {
+  id: string;
+  name: string;
+  nameKey: string;
+  tag: string;
+  tagKey: string;
+  description: string;
+  leaderPlayerId: string;
+  level: number;
+  xp: number;
+  createdAt: Date;
+}
+
+export interface ClanMemberRecord {
+  id: string;
+  clanId: string;
+  playerId: string;
+  role: ClanRole;
+  joinedAt: Date;
+}
+
+export interface ClanApplicationRecord {
+  id: string;
+  clanId: string;
+  playerId: string;
+  status: ApplicationStatus;
+  createdAt: Date;
+}
+
+export interface ClanInviteRecord {
+  id: string;
+  clanId: string;
+  fromPlayerId: string;
+  playerId: string;
+  status: InviteStatus;
+  expiresAt: Date | null;
+  createdAt: Date;
+}
+
+export interface ClanContributionRecord {
+  clanId: string;
+  playerId: string;
+  periodKey: string;
+  score: number;
+}
+
+export interface EntitlementRecord {
+  playerId: string;
+  productId: string;
+  grantedAt: Date;
+  source: string;
+  externalTransactionId: string | null;
+}
+
+export interface PlayerCosmeticRecord {
+  playerId: string;
+  profileFrame: string | null;
+  title: string | null;
+  badge: string | null;
+  campTheme: string | null;
+  chatBadge: string | null;
+}
+
+export interface PlayerAchievementRecord {
+  playerId: string;
+  achievementId: string;
+  grantedAt: Date;
+}
+
+export interface LeaderboardEntry {
+  id: string;
+  name: string;
+  value: number;
+}
+
 export interface GameStore {
   findPlayerById(id: string): Promise<PlayerRecord | null>;
   findPlayerByVkUserId(vkUserId: string): Promise<PlayerRecord | null>;
@@ -154,6 +271,68 @@ export interface GameStore {
   listDiscoveries(playerId: string): Promise<DiscoveryRecord[]>;
   upsertDiscovery(record: DiscoveryRecord): Promise<void>;
 
+  getStatistics(playerId: string): Promise<PlayerStatisticsRecord>;
+  incrementStatistics(playerId: string, delta: StatisticsDelta): Promise<PlayerStatisticsRecord>;
+  incrementBossStat(playerId: string, bossId: string, field: 'wins' | 'losses'): Promise<PlayerBossStatRecord>;
+  getRating(playerId: string): Promise<PlayerRatingRecord>;
+  saveRating(record: PlayerRatingRecord): Promise<PlayerRatingRecord>;
+  listScoreboard(
+    board: 'score' | 'pvp' | 'weekly',
+    periodKey: string,
+    limit: number,
+    offset: number,
+  ): Promise<LeaderboardEntry[]>;
+  getScoreboardRank(board: 'score' | 'pvp' | 'weekly', playerId: string, periodKey: string): Promise<number>;
+
+  createClan(input: {
+    name: string;
+    tag: string;
+    description: string;
+    leaderPlayerId: string;
+  }): Promise<ClanRecord>;
+  getClan(clanId: string): Promise<ClanRecord | null>;
+  findClanByNameKey(nameKey: string): Promise<ClanRecord | null>;
+  findClanByTagKey(tagKey: string): Promise<ClanRecord | null>;
+  getPlayerClan(playerId: string): Promise<{ clan: ClanRecord; member: ClanMemberRecord } | null>;
+  listClans(query: string, limit: number, offset: number): Promise<ClanRecord[]>;
+  addClanXp(clanId: string, amount: number): Promise<ClanRecord>;
+  listClanMembers(clanId: string): Promise<ClanMemberRecord[]>;
+  addClanMember(input: { clanId: string; playerId: string; role: ClanRole }): Promise<ClanMemberRecord>;
+  removeClanMember(clanId: string, playerId: string): Promise<void>;
+  setClanMemberRole(clanId: string, playerId: string, role: ClanRole): Promise<void>;
+  setClanLeader(clanId: string, playerId: string): Promise<void>;
+  deleteClan(clanId: string): Promise<void>;
+
+  createApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord>;
+  getPendingApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord | null>;
+  listPendingApplications(clanId: string): Promise<ClanApplicationRecord[]>;
+  listPlayerApplications(playerId: string): Promise<ClanApplicationRecord[]>;
+  setApplicationStatus(id: string, status: ApplicationStatus): Promise<void>;
+  cancelPendingApplications(playerId: string): Promise<void>;
+
+  addContribution(clanId: string, playerId: string, periodKey: string, amount: number): Promise<number>;
+  getContribution(clanId: string, playerId: string, periodKey: string): Promise<number>;
+  clanSeasonContribution(clanId: string, periodKey: string): Promise<number>;
+  listClanLeaderboard(periodKey: string, limit: number, offset: number): Promise<LeaderboardEntry[]>;
+  getClanLeaderboardRank(clanId: string, periodKey: string): Promise<number>;
+
+  tryGrantEntitlement(
+    playerId: string,
+    productId: string,
+    source: string,
+    externalTransactionId?: string,
+  ): Promise<boolean>;
+  listEntitlements(playerId: string): Promise<EntitlementRecord[]>;
+  hasEntitlement(playerId: string, productId: string): Promise<boolean>;
+  getCosmetics(playerId: string): Promise<PlayerCosmeticRecord>;
+  setCosmetic(
+    playerId: string,
+    slot: keyof Omit<PlayerCosmeticRecord, 'playerId'>,
+    productId: string | null,
+  ): Promise<void>;
+  tryGrantAchievement(playerId: string, achievementId: string): Promise<boolean>;
+  listAchievements(playerId: string): Promise<PlayerAchievementRecord[]>;
+
   persist?(): Promise<void>;
 }
 
@@ -164,3 +343,22 @@ export interface DiscoveryRecord {
   seen: boolean;
   defeated: boolean;
 }
+
+export const EMPTY_STATISTICS = {
+  pveWins: 0,
+  pveLosses: 0,
+  pvpWins: 0,
+  pvpLosses: 0,
+  bossWins: 0,
+  bossLosses: 0,
+  craftedItems: 0,
+  resourcesGathered: 0,
+  itemsLooted: 0,
+  rareItemsFound: 0,
+  coinsEarned: 0,
+  coinsSpent: 0,
+  tradesCompleted: 0,
+  questsCompleted: 0,
+  dailyQuestsCompleted: 0,
+  daysCompleted: 0,
+} as const;

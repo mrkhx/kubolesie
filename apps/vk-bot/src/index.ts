@@ -50,6 +50,7 @@ const TEXT_ALIASES: Record<string, GameCommandType> = {
   жетон: 'INSPECT_TOKEN',
   укрытие: 'BUILD_TEMP_SHELTER',
   ночь: 'REST_NIGHT',
+  профиль: 'OPEN_PROFILE',
 };
 
 const TEXT_MENU_ALIASES: Record<string, string> = {
@@ -68,6 +69,12 @@ const TEXT_MENU_ALIASES: Record<string, string> = {
   стычка: 'pvp',
   осыпь: 'pvp',
   подготовка: 'prep',
+  герой: 'hero',
+  клан: 'clan',
+  рейтинг: 'ratings',
+  рейтинги: 'ratings',
+  статистика: 'stats',
+  достижения: 'achievements',
 };
 
 export function parseMockVkEvent(input: MockVkEvent): NormalizedIncomingEvent {

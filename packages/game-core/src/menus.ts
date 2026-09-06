@@ -11,7 +11,7 @@ import type {
   ResourceType,
 } from '@kubolesie/shared';
 
-export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep';
+export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'cosmetics' | 'achievements';
 
 export const ACTION_MENUS: readonly ActionMenuId[] = [
   'hub',
@@ -27,6 +27,20 @@ export const ACTION_MENUS: readonly ActionMenuId[] = [
   'trade',
   'pvp',
   'prep',
+  'hero',
+  'profile',
+  'stats',
+  'ratings',
+  'ratings_global',
+  'ratings_pvp',
+  'ratings_weekly',
+  'ratings_clans',
+  'clan',
+  'clan_find',
+  'clan_manage',
+  'clan_members',
+  'cosmetics',
+  'achievements',
 ];
 
 export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly string[]> = {
@@ -81,6 +95,20 @@ const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
   trade: 'hub',
   pvp: 'hub',
   prep: 'hub',
+  hero: 'hub',
+  profile: 'hero',
+  stats: 'hero',
+  ratings: 'hero',
+  ratings_global: 'ratings',
+  ratings_pvp: 'ratings',
+  ratings_weekly: 'ratings',
+  ratings_clans: 'ratings',
+  clan: 'hero',
+  clan_find: 'clan',
+  clan_manage: 'clan',
+  clan_members: 'clan',
+  cosmetics: 'profile',
+  achievements: 'profile',
 };
 
 export interface MenuSnapshot {
@@ -218,10 +246,8 @@ export function hubButtons(ctx: MenuSnapshot): GameButton[] {
     buttons.push({ label: '🏕 Стан', action: 'OPEN_MENU', payload: { menu: 'camp' } });
   } else if (ctx.currentLocation === 'ashen_wedge') {
     buttons.push({ label: '🌲 Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
-  } else if (ctx.flags.met_vel && ctx.currentLocation !== 'player_camp') {
-    buttons.push({ label: '⚖ Вел', action: 'TALK_NPC', payload: { npcId: 'vel' } });
-  } else if (ctx.flags.met_rem) {
-    buttons.push({ label: '👤 К Рему', action: 'TALK_NPC', payload: { npcId: 'rem' } });
+  } else {
+    buttons.push({ label: '👤 Герой', action: 'OPEN_MENU', payload: { menu: 'hero' } });
   }
   return buttons;
 }
@@ -284,8 +310,11 @@ export function campButtons(ctx: MenuSnapshot): GameButton[] {
       buttons.push({ label: '🔥 Печь', action: 'CRAFT_ITEM', payload: { recipeId: 'furnace' } });
     }
   }
-  if (ctx.flags.met_vel && buttons.length < 4) {
+  if (ctx.flags.met_vel && buttons.length < 3) {
     buttons.push({ label: '⚖ Вел', action: 'TALK_NPC', payload: { npcId: 'vel' } });
+  }
+  if (buttons.length < 4) {
+    buttons.push({ label: '👤 Герой', action: 'OPEN_MENU', payload: { menu: 'hero' } });
   }
   buttons.push(backButton('camp'));
   return buttons;
@@ -334,7 +363,7 @@ export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText
       buttons: campButtons(ctx),
     };
   }
-  if (menu === 'wedge' || menu === 'daily' || menu === 'furnace' || menu === 'trade' || menu === 'pvp' || menu === 'prep') {
+  if (menu === 'wedge' || menu === 'daily' || menu === 'furnace' || menu === 'trade' || menu === 'pvp' || menu === 'prep' || menu === 'hero' || menu === 'profile' || menu === 'stats' || menu === 'ratings' || menu === 'clan' || menu === 'cosmetics') {
     return {
       id: menu,
       text: extraText || '…',

@@ -3,23 +3,38 @@ import { dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { STARTING_ENERGY, STARTING_HP, STARTING_STATS } from '@kubolesie/shared';
 import type {
+  ApplicationStatus,
+  ClanRole,
   EquipmentSlot,
   ItemHistoryType,
   Rarity,
   ResourceType,
 } from '@kubolesie/shared';
-import { QUEST_TEMPLATES } from '@kubolesie/content';
-import type { BattleEvent } from '@kubolesie/combat-engine';
 import type {
+  ClanApplicationRecord,
+  ClanContributionRecord,
+  ClanMemberRecord,
+  ClanRecord,
   CombatMatchRecord,
   DiscoveryRecord,
+  EntitlementRecord,
   GameStore,
   InventoryItemRecord,
+  LeaderboardEntry,
+  PlayerAchievementRecord,
+  PlayerBossStatRecord,
+  PlayerCosmeticRecord,
   PlayerQuestRecord,
+  PlayerRatingRecord,
   PlayerRecord,
+  PlayerStatisticsRecord,
   ProcessedEventRecord,
   QuestTemplateRecord,
+  StatisticsDelta,
 } from './store';
+import { EMPTY_STATISTICS } from './store';
+import { clanLeaderboardScore, clanLevelForXp, PVP_RATING, QUEST_TEMPLATES } from '@kubolesie/content';
+import type { BattleEvent } from '@kubolesie/combat-engine';
 import { RewardAlreadyClaimedError } from './errors';
 
 interface MemoryState {
@@ -43,6 +58,16 @@ interface MemoryState {
   matches: CombatMatchRecord[];
   matchEvents: { matchId: string; events: BattleEvent[] }[];
   discoveries: DiscoveryRecord[];
+  statistics: PlayerStatisticsRecord[];
+  ratings: PlayerRatingRecord[];
+  bossStats: PlayerBossStatRecord[];
+  clans: ClanRecord[];
+  clanMembers: ClanMemberRecord[];
+  clanApplications: ClanApplicationRecord[];
+  contributions: ClanContributionRecord[];
+  entitlements: EntitlementRecord[];
+  cosmetics: PlayerCosmeticRecord[];
+  achievements: PlayerAchievementRecord[];
 }
 
 function reviveDates(player: PlayerRecord): PlayerRecord {
@@ -79,6 +104,16 @@ export class MemoryGameStore implements GameStore {
         finishedAt: match.finishedAt ? new Date(match.finishedAt) : null,
       }));
       parsed.discoveries = parsed.discoveries ?? [];
+      parsed.statistics = parsed.statistics ?? [];
+      parsed.ratings = parsed.ratings ?? [];
+      parsed.bossStats = parsed.bossStats ?? [];
+      parsed.clans = parsed.clans ?? [];
+      parsed.clanMembers = parsed.clanMembers ?? [];
+      parsed.clanApplications = parsed.clanApplications ?? [];
+      parsed.contributions = parsed.contributions ?? [];
+      parsed.entitlements = parsed.entitlements ?? [];
+      parsed.cosmetics = parsed.cosmetics ?? [];
+      parsed.achievements = parsed.achievements ?? [];
       store.state = parsed;
     } catch {
       store.state = emptyState();
@@ -343,6 +378,435 @@ export class MemoryGameStore implements GameStore {
     else this.state.discoveries.push(record);
     await this.persist();
   }
+
+  async getStatistics(playerId: string): Promise<PlayerStatisticsRecord> {
+    return this.ensureStats(playerId);
+  }
+
+  async incrementStatistics(playerId: string, delta: StatisticsDelta): Promise<PlayerStatisticsRecord> {
+    const row = this.ensureStats(playerId);
+    for (const [key, value] of Object.entries(delta) as [keyof StatisticsDelta, number | undefined][]) {
+      if (typeof value === 'number' && value) row[key] = (row[key] ?? 0) + value;
+    }
+    await this.persist();
+    return row;
+  }
+
+  async incrementBossStat(
+    playerId: string,
+    bossId: string,
+    field: 'wins' | 'losses',
+  ): Promise<PlayerBossStatRecord> {
+    let row = this.state.bossStats.find((entry) => entry.playerId === playerId && entry.bossId === bossId);
+    if (!row) {
+      row = { playerId, bossId, wins: 0, losses: 0 };
+      this.state.bossStats.push(row);
+    }
+    row[field] += 1;
+    await this.persist();
+    return row;
+  }
+
+  async getRating(playerId: string): Promise<PlayerRatingRecord> {
+    return this.ensureRating(playerId);
+  }
+
+  async saveRating(record: PlayerRatingRecord): Promise<PlayerRatingRecord> {
+    const index = this.state.ratings.findIndex((row) => row.playerId === record.playerId);
+    if (index >= 0) this.state.ratings[index] = { ...record };
+    else this.state.ratings.push({ ...record });
+    await this.persist();
+    return record;
+  }
+
+  async listScoreboard(
+    board: 'score' | 'pvp' | 'weekly',
+    periodKey: string,
+    limit: number,
+    offset: number,
+  ): Promise<LeaderboardEntry[]> {
+    const rows = this.boardRows(board, periodKey);
+    return rows.slice(offset, offset + limit);
+  }
+
+  async getScoreboardRank(
+    board: 'score' | 'pvp' | 'weekly',
+    playerId: string,
+    periodKey: string,
+  ): Promise<number> {
+    const rows = this.boardRows(board, periodKey);
+    const index = rows.findIndex((row) => row.id === playerId);
+    return index >= 0 ? index + 1 : 0;
+  }
+
+  async createClan(input: {
+    name: string;
+    tag: string;
+    description: string;
+    leaderPlayerId: string;
+  }): Promise<ClanRecord> {
+    return this.withClanLock(async () => {
+      if (this.state.clanMembers.some((row) => row.playerId === input.leaderPlayerId)) {
+        throw new Error('already_in_clan');
+      }
+      const nameKey = input.name.toLowerCase();
+      const tagKey = input.tag.toLowerCase();
+      if (this.state.clans.some((clan) => clan.nameKey === nameKey)) throw new Error('name_taken');
+      if (this.state.clans.some((clan) => clan.tagKey === tagKey)) throw new Error('tag_taken');
+      const clan: ClanRecord = {
+        id: randomUUID(),
+        name: input.name,
+        nameKey,
+        tag: input.tag,
+        tagKey,
+        description: input.description,
+        leaderPlayerId: input.leaderPlayerId,
+        level: 1,
+        xp: 0,
+        createdAt: new Date(),
+      };
+      this.state.clans.push(clan);
+      this.state.clanMembers.push({
+        id: randomUUID(),
+        clanId: clan.id,
+        playerId: input.leaderPlayerId,
+        role: 'LEADER',
+        joinedAt: new Date(),
+      });
+      await this.persist();
+      return clan;
+    });
+  }
+
+  async getClan(clanId: string): Promise<ClanRecord | null> {
+    return this.state.clans.find((clan) => clan.id === clanId) ?? null;
+  }
+
+  async findClanByNameKey(nameKey: string): Promise<ClanRecord | null> {
+    return this.state.clans.find((clan) => clan.nameKey === nameKey) ?? null;
+  }
+
+  async findClanByTagKey(tagKey: string): Promise<ClanRecord | null> {
+    return this.state.clans.find((clan) => clan.tagKey === tagKey) ?? null;
+  }
+
+  async getPlayerClan(playerId: string): Promise<{ clan: ClanRecord; member: ClanMemberRecord } | null> {
+    const member = this.state.clanMembers.find((row) => row.playerId === playerId);
+    if (!member) return null;
+    const clan = this.state.clans.find((row) => row.id === member.clanId);
+    if (!clan) return null;
+    return { clan, member };
+  }
+
+  async listClans(query: string, limit: number, offset: number): Promise<ClanRecord[]> {
+    const needle = query.trim().toLowerCase();
+    const rows = needle
+      ? this.state.clans.filter(
+          (clan) => clan.nameKey.includes(needle) || clan.tagKey.includes(needle),
+        )
+      : [...this.state.clans];
+    rows.sort((a, b) => b.xp - a.xp);
+    return rows.slice(offset, offset + limit);
+  }
+
+  async addClanXp(clanId: string, amount: number): Promise<ClanRecord> {
+    const clan = this.state.clans.find((row) => row.id === clanId);
+    if (!clan) throw new Error('clan_missing');
+    clan.xp += amount;
+    clan.level = clanLevelForXp(clan.xp);
+    await this.persist();
+    return clan;
+  }
+
+  async listClanMembers(clanId: string): Promise<ClanMemberRecord[]> {
+    return this.state.clanMembers.filter((row) => row.clanId === clanId);
+  }
+
+  async addClanMember(input: {
+    clanId: string;
+    playerId: string;
+    role: ClanRole;
+  }): Promise<ClanMemberRecord> {
+    return this.withClanLock(async () => {
+      if (this.state.clanMembers.some((row) => row.playerId === input.playerId)) {
+        throw new Error('already_in_clan');
+      }
+      const member: ClanMemberRecord = {
+        id: randomUUID(),
+        clanId: input.clanId,
+        playerId: input.playerId,
+        role: input.role,
+        joinedAt: new Date(),
+      };
+      this.state.clanMembers.push(member);
+      await this.persist();
+      return member;
+    });
+  }
+
+  async removeClanMember(clanId: string, playerId: string): Promise<void> {
+    this.state.clanMembers = this.state.clanMembers.filter(
+      (row) => !(row.clanId === clanId && row.playerId === playerId),
+    );
+    await this.persist();
+  }
+
+  async setClanMemberRole(clanId: string, playerId: string, role: ClanRole): Promise<void> {
+    const member = this.state.clanMembers.find((row) => row.clanId === clanId && row.playerId === playerId);
+    if (!member) throw new Error('not_member');
+    member.role = role;
+    await this.persist();
+  }
+
+  async setClanLeader(clanId: string, playerId: string): Promise<void> {
+    return this.withClanLock(async () => {
+      const clan = this.state.clans.find((row) => row.id === clanId);
+      if (!clan) throw new Error('clan_missing');
+      const next = this.state.clanMembers.find((row) => row.clanId === clanId && row.playerId === playerId);
+      if (!next) throw new Error('not_member');
+      const prev = this.state.clanMembers.find(
+        (row) => row.clanId === clanId && row.playerId === clan.leaderPlayerId,
+      );
+      if (prev) prev.role = 'OFFICER';
+      next.role = 'LEADER';
+      clan.leaderPlayerId = playerId;
+      await this.persist();
+    });
+  }
+
+  async deleteClan(clanId: string): Promise<void> {
+    this.state.clans = this.state.clans.filter((row) => row.id !== clanId);
+    this.state.clanMembers = this.state.clanMembers.filter((row) => row.clanId !== clanId);
+    this.state.clanApplications = this.state.clanApplications.filter((row) => row.clanId !== clanId);
+    this.state.contributions = this.state.contributions.filter((row) => row.clanId !== clanId);
+    await this.persist();
+  }
+
+  async createApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord> {
+    const existing = this.state.clanApplications.find(
+      (row) => row.clanId === clanId && row.playerId === playerId && row.status === 'PENDING',
+    );
+    if (existing) throw new Error('duplicate_application');
+    const record: ClanApplicationRecord = {
+      id: randomUUID(),
+      clanId,
+      playerId,
+      status: 'PENDING',
+      createdAt: new Date(),
+    };
+    this.state.clanApplications.push(record);
+    await this.persist();
+    return record;
+  }
+
+  async getPendingApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord | null> {
+    return (
+      this.state.clanApplications.find(
+        (row) => row.clanId === clanId && row.playerId === playerId && row.status === 'PENDING',
+      ) ?? null
+    );
+  }
+
+  async listPendingApplications(clanId: string): Promise<ClanApplicationRecord[]> {
+    return this.state.clanApplications.filter((row) => row.clanId === clanId && row.status === 'PENDING');
+  }
+
+  async listPlayerApplications(playerId: string): Promise<ClanApplicationRecord[]> {
+    return this.state.clanApplications.filter((row) => row.playerId === playerId);
+  }
+
+  async setApplicationStatus(id: string, status: ApplicationStatus): Promise<void> {
+    const row = this.state.clanApplications.find((entry) => entry.id === id);
+    if (row) row.status = status;
+    await this.persist();
+  }
+
+  async cancelPendingApplications(playerId: string): Promise<void> {
+    for (const row of this.state.clanApplications) {
+      if (row.playerId === playerId && row.status === 'PENDING') row.status = 'CANCELLED';
+    }
+    await this.persist();
+  }
+
+  async addContribution(
+    clanId: string,
+    playerId: string,
+    periodKey: string,
+    amount: number,
+  ): Promise<number> {
+    let row = this.state.contributions.find(
+      (entry) => entry.clanId === clanId && entry.playerId === playerId && entry.periodKey === periodKey,
+    );
+    if (!row) {
+      row = { clanId, playerId, periodKey, score: 0 };
+      this.state.contributions.push(row);
+    }
+    row.score += amount;
+    await this.persist();
+    return row.score;
+  }
+
+  async getContribution(clanId: string, playerId: string, periodKey: string): Promise<number> {
+    return (
+      this.state.contributions.find(
+        (row) => row.clanId === clanId && row.playerId === playerId && row.periodKey === periodKey,
+      )?.score ?? 0
+    );
+  }
+
+  async clanSeasonContribution(clanId: string, periodKey: string): Promise<number> {
+    return this.state.contributions
+      .filter((row) => row.clanId === clanId && row.periodKey === periodKey)
+      .reduce((sum, row) => sum + row.score, 0);
+  }
+
+  async listClanLeaderboard(
+    periodKey: string,
+    limit: number,
+    offset: number,
+  ): Promise<LeaderboardEntry[]> {
+    const rows = await this.clanBoardRows(periodKey);
+    return rows.slice(offset, offset + limit);
+  }
+
+  async getClanLeaderboardRank(clanId: string, periodKey: string): Promise<number> {
+    const rows = await this.clanBoardRows(periodKey);
+    const index = rows.findIndex((row) => row.id === clanId);
+    return index >= 0 ? index + 1 : 0;
+  }
+
+  async tryGrantEntitlement(
+    playerId: string,
+    productId: string,
+    source: string,
+    externalTransactionId?: string,
+  ): Promise<boolean> {
+    if (this.state.entitlements.some((row) => row.playerId === playerId && row.productId === productId)) {
+      return false;
+    }
+    this.state.entitlements.push({
+      playerId,
+      productId,
+      grantedAt: new Date(),
+      source,
+      externalTransactionId: externalTransactionId ?? null,
+    });
+    await this.persist();
+    return true;
+  }
+
+  async listEntitlements(playerId: string): Promise<EntitlementRecord[]> {
+    return this.state.entitlements.filter((row) => row.playerId === playerId);
+  }
+
+  async hasEntitlement(playerId: string, productId: string): Promise<boolean> {
+    return this.state.entitlements.some((row) => row.playerId === playerId && row.productId === productId);
+  }
+
+  async getCosmetics(playerId: string): Promise<PlayerCosmeticRecord> {
+    let row = this.state.cosmetics.find((entry) => entry.playerId === playerId);
+    if (!row) {
+      row = {
+        playerId,
+        profileFrame: null,
+        title: null,
+        badge: null,
+        campTheme: null,
+        chatBadge: null,
+      };
+      this.state.cosmetics.push(row);
+    }
+    return row;
+  }
+
+  async setCosmetic(
+    playerId: string,
+    slot: keyof Omit<PlayerCosmeticRecord, 'playerId'>,
+    productId: string | null,
+  ): Promise<void> {
+    const row = await this.getCosmetics(playerId);
+    row[slot] = productId;
+    await this.persist();
+  }
+
+  async tryGrantAchievement(playerId: string, achievementId: string): Promise<boolean> {
+    if (this.state.achievements.some((row) => row.playerId === playerId && row.achievementId === achievementId)) {
+      return false;
+    }
+    this.state.achievements.push({ playerId, achievementId, grantedAt: new Date() });
+    await this.persist();
+    return true;
+  }
+
+  async listAchievements(playerId: string): Promise<PlayerAchievementRecord[]> {
+    return this.state.achievements.filter((row) => row.playerId === playerId);
+  }
+
+  private clanChain: Promise<unknown> = Promise.resolve();
+
+  private withClanLock<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.clanChain.then(fn, fn);
+    this.clanChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private ensureStats(playerId: string): PlayerStatisticsRecord {
+    let row = this.state.statistics.find((entry) => entry.playerId === playerId);
+    if (!row) {
+      row = { playerId, ...EMPTY_STATISTICS };
+      this.state.statistics.push(row);
+    }
+    return row;
+  }
+
+  private ensureRating(playerId: string): PlayerRatingRecord {
+    let row = this.state.ratings.find((entry) => entry.playerId === playerId);
+    if (!row) {
+      row = {
+        playerId,
+        pvpRating: PVP_RATING.start,
+        lifetimeScore: 0,
+        weeklyScore: 0,
+        weeklyPeriod: '',
+        seasonId: 'season_0',
+        weeklyPvpOpponents: '',
+      };
+      this.state.ratings.push(row);
+    }
+    return row;
+  }
+
+  private boardRows(board: 'score' | 'pvp' | 'weekly', periodKey: string): LeaderboardEntry[] {
+    const valueOf = (row: PlayerRatingRecord) => {
+      if (board === 'pvp') return row.pvpRating;
+      if (board === 'weekly') return row.weeklyPeriod === periodKey ? row.weeklyScore : 0;
+      return row.lifetimeScore;
+    };
+    return this.state.ratings
+      .map((row) => {
+        const player = this.state.players.find((entry) => entry.id === row.playerId);
+        return { id: row.playerId, name: player?.name ?? 'Путник', value: valueOf(row) };
+      })
+      .filter((row) => board !== 'weekly' || row.value > 0)
+      .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+  }
+
+  private async clanBoardRows(periodKey: string): Promise<LeaderboardEntry[]> {
+    const rows: LeaderboardEntry[] = [];
+    for (const clan of this.state.clans) {
+      const season = await this.clanSeasonContribution(clan.id, periodKey);
+      rows.push({
+        id: clan.id,
+        name: `${clan.name} [${clan.tag}]`,
+        value: clanLeaderboardScore(clan.xp, season),
+      });
+    }
+    rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+    return rows;
+  }
 }
 
 function emptyState(): MemoryState {
@@ -367,6 +831,16 @@ function emptyState(): MemoryState {
     matches: [],
     matchEvents: [],
     discoveries: [],
+    statistics: [],
+    ratings: [],
+    bossStats: [],
+    clans: [],
+    clanMembers: [],
+    clanApplications: [],
+    contributions: [],
+    entitlements: [],
+    cosmetics: [],
+    achievements: [],
   };
 }
 

@@ -67,6 +67,10 @@ export const GAME_COMMANDS = [
   'HELP_PET',
   'REPAIR_LANTERN',
   'SALVAGE_ITEM',
+  'OPEN_PROFILE',
+  'CLAN_ACT',
+  'COSMETIC_ACT',
+  'LEADERBOARD_PAGE',
 ] as const;
 
 export type GameCommandType = (typeof GAME_COMMANDS)[number];
@@ -179,7 +183,11 @@ export type BattleEventType = 'HIT' | 'CRIT' | 'DODGE' | 'DEFEAT';
 export type CombatMode = 'PVE';
 export type CombatResult = 'WIN' | 'LOSS' | 'DRAW';
 
-export type CurrencyCode = 'COINS';
+export type CurrencyCode = 'COINS' | 'PREMIUM';
+
+export type ClanRole = 'LEADER' | 'OFFICER' | 'MEMBER';
+export type ApplicationStatus = 'PENDING' | 'ACCEPTED' | 'REJECTED' | 'CANCELLED';
+export type InviteStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'CANCELLED';
 
 export interface PlayerStatsView {
   attack: number;

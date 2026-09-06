@@ -50,7 +50,7 @@ describe('action menus', () => {
     const hub = await act(runtime, vkUserId, 'OPEN_CAMP');
     expect(hub.buttons.length).toBeLessThanOrEqual(5);
     expect(isMainHub(hub.buttons)).toBe(true);
-    expect(labels(hub)).toEqual(['⛏ Добыча', '🔨 Крафт', '🎒 Инвентарь', '👁 Осмотреться']);
+    expect(labels(hub)).toEqual(['⛏ Добыча', '🔨 Крафт', '🎒 Инвентарь', '👁 Осмотреться', '👤 Герой']);
   });
 
   it('2. recipe buttons are not on the main hub', async () => {

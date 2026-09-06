@@ -1,5 +1,8 @@
 import { STARTING_ENERGY, STARTING_HP, STARTING_STATS } from '@kubolesie/shared';
 import type {
+  ApplicationStatus,
+  ClanRole,
+  CurrencyCode,
   EquipmentSlot,
   ItemHistoryType,
   QuestStatus,
@@ -7,15 +10,28 @@ import type {
   ResourceType,
 } from '@kubolesie/shared';
 import type { BattleEvent } from '@kubolesie/combat-engine';
-import type {
-  CombatMatchRecord,
-  DiscoveryRecord,
-  GameStore,
-  InventoryItemRecord,
-  PlayerQuestRecord,
-  PlayerRecord,
-  ProcessedEventRecord,
-  QuestTemplateRecord,
+import { clanLeaderboardScore, clanLevelForXp, PVP_RATING } from '@kubolesie/content';
+import {
+  EMPTY_STATISTICS,
+  type ClanApplicationRecord,
+  type ClanMemberRecord,
+  type ClanRecord,
+  type CombatMatchRecord,
+  type DiscoveryRecord,
+  type EntitlementRecord,
+  type GameStore,
+  type InventoryItemRecord,
+  type LeaderboardEntry,
+  type PlayerAchievementRecord,
+  type PlayerBossStatRecord,
+  type PlayerCosmeticRecord,
+  type PlayerQuestRecord,
+  type PlayerRatingRecord,
+  type PlayerRecord,
+  type PlayerStatisticsRecord,
+  type ProcessedEventRecord,
+  type QuestTemplateRecord,
+  type StatisticsDelta,
 } from '@kubolesie/game-core';
 import { Prisma, type PrismaClient } from './generated/client';
 
@@ -344,7 +360,7 @@ export class PrismaGameStore implements GameStore {
 
   async addCurrencyTransaction(input: {
     playerId: string;
-    currency: 'COINS';
+    currency: CurrencyCode;
     amount: number;
     balanceBefore: number;
     balanceAfter: number;
@@ -427,4 +443,608 @@ export class PrismaGameStore implements GameStore {
       create: record,
     });
   }
+
+  async getStatistics(playerId: string): Promise<PlayerStatisticsRecord> {
+    const row = await this.prisma.playerStatistics.upsert({
+      where: { playerId },
+      update: {},
+      create: { playerId, ...EMPTY_STATISTICS },
+    });
+    return mapStatistics(row);
+  }
+
+  async incrementStatistics(playerId: string, delta: StatisticsDelta): Promise<PlayerStatisticsRecord> {
+    const update: Prisma.PlayerStatisticsUpdateInput = {};
+    for (const [key, value] of Object.entries(delta) as [keyof StatisticsDelta, number | undefined][]) {
+      if (typeof value === 'number' && value) {
+        update[key] = { increment: value };
+      }
+    }
+    const row = await this.prisma.playerStatistics.upsert({
+      where: { playerId },
+      update,
+      create: { playerId, ...EMPTY_STATISTICS, ...sanitizeDelta(delta) },
+    });
+    return mapStatistics(row);
+  }
+
+  async incrementBossStat(
+    playerId: string,
+    bossId: string,
+    field: 'wins' | 'losses',
+  ): Promise<PlayerBossStatRecord> {
+    const row = await this.prisma.playerBossStat.upsert({
+      where: { playerId_bossId: { playerId, bossId } },
+      update: { [field]: { increment: 1 } },
+      create: { playerId, bossId, wins: field === 'wins' ? 1 : 0, losses: field === 'losses' ? 1 : 0 },
+    });
+    return { playerId: row.playerId, bossId: row.bossId, wins: row.wins, losses: row.losses };
+  }
+
+  async getRating(playerId: string): Promise<PlayerRatingRecord> {
+    const row = await this.prisma.playerRating.upsert({
+      where: { playerId },
+      update: {},
+      create: {
+        playerId,
+        pvpRating: PVP_RATING.start,
+        lifetimeScore: 0,
+        weeklyScore: 0,
+        weeklyPeriod: '',
+        seasonId: 'season_0',
+        weeklyPvpOpponents: '',
+      },
+    });
+    return mapRating(row);
+  }
+
+  async saveRating(record: PlayerRatingRecord): Promise<PlayerRatingRecord> {
+    const row = await this.prisma.playerRating.upsert({
+      where: { playerId: record.playerId },
+      update: {
+        pvpRating: record.pvpRating,
+        lifetimeScore: record.lifetimeScore,
+        weeklyScore: record.weeklyScore,
+        weeklyPeriod: record.weeklyPeriod,
+        seasonId: record.seasonId,
+        weeklyPvpOpponents: record.weeklyPvpOpponents,
+      },
+      create: {
+        playerId: record.playerId,
+        pvpRating: record.pvpRating,
+        lifetimeScore: record.lifetimeScore,
+        weeklyScore: record.weeklyScore,
+        weeklyPeriod: record.weeklyPeriod,
+        seasonId: record.seasonId,
+        weeklyPvpOpponents: record.weeklyPvpOpponents,
+      },
+    });
+    return mapRating(row);
+  }
+
+  async listScoreboard(
+    board: 'score' | 'pvp' | 'weekly',
+    periodKey: string,
+    limit: number,
+    offset: number,
+  ): Promise<LeaderboardEntry[]> {
+    const field = board === 'pvp' ? 'pvpRating' : board === 'weekly' ? 'weeklyScore' : 'lifetimeScore';
+    const rows = await this.prisma.playerRating.findMany({
+      where: board === 'weekly' ? { weeklyPeriod: periodKey, weeklyScore: { gt: 0 } } : {},
+      orderBy: [{ [field]: 'desc' }, { player: { name: 'asc' } }],
+      skip: offset,
+      take: limit,
+      include: { player: { select: { name: true } } },
+    });
+    return rows.map((row) => ({
+      id: row.playerId,
+      name: row.player.name,
+      value: row[field],
+    }));
+  }
+
+  async getScoreboardRank(
+    board: 'score' | 'pvp' | 'weekly',
+    playerId: string,
+    periodKey: string,
+  ): Promise<number> {
+    const mine = await this.getRating(playerId);
+    const field = board === 'pvp' ? 'pvpRating' : board === 'weekly' ? 'weeklyScore' : 'lifetimeScore';
+    const value = board === 'weekly' && mine.weeklyPeriod !== periodKey ? 0 : mine[field];
+    if (board === 'weekly' && value <= 0) return 0;
+    const player = await this.findPlayerById(playerId);
+    const name = player?.name ?? '';
+    const higher = await this.prisma.playerRating.count({
+      where: {
+        ...(board === 'weekly' ? { weeklyPeriod: periodKey } : {}),
+        OR: [
+          { [field]: { gt: value } },
+          { AND: [{ [field]: value }, { player: { name: { lt: name } } }] },
+        ],
+      },
+    });
+    return higher + 1;
+  }
+
+  async createClan(input: {
+    name: string;
+    tag: string;
+    description: string;
+    leaderPlayerId: string;
+  }): Promise<ClanRecord> {
+    try {
+      return await this.withTx(async (tx) => {
+        const existing = await tx.clanMember.findUnique({ where: { playerId: input.leaderPlayerId } });
+        if (existing) throw new Error('already_in_clan');
+        const clan = await tx.clan.create({
+          data: {
+            name: input.name,
+            nameKey: input.name.toLowerCase(),
+            tag: input.tag,
+            tagKey: input.tag.toLowerCase(),
+            description: input.description,
+            leaderPlayerId: input.leaderPlayerId,
+            members: {
+              create: { playerId: input.leaderPlayerId, role: 'LEADER' },
+            },
+          },
+        });
+        return mapClan(clan);
+      });
+    } catch (error) {
+      throw mapClanError(error);
+    }
+  }
+
+  async getClan(clanId: string): Promise<ClanRecord | null> {
+    const row = await this.prisma.clan.findUnique({ where: { id: clanId } });
+    return row ? mapClan(row) : null;
+  }
+
+  async findClanByNameKey(nameKey: string): Promise<ClanRecord | null> {
+    const row = await this.prisma.clan.findUnique({ where: { nameKey } });
+    return row ? mapClan(row) : null;
+  }
+
+  async findClanByTagKey(tagKey: string): Promise<ClanRecord | null> {
+    const row = await this.prisma.clan.findUnique({ where: { tagKey } });
+    return row ? mapClan(row) : null;
+  }
+
+  async getPlayerClan(playerId: string): Promise<{ clan: ClanRecord; member: ClanMemberRecord } | null> {
+    const member = await this.prisma.clanMember.findUnique({
+      where: { playerId },
+      include: { clan: true },
+    });
+    if (!member) return null;
+    return { clan: mapClan(member.clan), member: mapMember(member) };
+  }
+
+  async listClans(query: string, limit: number, offset: number): Promise<ClanRecord[]> {
+    const needle = query.trim();
+    const rows = await this.prisma.clan.findMany({
+      where: needle
+        ? {
+            OR: [
+              { name: { contains: needle, mode: 'insensitive' } },
+              { tag: { contains: needle, mode: 'insensitive' } },
+            ],
+          }
+        : undefined,
+      orderBy: { xp: 'desc' },
+      skip: offset,
+      take: limit,
+    });
+    return rows.map(mapClan);
+  }
+
+  async addClanXp(clanId: string, amount: number): Promise<ClanRecord> {
+    const current = await this.prisma.clan.findUnique({ where: { id: clanId } });
+    if (!current) throw new Error('clan_missing');
+    const xp = current.xp + amount;
+    const row = await this.prisma.clan.update({
+      where: { id: clanId },
+      data: { xp, level: clanLevelForXp(xp) },
+    });
+    return mapClan(row);
+  }
+
+  async listClanMembers(clanId: string): Promise<ClanMemberRecord[]> {
+    const rows = await this.prisma.clanMember.findMany({ where: { clanId } });
+    return rows.map(mapMember);
+  }
+
+  async addClanMember(input: {
+    clanId: string;
+    playerId: string;
+    role: ClanRole;
+  }): Promise<ClanMemberRecord> {
+    try {
+      const row = await this.prisma.clanMember.create({
+        data: { clanId: input.clanId, playerId: input.playerId, role: input.role },
+      });
+      return mapMember(row);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new Error('already_in_clan');
+      }
+      throw error;
+    }
+  }
+
+  async removeClanMember(clanId: string, playerId: string): Promise<void> {
+    await this.prisma.clanMember.deleteMany({ where: { clanId, playerId } });
+  }
+
+  async setClanMemberRole(clanId: string, playerId: string, role: ClanRole): Promise<void> {
+    await this.prisma.clanMember.update({
+      where: { playerId },
+      data: { role },
+    });
+    void clanId;
+  }
+
+  async setClanLeader(clanId: string, playerId: string): Promise<void> {
+    await this.withTx(async (tx) => {
+      const clan = await tx.clan.findUnique({ where: { id: clanId } });
+      if (!clan) throw new Error('clan_missing');
+      const next = await tx.clanMember.findFirst({ where: { clanId, playerId } });
+      if (!next) throw new Error('not_member');
+      await tx.clanMember.updateMany({
+        where: { clanId, playerId: clan.leaderPlayerId },
+        data: { role: 'OFFICER' },
+      });
+      await tx.clanMember.update({ where: { playerId }, data: { role: 'LEADER' } });
+      await tx.clan.update({ where: { id: clanId }, data: { leaderPlayerId: playerId } });
+    });
+  }
+
+  async deleteClan(clanId: string): Promise<void> {
+    await this.prisma.clan.delete({ where: { id: clanId } });
+  }
+
+  async createApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord> {
+    const pending = await this.prisma.clanApplication.findFirst({
+      where: { clanId, playerId, status: 'PENDING' },
+    });
+    if (pending) throw new Error('duplicate_application');
+    try {
+      const row = await this.prisma.clanApplication.create({
+        data: { clanId, playerId, status: 'PENDING' },
+      });
+      return mapApplication(row);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new Error('duplicate_application');
+      }
+      throw error;
+    }
+  }
+
+  async getPendingApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord | null> {
+    const row = await this.prisma.clanApplication.findFirst({
+      where: { clanId, playerId, status: 'PENDING' },
+    });
+    return row ? mapApplication(row) : null;
+  }
+
+  async listPendingApplications(clanId: string): Promise<ClanApplicationRecord[]> {
+    const rows = await this.prisma.clanApplication.findMany({
+      where: { clanId, status: 'PENDING' },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map(mapApplication);
+  }
+
+  async listPlayerApplications(playerId: string): Promise<ClanApplicationRecord[]> {
+    const rows = await this.prisma.clanApplication.findMany({ where: { playerId } });
+    return rows.map(mapApplication);
+  }
+
+  async setApplicationStatus(id: string, status: ApplicationStatus): Promise<void> {
+    await this.prisma.clanApplication.update({ where: { id }, data: { status } });
+  }
+
+  async cancelPendingApplications(playerId: string): Promise<void> {
+    await this.prisma.clanApplication.updateMany({
+      where: { playerId, status: 'PENDING' },
+      data: { status: 'CANCELLED' },
+    });
+  }
+
+  async addContribution(
+    clanId: string,
+    playerId: string,
+    periodKey: string,
+    amount: number,
+  ): Promise<number> {
+    const row = await this.prisma.clanContribution.upsert({
+      where: { clanId_playerId_periodKey: { clanId, playerId, periodKey } },
+      update: { score: { increment: amount } },
+      create: { clanId, playerId, periodKey, score: amount },
+    });
+    return row.score;
+  }
+
+  async getContribution(clanId: string, playerId: string, periodKey: string): Promise<number> {
+    const row = await this.prisma.clanContribution.findUnique({
+      where: { clanId_playerId_periodKey: { clanId, playerId, periodKey } },
+    });
+    return row?.score ?? 0;
+  }
+
+  async clanSeasonContribution(clanId: string, periodKey: string): Promise<number> {
+    const agg = await this.prisma.clanContribution.aggregate({
+      where: { clanId, periodKey },
+      _sum: { score: true },
+    });
+    return agg._sum.score ?? 0;
+  }
+
+  async listClanLeaderboard(
+    periodKey: string,
+    limit: number,
+    offset: number,
+  ): Promise<LeaderboardEntry[]> {
+    const rows = await this.clanBoardRows(periodKey);
+    return rows.slice(offset, offset + limit);
+  }
+
+  async getClanLeaderboardRank(clanId: string, periodKey: string): Promise<number> {
+    const rows = await this.clanBoardRows(periodKey);
+    const index = rows.findIndex((row) => row.id === clanId);
+    return index >= 0 ? index + 1 : 0;
+  }
+
+  async tryGrantEntitlement(
+    playerId: string,
+    productId: string,
+    source: string,
+    externalTransactionId?: string,
+  ): Promise<boolean> {
+    try {
+      await this.prisma.playerEntitlement.create({
+        data: {
+          playerId,
+          productId,
+          source,
+          externalTransactionId: externalTransactionId ?? null,
+        },
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async listEntitlements(playerId: string): Promise<EntitlementRecord[]> {
+    const rows = await this.prisma.playerEntitlement.findMany({ where: { playerId } });
+    return rows.map((row) => ({
+      playerId: row.playerId,
+      productId: row.productId,
+      grantedAt: row.grantedAt,
+      source: row.source,
+      externalTransactionId: row.externalTransactionId,
+    }));
+  }
+
+  async hasEntitlement(playerId: string, productId: string): Promise<boolean> {
+    const row = await this.prisma.playerEntitlement.findUnique({
+      where: { playerId_productId: { playerId, productId } },
+    });
+    return Boolean(row);
+  }
+
+  async getCosmetics(playerId: string): Promise<PlayerCosmeticRecord> {
+    const row = await this.prisma.playerCosmetic.upsert({
+      where: { playerId },
+      update: {},
+      create: { playerId },
+    });
+    return {
+      playerId: row.playerId,
+      profileFrame: row.profileFrame,
+      title: row.title,
+      badge: row.badge,
+      campTheme: row.campTheme,
+      chatBadge: row.chatBadge,
+    };
+  }
+
+  async setCosmetic(
+    playerId: string,
+    slot: keyof Omit<PlayerCosmeticRecord, 'playerId'>,
+    productId: string | null,
+  ): Promise<void> {
+    await this.getCosmetics(playerId);
+    await this.prisma.playerCosmetic.update({
+      where: { playerId },
+      data: { [slot]: productId },
+    });
+  }
+
+  async tryGrantAchievement(playerId: string, achievementId: string): Promise<boolean> {
+    try {
+      await this.prisma.playerAchievement.create({ data: { playerId, achievementId } });
+      return true;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async listAchievements(playerId: string): Promise<PlayerAchievementRecord[]> {
+    const rows = await this.prisma.playerAchievement.findMany({ where: { playerId } });
+    return rows.map((row) => ({
+      playerId: row.playerId,
+      achievementId: row.achievementId,
+      grantedAt: row.grantedAt,
+    }));
+  }
+
+  private async clanBoardRows(periodKey: string): Promise<LeaderboardEntry[]> {
+    const clans = await this.prisma.clan.findMany({
+      include: { contributions: { where: { periodKey } } },
+      orderBy: [{ xp: 'desc' }, { name: 'asc' }],
+    });
+    const rows = clans.map((clan) => {
+      const season = clan.contributions.reduce((sum, row) => sum + row.score, 0);
+      return {
+        id: clan.id,
+        name: `${clan.name} [${clan.tag}]`,
+        value: clanLeaderboardScore(clan.xp, season),
+      };
+    });
+    rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+    return rows;
+  }
+
+  private async withTx<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    if ('$transaction' in this.prisma && typeof this.prisma.$transaction === 'function') {
+      return this.prisma.$transaction((tx) => fn(tx));
+    }
+    return fn(this.prisma as Prisma.TransactionClient);
+  }
+}
+
+function mapStatistics(row: {
+  playerId: string;
+  pveWins: number;
+  pveLosses: number;
+  pvpWins: number;
+  pvpLosses: number;
+  bossWins: number;
+  bossLosses: number;
+  craftedItems: number;
+  resourcesGathered: number;
+  itemsLooted: number;
+  rareItemsFound: number;
+  coinsEarned: number;
+  coinsSpent: number;
+  tradesCompleted: number;
+  questsCompleted: number;
+  dailyQuestsCompleted: number;
+  daysCompleted: number;
+}): PlayerStatisticsRecord {
+  return {
+    playerId: row.playerId,
+    pveWins: row.pveWins,
+    pveLosses: row.pveLosses,
+    pvpWins: row.pvpWins,
+    pvpLosses: row.pvpLosses,
+    bossWins: row.bossWins,
+    bossLosses: row.bossLosses,
+    craftedItems: row.craftedItems,
+    resourcesGathered: row.resourcesGathered,
+    itemsLooted: row.itemsLooted,
+    rareItemsFound: row.rareItemsFound,
+    coinsEarned: row.coinsEarned,
+    coinsSpent: row.coinsSpent,
+    tradesCompleted: row.tradesCompleted,
+    questsCompleted: row.questsCompleted,
+    dailyQuestsCompleted: row.dailyQuestsCompleted,
+    daysCompleted: row.daysCompleted,
+  };
+}
+
+function mapRating(row: {
+  playerId: string;
+  pvpRating: number;
+  lifetimeScore: number;
+  weeklyScore: number;
+  weeklyPeriod: string;
+  seasonId: string;
+  weeklyPvpOpponents: string;
+}): PlayerRatingRecord {
+  return {
+    playerId: row.playerId,
+    pvpRating: row.pvpRating,
+    lifetimeScore: row.lifetimeScore,
+    weeklyScore: row.weeklyScore,
+    weeklyPeriod: row.weeklyPeriod,
+    seasonId: row.seasonId,
+    weeklyPvpOpponents: row.weeklyPvpOpponents,
+  };
+}
+
+function mapClan(row: {
+  id: string;
+  name: string;
+  nameKey: string;
+  tag: string;
+  tagKey: string;
+  description: string;
+  leaderPlayerId: string;
+  level: number;
+  xp: number;
+  createdAt: Date;
+}): ClanRecord {
+  return {
+    id: row.id,
+    name: row.name,
+    nameKey: row.nameKey,
+    tag: row.tag,
+    tagKey: row.tagKey,
+    description: row.description,
+    leaderPlayerId: row.leaderPlayerId,
+    level: row.level,
+    xp: row.xp,
+    createdAt: row.createdAt,
+  };
+}
+
+function mapMember(row: {
+  id: string;
+  clanId: string;
+  playerId: string;
+  role: ClanRole;
+  joinedAt: Date;
+}): ClanMemberRecord {
+  return {
+    id: row.id,
+    clanId: row.clanId,
+    playerId: row.playerId,
+    role: row.role,
+    joinedAt: row.joinedAt,
+  };
+}
+
+function mapApplication(row: {
+  id: string;
+  clanId: string;
+  playerId: string;
+  status: ApplicationStatus;
+  createdAt: Date;
+}): ClanApplicationRecord {
+  return {
+    id: row.id,
+    clanId: row.clanId,
+    playerId: row.playerId,
+    status: row.status,
+    createdAt: row.createdAt,
+  };
+}
+
+function sanitizeDelta(delta: StatisticsDelta): StatisticsDelta {
+  const clean: StatisticsDelta = {};
+  for (const [key, value] of Object.entries(delta) as [keyof StatisticsDelta, number | undefined][]) {
+    if (typeof value === 'number' && value) clean[key] = value;
+  }
+  return clean;
+}
+
+function mapClanError(error: unknown): Error {
+  if (error instanceof Error && error.message === 'already_in_clan') return error;
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    const target = JSON.stringify(error.meta?.target ?? '');
+    if (target.includes('name_key')) return new Error('name_taken');
+    if (target.includes('tag_key')) return new Error('tag_taken');
+    if (target.includes('player_id')) return new Error('already_in_clan');
+  }
+  return error instanceof Error ? error : new Error('clan_error');
 }

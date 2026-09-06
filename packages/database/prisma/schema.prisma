@@ -84,6 +84,7 @@ enum CombatResult {
 
 enum CurrencyCode {
   COINS
+  PREMIUM
 }
 
 model Player {
@@ -97,6 +98,7 @@ model Player {
   energy           Int      @default(20)
   maxEnergy        Int      @default(20) @map("max_energy")
   coins            Int      @default(0)
+  premium          Int      @default(0)
   currentLocation  String   @default("forest_clearing") @map("current_location")
   currentState     String   @default("start") @map("current_state")
   lastEnergyAt     DateTime @default(now()) @map("last_energy_at")
@@ -117,6 +119,18 @@ model Player {
   itemHistory      ItemHistory[]
   combatMatches    CombatMatch[]
   discoveries      PlayerDiscovery[]
+  statistics       PlayerStatistics?
+  rating           PlayerRating?
+  clanMembership   ClanMember?
+  clanApplications ClanApplication[]
+  clanInvitesSent  ClanInvite[]      @relation("ClanInviteFrom")
+  clanInvites      ClanInvite[]      @relation("ClanInviteTo")
+  entitlements     PlayerEntitlement[]
+  cosmetics        PlayerCosmetic?
+  achievements     PlayerAchievement[]
+  bossStats        PlayerBossStat[]
+  contributions    ClanContribution[]
+  clansLed         Clan[]
 
   @@map("players")
 }
@@ -340,4 +354,234 @@ model PlayerDiscovery {
 
   @@unique([playerId, discoveryId])
   @@map("player_discoveries")
+}
+
+enum ClanRole {
+  LEADER
+  OFFICER
+  MEMBER
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  CANCELLED
+}
+
+enum SeasonStatus {
+  UPCOMING
+  ACTIVE
+  ENDED
+}
+
+model PlayerStatistics {
+  playerId              String @id @map("player_id")
+  pveWins               Int    @default(0) @map("pve_wins")
+  pveLosses             Int    @default(0) @map("pve_losses")
+  pvpWins               Int    @default(0) @map("pvp_wins")
+  pvpLosses             Int    @default(0) @map("pvp_losses")
+  bossWins              Int    @default(0) @map("boss_wins")
+  bossLosses            Int    @default(0) @map("boss_losses")
+  craftedItems          Int    @default(0) @map("crafted_items")
+  resourcesGathered     Int    @default(0) @map("resources_gathered")
+  itemsLooted           Int    @default(0) @map("items_looted")
+  rareItemsFound        Int    @default(0) @map("rare_items_found")
+  coinsEarned           Int    @default(0) @map("coins_earned")
+  coinsSpent            Int    @default(0) @map("coins_spent")
+  tradesCompleted       Int    @default(0) @map("trades_completed")
+  questsCompleted       Int    @default(0) @map("quests_completed")
+  dailyQuestsCompleted  Int    @default(0) @map("daily_quests_completed")
+  daysCompleted         Int    @default(0) @map("days_completed")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@map("player_statistics")
+}
+
+model PlayerBossStat {
+  id       String @id @default(cuid())
+  playerId String @map("player_id")
+  bossId   String @map("boss_id")
+  wins     Int    @default(0)
+  losses   Int    @default(0)
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, bossId])
+  @@index([playerId])
+  @@map("player_boss_stats")
+}
+
+model PlayerRating {
+  playerId             String   @id @map("player_id")
+  pvpRating            Int      @default(1000) @map("pvp_rating")
+  lifetimeScore        Int      @default(0) @map("lifetime_score")
+  weeklyScore          Int      @default(0) @map("weekly_score")
+  weeklyPeriod         String   @default("") @map("weekly_period")
+  seasonId             String   @default("season_0") @map("season_id")
+  weeklyPvpOpponents   String   @default("") @map("weekly_pvp_opponents")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([lifetimeScore(sort: Desc)])
+  @@index([pvpRating(sort: Desc)])
+  @@index([weeklyPeriod, weeklyScore(sort: Desc)])
+  @@map("player_ratings")
+}
+
+model Season {
+  id       String       @id
+  name     String
+  startsAt DateTime     @map("starts_at")
+  endsAt   DateTime     @map("ends_at")
+  status   SeasonStatus @default(UPCOMING)
+
+  @@map("seasons")
+}
+
+model Clan {
+  id             String   @id @default(cuid())
+  name           String
+  nameKey        String   @unique @map("name_key")
+  tag            String
+  tagKey         String   @unique @map("tag_key")
+  description    String   @default("")
+  leaderPlayerId String   @map("leader_player_id")
+  level          Int      @default(1)
+  xp             Int      @default(0)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  leader        Player             @relation(fields: [leaderPlayerId], references: [id])
+  members       ClanMember[]
+  applications  ClanApplication[]
+  invites       ClanInvite[]
+  contributions ClanContribution[]
+
+  @@index([xp(sort: Desc)])
+  @@map("clans")
+}
+
+model ClanMember {
+  id       String   @id @default(cuid())
+  clanId   String   @map("clan_id")
+  playerId String   @unique @map("player_id")
+  role     ClanRole @default(MEMBER)
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  clan   Clan   @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([clanId])
+  @@map("clan_members")
+}
+
+model ClanApplication {
+  id        String            @id @default(cuid())
+  clanId    String            @map("clan_id")
+  playerId  String            @map("player_id")
+  status    ApplicationStatus @default(PENDING)
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  clan   Clan   @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([clanId, status])
+  @@index([playerId, status])
+  @@map("clan_applications")
+}
+
+model ClanInvite {
+  id          String       @id @default(cuid())
+  clanId      String       @map("clan_id")
+  fromPlayerId String      @map("from_player_id")
+  playerId    String       @map("player_id")
+  status      InviteStatus @default(PENDING)
+  expiresAt   DateTime?    @map("expires_at")
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  clan Clan   @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  from Player @relation("ClanInviteFrom", fields: [fromPlayerId], references: [id], onDelete: Cascade)
+  to   Player @relation("ClanInviteTo", fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId, status])
+  @@index([clanId, status])
+  @@map("clan_invites")
+}
+
+model ClanContribution {
+  id        String @id @default(cuid())
+  clanId    String @map("clan_id")
+  playerId  String @map("player_id")
+  periodKey String @map("period_key")
+  score     Int    @default(0)
+
+  clan   Clan   @relation(fields: [clanId], references: [id], onDelete: Cascade)
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([clanId, playerId, periodKey])
+  @@index([clanId, periodKey])
+  @@map("clan_contributions")
+}
+
+model Product {
+  id           String       @id
+  type         String
+  name         String
+  description  String
+  price        Int          @default(0)
+  currency     CurrencyCode @default(PREMIUM)
+  availability String       @default("CATALOG")
+  seasonId     String?      @map("season_id")
+
+  @@map("products")
+}
+
+model PlayerEntitlement {
+  id                     String   @id @default(cuid())
+  playerId               String   @map("player_id")
+  productId              String   @map("product_id")
+  grantedAt              DateTime @default(now()) @map("granted_at")
+  source                 String
+  externalTransactionId  String?  @map("external_transaction_id")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, productId])
+  @@index([playerId])
+  @@map("player_entitlements")
+}
+
+model PlayerCosmetic {
+  playerId     String  @id @map("player_id")
+  profileFrame String? @map("profile_frame")
+  title        String?
+  badge        String?
+  campTheme    String? @map("camp_theme")
+  chatBadge    String? @map("chat_badge")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@map("player_cosmetics")
+}
+
+model PlayerAchievement {
+  id            String   @id @default(cuid())
+  playerId      String   @map("player_id")
+  achievementId String   @map("achievement_id")
+  grantedAt     DateTime @default(now()) @map("granted_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, achievementId])
+  @@map("player_achievements")
 }

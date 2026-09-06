@@ -23,6 +23,7 @@ export * from './furnace';
 export * from './trade';
 export * from './pvp';
 export * from './loot';
+export * from './meta';
 
 export const DIALOGUE_NODES: Record<string, DialogueNode> = {
   ...FOREST_NODES,

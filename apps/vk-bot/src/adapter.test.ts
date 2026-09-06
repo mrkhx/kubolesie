@@ -58,5 +58,13 @@ describe('vk adapter', () => {
     expect(yara.command).toEqual({ type: 'TALK_NPC', payload: { npcId: 'yara' } });
     const tribute = parseMockVkEvent({ event_id: 'e-t', vk_user_id: 1, text: 'дань' });
     expect(tribute.command.type).toBe('PAY_TRIBUTE');
+    const hero = parseMockVkEvent({ event_id: 'e-hero', vk_user_id: 1, text: 'герой' });
+    expect(hero.command).toEqual({ type: 'OPEN_MENU', payload: { menu: 'hero' } });
+    const profile = parseMockVkEvent({ event_id: 'e-p', vk_user_id: 1, text: 'профиль' });
+    expect(profile.command.type).toBe('OPEN_PROFILE');
+    const clan = parseMockVkEvent({ event_id: 'e-cl', vk_user_id: 1, text: 'клан' });
+    expect(clan.command).toEqual({ type: 'OPEN_MENU', payload: { menu: 'clan' } });
+    const rating = parseMockVkEvent({ event_id: 'e-r', vk_user_id: 1, text: 'рейтинг' });
+    expect(rating.command).toEqual({ type: 'OPEN_MENU', payload: { menu: 'ratings' } });
   });
 });
