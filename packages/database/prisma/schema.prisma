@@ -1,0 +1,316 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ResourceType {
+  WOOD
+  STONE
+  IRON_ORE
+  FIBER
+  HIDE
+  HERBS
+  COAL
+}
+
+enum Rarity {
+  COMMON
+  UNCOMMON
+  RARE
+  EPIC
+  LEGENDARY
+  MYTHIC
+}
+
+enum EquipmentSlot {
+  WEAPON
+  HEAD
+  CHEST
+  HANDS
+  LEGS
+  FEET
+  AMULET
+  RING
+}
+
+enum QuestStatus {
+  LOCKED
+  AVAILABLE
+  ACTIVE
+  COMPLETED
+  CLAIMED
+}
+
+enum ItemHistoryType {
+  CREATED
+  LOOTED
+  EQUIPPED
+  SALVAGED
+  SOLD
+  DESTROYED
+}
+
+enum BattleEventType {
+  HIT
+  CRIT
+  DODGE
+  DEFEAT
+}
+
+enum CombatMode {
+  PVE
+}
+
+enum CombatResult {
+  WIN
+  LOSS
+  DRAW
+}
+
+enum CurrencyCode {
+  COINS
+}
+
+model Player {
+  id               String   @id @default(cuid())
+  vkUserId         String   @unique @map("vk_user_id")
+  name             String
+  level            Int      @default(1)
+  xp               Int      @default(0)
+  hp               Int      @default(100)
+  maxHp            Int      @default(100) @map("max_hp")
+  energy           Int      @default(20)
+  maxEnergy        Int      @default(20) @map("max_energy")
+  coins            Int      @default(0)
+  currentLocation  String   @default("forest_clearing") @map("current_location")
+  currentState     String   @default("start") @map("current_state")
+  lastEnergyAt     DateTime @default(now()) @map("last_energy_at")
+  lastDailyReset   DateTime @default(now()) @map("last_daily_reset")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  stats            PlayerStats?
+  resources        PlayerResource[]
+  inventory        InventoryItem[]
+  equipment        PlayerEquipment[]
+  flags            PlayerFlag[]
+  npcRelations     NpcRelation[]
+  quests           PlayerQuest[]
+  processedEvents  ProcessedEvent[]
+  rewardClaims     RewardClaim[]
+  currencyTx       CurrencyTransaction[]
+  itemHistory      ItemHistory[]
+  combatMatches    CombatMatch[]
+
+  @@map("players")
+}
+
+model PlayerStats {
+  playerId   String @id @map("player_id")
+  attack     Int    @default(5)
+  defense    Int    @default(0)
+  speed      Int    @default(10)
+  critChance Float  @default(5) @map("crit_chance")
+  critDamage Float  @default(150) @map("crit_damage")
+  dodge      Float  @default(3)
+  accuracy   Float  @default(95)
+  luck       Int    @default(0)
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@map("player_stats")
+}
+
+model PlayerResource {
+  id        String       @id @default(cuid())
+  playerId  String       @map("player_id")
+  resource  ResourceType
+  amount    Int          @default(0)
+  updatedAt DateTime     @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, resource])
+  @@map("player_resources")
+}
+
+model InventoryItem {
+  id           String   @id @default(cuid())
+  playerId     String   @map("player_id")
+  templateId   String   @map("template_id")
+  itemLevel    Int      @default(1) @map("item_level")
+  rarity       Rarity   @default(COMMON)
+  enhanceLevel Int      @default(0) @map("enhance_level")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  player    Player             @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  equipped  PlayerEquipment[]
+  history   ItemHistory[]
+
+  @@index([playerId])
+  @@map("inventory_items")
+}
+
+model PlayerEquipment {
+  id       String        @id @default(cuid())
+  playerId String        @map("player_id")
+  slot     EquipmentSlot
+  itemId   String        @map("item_id")
+
+  player Player        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  item   InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, slot])
+  @@unique([itemId])
+  @@map("player_equipment")
+}
+
+model PlayerFlag {
+  id        String   @id @default(cuid())
+  playerId  String   @map("player_id")
+  flag      String
+  value     String   @default("1")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, flag])
+  @@map("player_flags")
+}
+
+model NpcRelation {
+  id         String @id @default(cuid())
+  playerId   String @map("player_id")
+  npcId      String @map("npc_id")
+  trust      Int    @default(0)
+  reputation Int    @default(0)
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, npcId])
+  @@map("npc_relations")
+}
+
+model QuestTemplate {
+  id          String      @id
+  title       String
+  description String
+  defaultStatus QuestStatus @default(LOCKED) @map("default_status")
+
+  playerQuests PlayerQuest[]
+
+  @@map("quest_templates")
+}
+
+model PlayerQuest {
+  id        String      @id @default(cuid())
+  playerId  String      @map("player_id")
+  questId   String      @map("quest_id")
+  status    QuestStatus @default(LOCKED)
+  progress  Json        @default("{}")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+
+  player   Player        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  template QuestTemplate @relation(fields: [questId], references: [id])
+
+  @@unique([playerId, questId])
+  @@map("player_quests")
+}
+
+model ProcessedEvent {
+  id        String   @id @default(cuid())
+  eventId   String   @unique @map("event_id")
+  playerId  String?  @map("player_id")
+  command   String
+  response  Json
+  createdAt DateTime @default(now()) @map("created_at")
+
+  player Player? @relation(fields: [playerId], references: [id], onDelete: SetNull)
+
+  @@index([playerId])
+  @@map("processed_events")
+}
+
+model RewardClaim {
+  id         String   @id @default(cuid())
+  playerId   String   @map("player_id")
+  rewardType String   @map("reward_type")
+  rewardRef  String   @map("reward_ref")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, rewardType, rewardRef])
+  @@map("reward_claims")
+}
+
+model CurrencyTransaction {
+  id            String       @id @default(cuid())
+  playerId      String       @map("player_id")
+  currency      CurrencyCode
+  amount        Int
+  balanceBefore Int          @map("balance_before")
+  balanceAfter  Int          @map("balance_after")
+  reason        String
+  referenceId   String?      @map("reference_id")
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId, createdAt])
+  @@map("currency_transactions")
+}
+
+model ItemHistory {
+  id        String          @id @default(cuid())
+  itemId    String          @map("item_id")
+  playerId  String          @map("player_id")
+  type      ItemHistoryType
+  meta      Json?
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  item   InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  player Player        @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("item_history")
+}
+
+model CombatMatch {
+  id              String        @id @default(cuid())
+  playerId        String        @map("player_id")
+  mode            CombatMode    @default(PVE)
+  enemyId         String        @map("enemy_id")
+  seed            String
+  balanceVersion  String        @map("balance_version")
+  result          CombatResult?
+  playerSnapshot  Json          @map("player_snapshot")
+  enemySnapshot   Json          @map("enemy_snapshot")
+  startedAt       DateTime      @default(now()) @map("started_at")
+  finishedAt      DateTime?     @map("finished_at")
+
+  player Player         @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  events CombatEvent[]
+
+  @@index([playerId, startedAt])
+  @@map("combat_matches")
+}
+
+model CombatEvent {
+  id      String          @id @default(cuid())
+  matchId String          @map("match_id")
+  turn    Int
+  actor   String
+  type    BattleEventType
+  value   Int
+
+  match CombatMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([matchId, turn])
+  @@map("combat_events")
+}

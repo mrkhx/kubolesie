@@ -1,0 +1,14 @@
+{
+  "name": "@kubolesie/worker",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/main.ts",
+  "scripts": {
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "bullmq": "^5.58.5",
+    "ioredis": "^5.7.0",
+    "tsx": "^4.20.5"
+  }
+}

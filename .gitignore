@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.local
+*.log
+.DS_Store
+data/
+.tmp/
+.prisma/
+packages/database/src/generated/
+
+# Nest / TS
+*.tsbuildinfo
+.turbo
+.cache

@@ -1,0 +1,23 @@
+{
+  "name": "@kubolesie/database",
+  "version": "0.0.1",
+  "private": true,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "prisma:generate": "DATABASE_URL=${DATABASE_URL:-postgresql://kubolesie:kubolesie@localhost:5432/kubolesie?schema=public} prisma generate --schema prisma/schema.prisma",
+    "prisma:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
+    "prisma:migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
+    "prisma:seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@kubolesie/content": "*",
+    "@kubolesie/game-core": "*",
+    "@kubolesie/shared": "*",
+    "@prisma/client": "^6.15.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.15.0",
+    "tsx": "^4.20.5"
+  }
+}

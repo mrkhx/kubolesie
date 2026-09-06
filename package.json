@@ -1,0 +1,34 @@
+{
+  "name": "kubolesie",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Куболесье — чат-RPG для сообщества ВКонтакте. Prototype 0.0.1.",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run start:api",
+    "start:api": "npm run prisma:generate && npm run start --workspace=@kubolesie/api",
+    "start:worker": "npm run start --workspace=@kubolesie/worker",
+    "start:vk-bot": "npm run start --workspace=@kubolesie/vk-bot",
+    "prisma:generate": "npm run prisma:generate --workspace=@kubolesie/database",
+    "prisma:migrate": "npm run prisma:migrate --workspace=@kubolesie/database",
+    "prisma:migrate:dev": "npm run prisma:migrate:dev --workspace=@kubolesie/database",
+    "prisma:seed": "npm run prisma:seed --workspace=@kubolesie/database",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

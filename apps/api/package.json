@@ -1,0 +1,25 @@
+{
+  "name": "@kubolesie/api",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "start:prod": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@kubolesie/database": "*",
+    "@kubolesie/game-core": "*",
+    "@kubolesie/shared": "*",
+    "@kubolesie/vk-bot": "*",
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "ioredis": "^5.7.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "tsx": "^4.20.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3"
+  }
+}
