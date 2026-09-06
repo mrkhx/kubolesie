@@ -53,13 +53,7 @@ export const FOREST_NODES: Record<string, DialogueNode> = {
         nextNode: 'check_bushes',
         condition: { type: 'flag', flag: 'defeated_wild_shrew', exists: false },
       },
-      { id: 'gather', label: 'Рубить дерево', command: 'GATHER_WOOD' },
-      {
-        id: 'shelter',
-        label: 'Собрать временное укрытие',
-        command: 'BUILD_TEMP_SHELTER',
-        condition: { type: 'flag', flag: 'temporary_shelter_level', exists: false },
-      },
+      { id: 'gather', label: '⛏ Добыча', command: 'OPEN_MENU', commandPayload: { menu: 'gather' } },
       {
         id: 'token',
         label: 'Осмотреть жетон',
@@ -89,8 +83,8 @@ export const FOREST_NODES: Record<string, DialogueNode> = {
         commandPayload: { npcId: 'rem' },
         condition: { type: 'flag', flag: 'met_rem', exists: true },
       },
-      { id: 'inv', label: 'Инвентарь', command: 'OPEN_INVENTORY' },
-      { id: 'camp', label: 'Лагерь / крафт', command: 'OPEN_CAMP' },
+      { id: 'inv', label: '🎒 Инвентарь', command: 'OPEN_INVENTORY' },
+      { id: 'camp', label: '🔨 Крафт', command: 'OPEN_MENU', commandPayload: { menu: 'craft' } },
     ],
   },
   check_bushes: {

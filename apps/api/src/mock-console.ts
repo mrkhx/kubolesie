@@ -61,7 +61,7 @@ export const MOCK_CONSOLE_HTML = `<!DOCTYPE html>
     <div class="btns" id="btns"></div>
     <form class="composer" id="form">
       <input id="vk" value="1001" style="max-width:120px" title="vk_user_id" />
-      <input id="text" placeholder="текст или команда: /start, лагерь, рубить" />
+      <input id="text" placeholder="текст: /start, лагерь, добыча, крафт, назад" />
       <button type="submit">Отправить</button>
     </form>
   </section>
@@ -79,7 +79,7 @@ export const MOCK_CONSOLE_HTML = `<!DOCTYPE html>
       <button type="button" data-cmd='GATHER_IRON'>GATHER_IRON</button>
       <button type="button" data-cmd='INSPECT_TOKEN'>INSPECT_TOKEN</button>
       <button type="button" data-cmd='BUILD_TEMP_SHELTER'>BUILD_TEMP_SHELTER</button>
-      <button type="button" data-cmd='OPEN_CAMP'>OPEN_CAMP</button>
+      <button type="button" data-cmd='OPEN_CAMP'>OPEN_CAMP / меню</button>
       <button type="button" data-cmd='OPEN_INVENTORY'>OPEN_INVENTORY</button>
       <button type="button" data-cmd='EXPLORE'>EXPLORE</button>
     </div>

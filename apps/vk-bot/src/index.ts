@@ -38,7 +38,7 @@ const TEXT_ALIASES: Record<string, GameCommandType> = {
   начать: 'START_GAME',
   инвентарь: 'OPEN_INVENTORY',
   лагерь: 'OPEN_CAMP',
-  крафт: 'OPEN_CAMP',
+  меню: 'OPEN_CAMP',
   рубить: 'GATHER_WOOD',
   дерево: 'GATHER_WOOD',
   осмотреться: 'EXPLORE',
@@ -49,6 +49,15 @@ const TEXT_ALIASES: Record<string, GameCommandType> = {
   жетон: 'INSPECT_TOKEN',
   укрытие: 'BUILD_TEMP_SHELTER',
   ночь: 'REST_NIGHT',
+};
+
+const TEXT_MENU_ALIASES: Record<string, string> = {
+  добыча: 'gather',
+  крафт: 'craft',
+  инструменты: 'tools',
+  оружие: 'weapons',
+  предметы: 'items',
+  назад: 'hub',
 };
 
 export function parseMockVkEvent(input: MockVkEvent): NormalizedIncomingEvent {
@@ -66,6 +75,8 @@ export function parseMockVkEvent(input: MockVkEvent): NormalizedIncomingEvent {
   let command: GameCommand;
   if (action && isGameCommandType(action)) {
     command = { type: action, payload };
+  } else if (text && TEXT_MENU_ALIASES[text]) {
+    command = { type: 'OPEN_MENU', payload: { menu: TEXT_MENU_ALIASES[text] } };
   } else if (text && TEXT_ALIASES[text]) {
     command = { type: TEXT_ALIASES[text], payload };
   } else if (

@@ -22,6 +22,7 @@ export const GAME_COMMANDS = [
   'EXPLORE',
   'OPEN_INVENTORY',
   'OPEN_CAMP',
+  'OPEN_MENU',
   'GATHER_WOOD',
   'GATHER_STONE',
   'GATHER_IRON',

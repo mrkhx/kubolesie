@@ -5,9 +5,9 @@ export const MINE_NODES: Record<string, DialogueNode> = {
     id: 'stone_scree',
     text: 'Каменная осыпь. Серые кубы. Голыми руками булыжник не взять — нужна хотя бы деревянная кирка. Чуть в стороне копошится каменный падальщик. Он тебя не атакует.',
     choices: [
-      { id: 'gather', label: 'Добывать камень', command: 'GATHER_STONE' },
+      { id: 'gather', label: '⛏ Добыча', command: 'OPEN_MENU', commandPayload: { menu: 'gather' } },
       { id: 'scavenger', label: 'Подойти к падальщику', nextNode: 'scavenger' },
-      { id: 'camp', label: 'Крафт', command: 'OPEN_CAMP' },
+      { id: 'camp', label: '🔨 Крафт', command: 'OPEN_MENU', commandPayload: { menu: 'craft' } },
       {
         id: 'adit',
         label: 'К штольне',
@@ -57,7 +57,7 @@ export const MINE_NODES: Record<string, DialogueNode> = {
     id: 'old_adit',
     text: 'Внутри холодно и сыро.\nДеревянные подпорки давно сгнили.\nГде-то впереди капает вода.',
     choices: [
-      { id: 'iron', label: 'Искать железо', command: 'GATHER_IRON' },
+      { id: 'iron', label: '⛏ Добыча', command: 'OPEN_MENU', commandPayload: { menu: 'gather' } },
       {
         id: 'rails',
         label: 'Осмотреть рельсы',

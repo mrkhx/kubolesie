@@ -24,4 +24,25 @@ describe('vk adapter', () => {
     expect(keyboard.buttons[0][0].action.type).toBe('callback');
     expect(JSON.parse(keyboard.buttons[0][0].action.payload).action).toBe('OPEN_CRATE');
   });
+
+  it('maps nested menu buttons including payload.menu', () => {
+    const keyboard = toVkKeyboard([
+      { label: '⛏ Добыча', action: 'OPEN_MENU', payload: { menu: 'gather' } },
+      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'craft' } },
+    ]);
+    expect(JSON.parse(keyboard.buttons[0][0].action.payload)).toMatchObject({
+      action: 'OPEN_MENU',
+      menu: 'gather',
+    });
+    expect(JSON.parse(keyboard.buttons[0][1].action.payload).menu).toBe('craft');
+  });
+
+  it('parses text aliases for craft categories as OPEN_MENU', () => {
+    const craft = parseMockVkEvent({ event_id: 'e-craft', vk_user_id: 1, text: 'крафт' });
+    expect(craft.command).toEqual({ type: 'OPEN_MENU', payload: { menu: 'craft' } });
+    const gather = parseMockVkEvent({ event_id: 'e-g', vk_user_id: 1, text: 'добыча' });
+    expect(gather.command).toEqual({ type: 'OPEN_MENU', payload: { menu: 'gather' } });
+    const camp = parseMockVkEvent({ event_id: 'e-c', vk_user_id: 1, text: 'лагерь' });
+    expect(camp.command.type).toBe('OPEN_CAMP');
+  });
 });

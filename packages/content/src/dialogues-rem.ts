@@ -132,9 +132,9 @@ export const REM_NODES: Record<string, DialogueNode> = {
           { type: 'flag', flag: 'temporary_shelter_level', exists: true },
         ],
       },
-      { id: 'gather', label: 'Рубить дерево', command: 'GATHER_WOOD' },
-      { id: 'camp', label: 'Крафт / запасы', command: 'OPEN_CAMP' },
-      { id: 'inv', label: 'Инвентарь', command: 'OPEN_INVENTORY' },
+      { id: 'gather', label: '⛏ Добыча', command: 'OPEN_MENU', commandPayload: { menu: 'gather' } },
+      { id: 'camp', label: '🔨 Крафт', command: 'OPEN_MENU', commandPayload: { menu: 'craft' } },
+      { id: 'inv', label: '🎒 Инвентарь', command: 'OPEN_INVENTORY' },
       {
         id: 'forest',
         label: 'На опушку',

@@ -15,7 +15,6 @@ import {
 import {
   COMBAT_REQUIREMENTS,
   COMMAND_REQUIREMENTS,
-  CRAFT_PIPELINE,
   DIALOGUE_NODES,
   ENEMIES,
   GATHER_IRON,
@@ -35,7 +34,6 @@ import {
   getRecipe,
   resourceLabel,
   type CommandRequirement,
-  type CraftRecipe,
   type DialogueAction,
   type DialogueChoice,
   type DialogueCondition,
@@ -59,6 +57,15 @@ import {
   UnknownCommandError,
 } from './errors';
 import { formatCombatLog } from './combat-log';
+import {
+  buildActionMenu,
+  hasCraftingTable as playerHasTable,
+  parseMenuId,
+  recipeGroup,
+  requirementMet,
+  type ActionMenuId,
+  type MenuSnapshot,
+} from './menus';
 import type {
   DiscoveryRecord,
   GameStore,
@@ -68,8 +75,8 @@ import type {
 } from './store';
 
 const NAV: GameButton[] = [
-  { label: 'Оглядеться', action: 'EXPLORE' },
-  { label: 'Инвентарь', action: 'OPEN_INVENTORY' },
+  { label: '👁 Осмотреться', action: 'EXPLORE' },
+  { label: '🎒 Инвентарь', action: 'OPEN_INVENTORY' },
 ];
 
 interface Ctx {
@@ -177,6 +184,8 @@ export class GameRuntime {
         return this.openInventory(ctx);
       case 'OPEN_CAMP':
         return this.openCamp(ctx);
+      case 'OPEN_MENU':
+        return this.openMenu(ctx, parseMenuId(String(command.payload?.menu ?? 'hub')));
       case 'GATHER_WOOD':
         return this.gatherWood(ctx, eventId);
       case 'GATHER_STONE':
@@ -234,6 +243,7 @@ export class GameRuntime {
       'EXPLORE',
       'DIALOGUE_CHOICE',
       'OPEN_INVENTORY',
+      'OPEN_MENU',
       'BEGIN_DAY_2',
       'EQUIP_ITEM',
       'USE_ITEM',
@@ -252,26 +262,19 @@ export class GameRuntime {
   }
 
   private assertRequirement(req: CommandRequirement, ctx: Ctx): void {
-    if (req.locations && !req.locations.includes(ctx.player.currentLocation)) {
+    if (!requirementMet(req, this.snapshot(ctx))) {
       throw new ActionRejectedError('Сейчас это сделать нельзя.');
     }
-    if (req.flagsAll) {
-      for (const flag of req.flagsAll) {
-        if (ctx.flags[flag] == null) throw new ActionRejectedError('Сейчас это сделать нельзя.');
-      }
-    }
-    if (req.flagsAny && !req.flagsAny.some((flag) => ctx.flags[flag] != null)) {
-      throw new ActionRejectedError('Сейчас это сделать нельзя.');
-    }
-    if (req.itemsAny && !req.itemsAny.some((id) => ctx.items.some((item) => item.templateId === id))) {
-      throw new ActionRejectedError('Сейчас это сделать нельзя.');
-    }
-    if (req.quest) {
-      const quest = ctx.quests[req.quest.id];
-      if (!quest || !req.quest.statuses.includes(quest.status)) {
-        throw new ActionRejectedError('Сейчас это сделать нельзя.');
-      }
-    }
+  }
+
+  private snapshot(ctx: Ctx): MenuSnapshot {
+    return {
+      currentLocation: ctx.player.currentLocation,
+      flags: ctx.flags,
+      items: ctx.items,
+      resources: ctx.resources,
+      quests: ctx.quests,
+    };
   }
 
   private async startGame(ctx: Ctx): Promise<GameResponse> {
@@ -317,60 +320,42 @@ export class GameRuntime {
   }
 
   private hasCraftingTable(ctx: Ctx): boolean {
-    return ctx.items.some((item) => item.templateId === 'crafting_table');
+    return playerHasTable(ctx.items);
   }
 
-  private canAffordRecipe(recipe: CraftRecipe, ctx: Ctx): boolean {
-    if (recipe.station === 'crafting_table' && !this.hasCraftingTable(ctx)) return false;
-    return Object.entries(recipe.cost).every(([resource, need]) => (ctx.resources[resource as ResourceType] ?? 0) >= (need ?? 0));
+  private async openMenu(ctx: Ctx, menu: ActionMenuId, extraText?: string): Promise<GameResponse> {
+    const built = buildActionMenu(menu, this.snapshot(ctx));
+    const text = extraText ?? (menu === 'hub' ? this.hubCampText(ctx) : built.text);
+    return this.respond(ctx.player, text, built.buttons);
   }
 
-  private async openCamp(ctx: Ctx): Promise<GameResponse> {
+  private hubCampText(ctx: Ctx): string {
     const resourceLines = Object.entries(ctx.resources)
       .filter(([, amount]) => (amount ?? 0) > 0)
       .map(([key, amount]) => `• ${resourceLabel(key as ResourceType)}: ${amount}`)
       .join('\n');
     const location = getLocation(ctx.player.currentLocation)?.name ?? ctx.player.currentLocation;
-    const text = [
+    return [
       `Лагерь. ${location}`,
       this.hud(ctx),
       resourceLines ? `Ресурсы:\n${resourceLines}` : 'Ресурсов пока нет.',
       'Цепочка: бревно → доски → палки → верстак → деревянная кирка → булыжник → каменная кирка → железо.',
       this.hasCraftingTable(ctx) ? 'Верстак стоит.' : 'Верстака нет — сначала доски.',
     ].join('\n');
-    const buttons: GameButton[] = [];
-    for (const recipeId of CRAFT_PIPELINE) {
-      const recipe = getRecipe(recipeId);
-      if (!recipe) continue;
-      if (recipeId === 'crafting_table' && this.hasCraftingTable(ctx)) continue;
-      if (!this.canAffordRecipe(recipe, ctx)) continue;
-      buttons.push({
-        label: `Крафт: ${recipe.name}`,
-        action: 'CRAFT_ITEM',
-        payload: { recipeId: recipe.id },
-      });
-    }
-    if ((ctx.resources.WOOD ?? 0) > 0) {
-      buttons.push({ label: 'Дерево → брёвна', action: 'CRAFT_ITEM', payload: { recipeId: 'salvage_wood' } });
-    }
-    if ((ctx.resources.STONE ?? 0) > 0) {
-      buttons.push({ label: 'Камень → булыжник', action: 'CRAFT_ITEM', payload: { recipeId: 'salvage_stone' } });
-    }
-    if (ctx.player.currentLocation === 'forest_clearing' || ctx.player.currentLocation === 'rem_camp') {
-      buttons.unshift({ label: 'Рубить дерево', action: 'GATHER_WOOD' });
-    }
-    if (ctx.player.currentLocation === 'stone_scree') {
-      buttons.unshift({ label: 'Добывать булыжник', action: 'GATHER_STONE' });
-    }
-    buttons.push({ label: 'Инвентарь', action: 'OPEN_INVENTORY' });
-    buttons.push({ label: 'Оглядеться', action: 'EXPLORE' });
-    if (ctx.flags.met_rem) buttons.push({ label: 'К Рему', action: 'TALK_NPC', payload: { npcId: 'rem' } });
-    return this.respond(ctx.player, text, buttons);
+  }
+
+  private async openCamp(ctx: Ctx): Promise<GameResponse> {
+    return this.openMenu(ctx, 'hub');
   }
 
   private async openInventory(ctx: Ctx): Promise<GameResponse> {
     const equipped = new Set(Object.values(ctx.equipment));
-    if (!ctx.items.length) return this.respond(ctx.player, 'Инвентарь пуст.', NAV);
+    if (!ctx.items.length) {
+      return this.respond(ctx.player, 'Инвентарь пуст.', [
+        { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hub' } },
+        { label: '👁 Осмотреться', action: 'EXPLORE' },
+      ]);
+    }
     const lines = ctx.items.map((item) => {
       const template = getItemTemplate(item.templateId);
       const mark = equipped.has(item.id) ? ' [экип.]' : '';
@@ -393,7 +378,11 @@ export class GameRuntime {
         buttons.push({ label: 'Осмотреть жетон', action: 'INSPECT_TOKEN' });
       }
     }
-    return this.respond(ctx.player, `Инвентарь:\n${lines.join('\n')}`, [...buttons, ...NAV]);
+    return this.respond(ctx.player, `Инвентарь:\n${lines.join('\n')}`, [
+      ...buttons,
+      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hub' } },
+      { label: '👁 Осмотреться', action: 'EXPLORE' },
+    ]);
   }
 
   private async gatherWood(ctx: Ctx, eventId: string): Promise<GameResponse> {
@@ -407,14 +396,12 @@ export class GameRuntime {
     const tokenNote = await this.tryGrantToken(ctx);
     const axeNote = stats.woodYieldBonus > 0 ? ' Топор дал бонус.' : '';
     void eventId;
+    const fresh = await this.load(ctx.player);
+    const menu = buildActionMenu('gather', this.snapshot(fresh));
     return this.respond(
       ctx.player,
       `Ты рубишь дерево. +${amount} брёвен (всего ${total}). −${GATHER_WOOD.energyCost} энергии.${axeNote}${tokenNote}`,
-      [
-        { label: 'Рубить ещё', action: 'GATHER_WOOD' },
-        { label: 'Собрать укрытие', action: 'BUILD_TEMP_SHELTER' },
-        ...NAV,
-      ],
+      menu.buttons,
     );
   }
 
@@ -433,11 +420,9 @@ export class GameRuntime {
     const total = await this.store.addResource(ctx.player.id, 'COBBLESTONE', amount);
     await this.store.savePlayer(ctx.player);
     const tokenNote = await this.tryGrantToken(ctx);
-    return this.respond(ctx.player, `Ты ломаешь булыжник. +${amount} (всего ${total}).${extraNote}${tokenNote}`, [
-      { label: 'Ещё булыжник', action: 'GATHER_STONE' },
-      { label: 'Падальщик', action: 'DIALOGUE_CHOICE', payload: { nodeId: 'stone_scree', choiceId: 'scavenger' } },
-      ...NAV,
-    ]);
+    const fresh = await this.load(ctx.player);
+    const menu = buildActionMenu('gather', this.snapshot(fresh));
+    return this.respond(ctx.player, `Ты ломаешь булыжник. +${amount} (всего ${total}).${extraNote}${tokenNote}`, menu.buttons);
   }
 
   private async gatherIron(ctx: Ctx, eventId: string): Promise<GameResponse> {
@@ -472,9 +457,9 @@ export class GameRuntime {
       return node;
     }
     return this.respond(ctx.player, extra, [
-      { label: 'Искать ещё', action: 'GATHER_IRON' },
+      { label: '⛏ Искать ещё', action: 'GATHER_IRON' },
       { label: 'Штольня', action: 'DIALOGUE_CHOICE', payload: { nodeId: 'old_adit', choiceId: 'leave' } },
-      { label: 'Оглядеться', action: 'EXPLORE' },
+      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'gather' } },
     ]);
   }
 
@@ -501,13 +486,13 @@ export class GameRuntime {
         recipe.output.resource,
         recipe.output.amount,
       );
+      const fresh = await this.load(ctx.player);
+      const group = recipeGroup(recipe.id) ?? 'items';
+      const menu = buildActionMenu(group, this.snapshot(fresh));
       return this.respond(
         ctx.player,
         `Скрафчено: ${recipe.name}. +${recipe.output.amount} ${resourceLabel(recipe.output.resource)} (всего ${total}).`,
-        [
-          { label: 'Лагерь / крафт', action: 'OPEN_CAMP' },
-          ...NAV,
-        ],
+        menu.buttons,
       );
     }
     const template = getItemTemplate(recipe.output.templateId);
@@ -523,11 +508,14 @@ export class GameRuntime {
       type: 'CREATED',
       meta: { recipe: recipe.id },
     });
+    const fresh = await this.load(ctx.player);
+    const group = recipeGroup(recipe.id) ?? 'items';
+    const menu = buildActionMenu(group, this.snapshot(fresh));
     const buttons: GameButton[] = [];
     if (template.slot) {
       buttons.push({ label: 'Надеть', action: 'EQUIP_ITEM', payload: { itemId: item.id } });
     }
-    buttons.push({ label: 'Лагерь / крафт', action: 'OPEN_CAMP' }, ...NAV);
+    buttons.push(...menu.buttons);
     return this.respond(ctx.player, `Скрафчено: ${template.name}.`, buttons);
   }
 
