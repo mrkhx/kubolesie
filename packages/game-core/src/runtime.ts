@@ -18,9 +18,12 @@ import {
   DIALOGUE_NODES,
   ENEMIES,
   GATHER_IRON,
+  GATHER_COAL,
   GATHER_STONE,
   GATHER_WOOD,
   IRON_FOR_GATE_TARGET,
+  CAMP_QUEST_XP,
+  QUEST_TEMPLATES,
   ITEM_TEMPLATES,
   LEVEL_UP,
   LOCATIONS,
@@ -59,6 +62,7 @@ import {
 import { formatCombatLog } from './combat-log';
 import {
   buildActionMenu,
+  effectiveRecipeCost,
   hasCraftingTable as playerHasTable,
   parseMenuId,
   recipeGroup,
@@ -192,6 +196,8 @@ export class GameRuntime {
         return this.gatherStone(ctx, eventId);
       case 'GATHER_IRON':
         return this.gatherIron(ctx, eventId);
+      case 'GATHER_COAL':
+        return this.gatherCoal(ctx, eventId);
       case 'CRAFT_ITEM':
         return this.craftItem(
           ctx,
@@ -231,6 +237,14 @@ export class GameRuntime {
         return this.restNight(ctx, String(command.payload?.place ?? 'rem'));
       case 'BEGIN_DAY_2':
         return this.beginDay2(ctx);
+      case 'FOUND_CAMP':
+        return this.foundCamp(ctx, Boolean(command.payload?.onShelter));
+      case 'PLACE_CAMP_TABLE':
+        return this.placeCampTable(ctx);
+      case 'LIGHT_CAMP':
+        return this.lightCamp(ctx);
+      case 'COMPLETE_DAY_2':
+        return this.completeDay2(ctx);
       default:
         throw new UnknownCommandError((command as GameCommand).type);
     }
@@ -258,11 +272,14 @@ export class GameRuntime {
       return;
     }
     const req = COMMAND_REQUIREMENTS[type as GameCommandType];
-    if (req) this.assertRequirement(req, ctx);
+    if (req) this.assertRequirement(req, ctx, type);
   }
 
-  private assertRequirement(req: CommandRequirement, ctx: Ctx): void {
+  private assertRequirement(req: CommandRequirement, ctx: Ctx, type?: GameCommandType): void {
     if (!requirementMet(req, this.snapshot(ctx))) {
+      if (type === 'GATHER_COAL' && req.itemsAny && !req.itemsAny.some((id) => ctx.items.some((item) => item.templateId === id))) {
+        throw new ActionRejectedError('Голыми руками уголь не взять. Нужна хотя бы деревянная кирка.');
+      }
       throw new ActionRejectedError('Сейчас это сделать нельзя.');
     }
   }
@@ -309,14 +326,88 @@ export class GameRuntime {
       return this.renderNode(ctx.player, ctx.player.currentState);
     }
     const loc = ctx.player.currentLocation;
-    if (loc === 'rem_camp' && ctx.flags.met_rem) return this.renderNode(ctx.player, 'rem_camp');
+    if (loc === 'player_camp' && ctx.flags.player_camp_founded) {
+      return this.exploreCamp(ctx);
+    }
+    if (loc === 'soot_fissure') return this.renderNode(ctx.player, 'soot_fissure_look');
+    if (loc === 'rem_camp' && ctx.flags.met_rem) {
+      if (ctx.flags.day_1_complete && !ctx.flags.day_2_complete) {
+        return this.renderNode(ctx.player, 'rem_day2');
+      }
+      return this.renderNode(ctx.player, 'rem_camp');
+    }
     if (loc === 'stone_scree') return this.renderNode(ctx.player, 'stone_scree');
     if (loc === 'old_adit') return this.renderNode(ctx.player, 'old_adit');
     if (loc === 'secret_chamber') return this.renderNode(ctx.player, 'secret_chamber');
     if (loc === 'node_7' && !ctx.flags.node7_gate_closed && ctx.flags.activated_node7_token) {
       return this.renderNode(ctx.player, 'rem_gate');
     }
+    if (ctx.flags.day_2_complete) return this.renderNode(ctx.player, 'day2_complete');
+    if (ctx.flags.player_camp_founded) {
+      ctx.player.currentLocation = 'player_camp';
+      await this.store.savePlayer(ctx.player);
+      return this.exploreCamp(ctx);
+    }
+    if (ctx.flags.day_1_complete && ctx.player.currentState.startsWith('day2')) {
+      return this.renderNode(ctx.player, 'day2_start');
+    }
     return this.renderNode(ctx.player, ctx.flags.day_1_complete ? 'day1_complete' : 'forest_hub');
+  }
+
+  private campLookText(ctx: Ctx): string {
+    const table = ctx.flags.camp_table_placed ? 'Верстак на земле.' : 'Верстак ещё в кармане.';
+    const fire = ctx.flags.camp_fire_built ? 'Костёр есть.' : 'Костра нет.';
+    const light = ctx.flags.camp_lit ? 'Светло.' : 'Темно.';
+    const roof = ctx.flags.camp_on_shelter ? 'Крыша укрытия скрипит над головой.' : 'Пустая клетка леса.';
+    return `Свой стан. ${roof}\n${table} ${fire} ${light}`;
+  }
+
+  private async exploreCamp(ctx: Ctx): Promise<GameResponse> {
+    if (
+      ctx.flags.fed_stone_scavenger &&
+      !ctx.flags.defeated_stone_scavenger &&
+      !ctx.flags.scavenger_day2_visit
+    ) {
+      await this.store.setFlag(ctx.player.id, 'scavenger_day2_visit', '1');
+      return this.renderNode(ctx.player, 'scavenger_day2');
+    }
+    const buttons: GameButton[] = [];
+    if (!ctx.flags.seen_soot_fissure) {
+      buttons.push({
+        label: 'След сажи',
+        action: 'DIALOGUE_CHOICE',
+        payload: { nodeId: 'soot_notice', choiceId: 'go' },
+      });
+    } else {
+      buttons.push({
+        label: 'К расселине',
+        action: 'DIALOGUE_CHOICE',
+        payload: { nodeId: 'camp_look', choiceId: 'soot_go' },
+      });
+    }
+    if (!ctx.flags.seen_ridge_tracks) {
+      buttons.push({
+        label: 'Следы на краю',
+        action: 'DIALOGUE_CHOICE',
+        payload: { nodeId: 'camp_look', choiceId: 'ridge' },
+      });
+    }
+    if (ctx.flags.met_rem) {
+      buttons.push({ label: 'К Рему', action: 'TALK_NPC', payload: { npcId: 'rem' } });
+    }
+    if (ctx.flags.scavenger_day2_visit && !ctx.flags.scavenger_cache && !ctx.flags.defeated_stone_scavenger) {
+      buttons.push({
+        label: 'Падальщик',
+        action: 'DIALOGUE_CHOICE',
+        payload: { nodeId: 'camp_look', choiceId: 'scavenger' },
+      });
+    }
+    if (buttons.length < 5) {
+      buttons.push({ label: '🏕 Стан', action: 'OPEN_MENU', payload: { menu: 'camp' } });
+    }
+    ctx.player.currentState = 'camp_look';
+    await this.store.savePlayer(ctx.player);
+    return this.respond(ctx.player, this.campLookText(ctx), buttons.slice(0, 5));
   }
 
   private hasCraftingTable(ctx: Ctx): boolean {
@@ -341,7 +432,12 @@ export class GameRuntime {
       resourceLines ? `Ресурсы:\n${resourceLines}` : 'Ресурсов пока нет.',
       'Цепочка: бревно → доски → палки → верстак → деревянная кирка → булыжник → каменная кирка → железо.',
       this.hasCraftingTable(ctx) ? 'Верстак стоит.' : 'Верстака нет — сначала доски.',
-    ].join('\n');
+      ctx.flags.player_camp_founded
+        ? `Стан: ${ctx.flags.camp_table_placed ? 'стол на земле' : 'стол не поставлен'}, ${ctx.flags.camp_fire_built ? 'костёр есть' : 'костра нет'}.`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
   }
 
   private async openCamp(ctx: Ctx): Promise<GameResponse> {
@@ -391,7 +487,9 @@ export class GameRuntime {
     const amount = Math.floor(GATHER_WOOD.baseYield * (1 + stats.woodYieldBonus));
     const total = await this.store.addResource(ctx.player.id, 'LOG', amount);
     ctx.player.currentState = 'gather_wood';
-    ctx.player.currentLocation = ctx.player.currentLocation === 'rem_camp' ? 'rem_camp' : 'forest_clearing';
+    if (ctx.player.currentLocation !== 'rem_camp' && ctx.player.currentLocation !== 'player_camp') {
+      ctx.player.currentLocation = 'forest_clearing';
+    }
     await this.store.savePlayer(ctx.player);
     const tokenNote = await this.tryGrantToken(ctx);
     const axeNote = stats.woodYieldBonus > 0 ? ' Топор дал бонус.' : '';
@@ -463,13 +561,45 @@ export class GameRuntime {
     ]);
   }
 
+  private async gatherCoal(ctx: Ctx, eventId: string): Promise<GameResponse> {
+    await this.spend(ctx.player, GATHER_COAL.energyCost);
+    const amount = seededRange(eventId, GATHER_COAL.minYield, GATHER_COAL.maxYield, 'coal');
+    const total = await this.store.addResource(ctx.player.id, 'COAL', amount);
+    if (!ctx.flags.found_coal) {
+      await this.store.setFlag(ctx.player.id, 'found_coal', '1');
+      ctx.flags.found_coal = '1';
+    }
+    const fresh = await this.load(ctx.player);
+    const menu = buildActionMenu('gather', this.snapshot(fresh));
+    return this.respond(
+      ctx.player,
+      `Ты ломаешь сажу. +${amount} угля (всего ${total}). −${GATHER_COAL.energyCost} энергии.`,
+      menu.buttons,
+    );
+  }
+
   private async craftItem(ctx: Ctx, recipeId: string): Promise<GameResponse> {
     const recipe = getRecipe(recipeId);
     if (!recipe) return this.respond(ctx.player, 'Такого рецепта нет.', NAV);
     if (recipe.station === 'crafting_table' && !this.hasCraftingTable(ctx)) {
       throw new ActionRejectedError('Нужен верстак.');
     }
-    for (const [resource, need] of Object.entries(recipe.cost)) {
+    if (recipe.id === 'crafting_table' && this.hasCraftingTable(ctx)) {
+      throw new ActionRejectedError('Верстак уже есть. Поставь его на стан, не делай второй.');
+    }
+    if (recipe.id === 'campfire' || recipe.id === 'chest') {
+      if (ctx.player.currentLocation !== 'player_camp' || !ctx.flags.player_camp_founded) {
+        throw new ActionRejectedError('Это ставится на своём стане.');
+      }
+    }
+    if (recipe.id === 'campfire' && ctx.flags.camp_fire_built) {
+      throw new ActionRejectedError('Костёр уже стоит.');
+    }
+    if (recipe.id === 'chest' && ctx.flags.camp_chest_built) {
+      throw new ActionRejectedError('Сундук уже есть.');
+    }
+    const cost = effectiveRecipeCost(recipe, this.snapshot(ctx));
+    for (const [resource, need] of Object.entries(cost)) {
       const have = ctx.resources[resource as ResourceType] ?? 0;
       if (have < (need ?? 0)) {
         throw new InsufficientResourcesError(
@@ -477,7 +607,15 @@ export class GameRuntime {
         );
       }
     }
-    for (const [resource, need] of Object.entries(recipe.cost)) {
+    if (recipe.id === 'campfire') {
+      const ok = await this.store.tryClaimReward(ctx.player.id, 'structure', 'campfire');
+      if (!ok) throw new RewardAlreadyClaimedError('Костёр уже стоит.');
+    }
+    if (recipe.id === 'chest') {
+      const ok = await this.store.tryClaimReward(ctx.player.id, 'structure', 'camp_chest');
+      if (!ok) throw new RewardAlreadyClaimedError('Сундук уже есть.');
+    }
+    for (const [resource, need] of Object.entries(cost)) {
       await this.store.addResource(ctx.player.id, resource as ResourceType, -(need ?? 0));
     }
     if (recipe.output.kind === 'resource') {
@@ -497,26 +635,39 @@ export class GameRuntime {
     }
     const template = getItemTemplate(recipe.output.templateId);
     if (!template) return this.respond(ctx.player, 'Такого рецепта нет.', NAV);
-    const item = await this.store.createItem({
-      playerId: ctx.player.id,
-      templateId: template.id,
-      rarity: template.rarity,
-    });
-    await this.store.recordItemHistory({
-      itemId: item.id,
-      playerId: ctx.player.id,
-      type: 'CREATED',
-      meta: { recipe: recipe.id },
-    });
+    const amount = recipe.output.amount ?? 1;
+    let lastItem: InventoryItemRecord | null = null;
+    for (let i = 0; i < amount; i += 1) {
+      const item = await this.store.createItem({
+        playerId: ctx.player.id,
+        templateId: template.id,
+        rarity: template.rarity,
+      });
+      await this.store.recordItemHistory({
+        itemId: item.id,
+        playerId: ctx.player.id,
+        type: 'CREATED',
+        meta: { recipe: recipe.id },
+      });
+      lastItem = item;
+    }
+    if (recipe.id === 'campfire') {
+      await this.store.setFlag(ctx.player.id, 'camp_fire_built', '1');
+      await this.store.setFlag(ctx.player.id, 'camp_lit', '1');
+    }
+    if (recipe.id === 'chest') {
+      await this.store.setFlag(ctx.player.id, 'camp_chest_built', '1');
+    }
     const fresh = await this.load(ctx.player);
-    const group = recipeGroup(recipe.id) ?? 'items';
+    const group = recipe.id === 'campfire' ? 'camp' : recipeGroup(recipe.id) ?? 'items';
     const menu = buildActionMenu(group, this.snapshot(fresh));
     const buttons: GameButton[] = [];
-    if (template.slot) {
-      buttons.push({ label: 'Надеть', action: 'EQUIP_ITEM', payload: { itemId: item.id } });
+    if (template.slot && lastItem) {
+      buttons.push({ label: 'Надеть', action: 'EQUIP_ITEM', payload: { itemId: lastItem.id } });
     }
     buttons.push(...menu.buttons);
-    return this.respond(ctx.player, `Скрафчено: ${template.name}.`, buttons);
+    const made = amount > 1 ? `Скрафчено: ${template.name} ×${amount}.` : `Скрафчено: ${template.name}.`;
+    return this.respond(ctx.player, made, buttons);
   }
 
   private async equipItem(ctx: Ctx, itemId: string): Promise<GameResponse> {
@@ -547,6 +698,9 @@ export class GameRuntime {
     const item = await this.store.getItem(itemId);
     if (!item || item.playerId !== ctx.player.id) throw new ItemNotOwnedError();
     if (item.templateId === 'rusty_token') return this.inspectToken(ctx);
+    if (item.templateId === 'broken_lantern') {
+      return this.respond(ctx.player, 'Стекло выбито. Потом. Вел носит стёкла — не сегодня.', NAV);
+    }
     const template = getItemTemplate(item.templateId);
     if (template?.consumable && template.energyRestore) {
       const cap = this.energyCap(ctx);
@@ -563,6 +717,12 @@ export class GameRuntime {
 
   private async talkNpc(ctx: Ctx, npcId: string): Promise<GameResponse> {
     if (npcId !== 'rem') return this.respond(ctx.player, 'Здесь никого нет.', NAV);
+    if (ctx.flags.day_1_complete) {
+      ctx.player.currentLocation = 'rem_camp';
+      await this.store.savePlayer(ctx.player);
+      if (ctx.flags.day_2_complete) return this.renderNode(ctx.player, 'rem_day2');
+      return this.renderNode(ctx.player, 'rem_day2');
+    }
     if (!ctx.flags.activated_node7_token) return this.renderNode(ctx.player, 'abandoned_camp');
     if (!ctx.flags.node7_gate_closed) {
       ctx.player.currentLocation = 'node_7';
@@ -722,7 +882,104 @@ export class GameRuntime {
 
   private async beginDay2(ctx: Ctx): Promise<GameResponse> {
     if (!ctx.flags.day_1_complete) throw new ActionRejectedError();
-    return this.renderNode(ctx.player, 'day2_locked');
+    if (ctx.flags.day_2_complete) return this.renderNode(ctx.player, 'day2_complete');
+    if (ctx.flags.player_camp_founded) {
+      ctx.player.currentLocation = 'player_camp';
+      await this.store.savePlayer(ctx.player);
+      return this.exploreCamp(await this.load(ctx.player));
+    }
+    ctx.player.currentLocation = ctx.flags.slept_at_shelter ? 'forest_clearing' : 'rem_camp';
+    ctx.player.currentState = 'day2_start';
+    await this.store.savePlayer(ctx.player);
+    return this.renderNode(ctx.player, 'day2_start');
+  }
+
+  private async foundCamp(ctx: Ctx, onShelter: boolean): Promise<GameResponse> {
+    if (!ctx.flags.day_1_complete) throw new ActionRejectedError();
+    if (ctx.flags.player_camp_founded) {
+      ctx.player.currentLocation = 'player_camp';
+      await this.store.savePlayer(ctx.player);
+      return this.exploreCamp(await this.load(ctx.player));
+    }
+    const useShelter = onShelter && Boolean(ctx.flags.temporary_shelter_level);
+    await this.store.setFlag(ctx.player.id, 'player_camp_founded', '1');
+    if (useShelter) await this.store.setFlag(ctx.player.id, 'camp_on_shelter', '1');
+    await this.store.setFlag(ctx.player.id, 'visited_player_camp', '1');
+    await this.store.upsertPlayerQuest({
+      playerId: ctx.player.id,
+      questId: 'found_a_camp',
+      status: 'ACTIVE',
+      progress: {},
+    });
+    ctx.player.currentLocation = 'player_camp';
+    ctx.player.currentState = 'camp_founded';
+    await this.store.savePlayer(ctx.player);
+    const roof = useShelter
+      ? 'Ты ставишь стан на укрытие. Крыша уже есть — костру нужно меньше брёвен.'
+      : 'Пустая клетка. Всё с нуля. Костёр возьмёт полный набор брёвен.';
+    return this.renderNode(ctx.player, 'camp_founded').then((node) => {
+      node.text = `${roof}\n\n${node.text}`;
+      return node;
+    });
+  }
+
+  private async placeCampTable(ctx: Ctx): Promise<GameResponse> {
+    if (ctx.flags.camp_table_placed) {
+      return this.openMenu(ctx, 'camp', 'Верстак уже на земле.');
+    }
+    if (!this.hasCraftingTable(ctx)) {
+      throw new ActionRejectedError('Верстака нет. Скрафти стол — тот же рецепт, что вчера.');
+    }
+    const ok = await this.store.tryClaimReward(ctx.player.id, 'structure', 'camp_table');
+    if (!ok) {
+      await this.store.setFlag(ctx.player.id, 'camp_table_placed', '1');
+      return this.openMenu(await this.load(ctx.player), 'camp', 'Верстак уже на земле.');
+    }
+    await this.store.setFlag(ctx.player.id, 'camp_table_placed', '1');
+    const fresh = await this.load(ctx.player);
+    return this.openMenu(fresh, 'camp', 'Верстак стоит на земле. Не в кармане. Второй не нужен.');
+  }
+
+  private async lightCamp(ctx: Ctx): Promise<GameResponse> {
+    if (ctx.flags.camp_lit) {
+      return this.openMenu(ctx, 'camp', 'Уже светло.');
+    }
+    if (ctx.flags.camp_fire_built) {
+      await this.store.setFlag(ctx.player.id, 'camp_lit', '1');
+      return this.openMenu(await this.load(ctx.player), 'camp', 'Костёр даёт свет.');
+    }
+    const torch = ctx.items.find((item) => item.templateId === 'torch');
+    if (!torch) {
+      throw new ActionRejectedError('Нечем светить. Нужен костёр или факел.');
+    }
+    await this.store.removeItem(torch.id);
+    await this.store.setFlag(ctx.player.id, 'camp_lit', '1');
+    const claim = await this.store.tryClaimReward(ctx.player.id, 'light', 'camp_torch');
+    void claim;
+    return this.openMenu(await this.load(ctx.player), 'camp', 'Факел шипит. Стан виден.');
+  }
+
+  private async completeDay2(ctx: Ctx): Promise<GameResponse> {
+    if (ctx.flags.day_2_complete) return this.renderNode(ctx.player, 'day2_complete');
+    if (!ctx.flags.player_camp_founded || !ctx.flags.camp_table_placed || !ctx.flags.camp_fire_built) {
+      throw new ActionRejectedError('Сначала верстак на земле и костёр.');
+    }
+    const ok = await this.store.tryClaimReward(ctx.player.id, 'quest', 'found_a_camp');
+    if (!ok) {
+      await this.store.setFlag(ctx.player.id, 'day_2_complete', '1');
+      return this.renderNode(ctx.player, 'day2_complete');
+    }
+    await this.store.upsertPlayerQuest({
+      playerId: ctx.player.id,
+      questId: 'found_a_camp',
+      status: 'CLAIMED',
+      progress: { table: true, fire: true, chest: Boolean(ctx.flags.camp_chest_built) },
+    });
+    await this.store.setFlag(ctx.player.id, 'day_2_complete', '1');
+    const xpNote = await this.addXp(ctx.player, CAMP_QUEST_XP);
+    const node = await this.renderNode(ctx.player, 'day2_complete');
+    node.text = `${node.text}\n${xpNote}`;
+    return node;
   }
 
   private async startPve(ctx: Ctx, enemyId: string, eventId: string): Promise<GameResponse> {
@@ -853,11 +1110,22 @@ export class GameRuntime {
 
   private async claimReward(ctx: Ctx, rewardType: string, rewardRef: string): Promise<GameResponse> {
     if (!rewardType || !rewardRef) return this.respond(ctx.player, 'Награда не найдена.', NAV);
+    if (rewardType === 'gift' && rewardRef === 'scavenger_cache') {
+      if (!ctx.flags.fed_stone_scavenger || ctx.flags.defeated_stone_scavenger) {
+        throw new ActionRejectedError('Падальщик не оставляет тебе ничего.');
+      }
+    }
     const ok = await this.store.tryClaimReward(ctx.player.id, rewardType, rewardRef);
     if (!ok) throw new RewardAlreadyClaimedError();
     if (rewardType === 'coins' && rewardRef === 'demo_coins') {
       await this.changeCoins(ctx.player, 10, 'claim_reward', rewardRef);
       return this.respond(ctx.player, 'Получено 10 монет.', NAV);
+    }
+    if (rewardType === 'gift' && rewardRef === 'scavenger_cache') {
+      await this.store.addResource(ctx.player.id, 'COBBLESTONE', 2);
+      await this.store.setFlag(ctx.player.id, 'scavenger_cache', '1');
+      await this.store.setFlag(ctx.player.id, 'scavenger_day2_visit', '1');
+      return this.renderNode(ctx.player, 'scavenger_day2_cache');
     }
     return this.respond(ctx.player, 'Награда отмечена.', NAV);
   }
@@ -1054,7 +1322,8 @@ export class GameRuntime {
             status: 'ACTIVE',
             progress: {},
           });
-          notes.push('Задание: Железо для ворот.');
+          const title = QUEST_TEMPLATES.find((quest) => quest.id === action.questId)?.title ?? action.questId;
+          notes.push(`Задание: ${title}.`);
           break;
         }
         case 'set_discovery':

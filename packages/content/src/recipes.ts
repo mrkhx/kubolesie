@@ -1,7 +1,7 @@
 import type { ResourceType } from '@kubolesie/shared';
 
 export type CraftOutput =
-  | { kind: 'item'; templateId: string }
+  | { kind: 'item'; templateId: string; amount?: number }
   | { kind: 'resource'; resource: ResourceType; amount: number };
 
 export interface CraftRecipe {
@@ -70,6 +70,24 @@ export const CRAFT_RECIPES: Record<string, CraftRecipe> = {
     name: 'Переколоть камень в булыжник',
     cost: { STONE: 1 },
     output: { kind: 'resource', resource: 'COBBLESTONE', amount: 1 },
+  },
+  chest: {
+    id: 'chest',
+    name: 'Сундук',
+    cost: { PLANK: 8 },
+    output: { kind: 'item', templateId: 'chest' },
+  },
+  torch: {
+    id: 'torch',
+    name: 'Факелы',
+    cost: { COAL: 1, STICK: 1 },
+    output: { kind: 'item', templateId: 'torch', amount: 4 },
+  },
+  campfire: {
+    id: 'campfire',
+    name: 'Костёр',
+    cost: { LOG: 3, STICK: 3, COAL: 1 },
+    output: { kind: 'item', templateId: 'campfire' },
   },
 };
 

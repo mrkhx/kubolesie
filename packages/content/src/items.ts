@@ -120,6 +120,24 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
     rarity: 'COMMON',
     questItem: true,
   },
+  torch: {
+    id: 'torch',
+    name: 'Факел',
+    description: 'Уголь и палка. Свет без печи.',
+    rarity: 'COMMON',
+  },
+  chest: {
+    id: 'chest',
+    name: 'Сундук',
+    description: 'Восемь досок. Пока просто стоит на стане.',
+    rarity: 'COMMON',
+  },
+  campfire: {
+    id: 'campfire',
+    name: 'Костёр',
+    description: 'Брёвна, палки, уголь. Ночь становится короче.',
+    rarity: 'COMMON',
+  },
 };
 
 export function getItemTemplate(id: string): ItemTemplate | undefined {

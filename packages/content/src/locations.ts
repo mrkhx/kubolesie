@@ -35,6 +35,16 @@ export const LOCATIONS: Record<string, LocationTemplate> = {
     name: 'Боковая камера',
     text: 'Узкий карман породы. Старый сундук и жила странного синего минерала.',
   },
+  player_camp: {
+    id: 'player_camp',
+    name: 'Свой стан',
+    text: 'Клетка леса, которую ты занял. Пока голо. Можно сделать здесь дом.',
+  },
+  soot_fissure: {
+    id: 'soot_fissure',
+    name: 'Сажевая расселина',
+    text: 'Чёрные кубы, запах гари. Уголь берётся деревянной киркой. Железо ей не по зубам.',
+  },
 };
 
 export const DEFAULT_LOCATION = 'forest_clearing';

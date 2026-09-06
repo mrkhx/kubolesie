@@ -46,6 +46,7 @@ const TEXT_ALIASES: Record<string, GameCommandType> = {
   камень: 'GATHER_STONE',
   булыжник: 'GATHER_STONE',
   железо: 'GATHER_IRON',
+  уголь: 'GATHER_COAL',
   жетон: 'INSPECT_TOKEN',
   укрытие: 'BUILD_TEMP_SHELTER',
   ночь: 'REST_NIGHT',
@@ -57,6 +58,7 @@ const TEXT_MENU_ALIASES: Record<string, string> = {
   инструменты: 'tools',
   оружие: 'weapons',
   предметы: 'items',
+  стан: 'camp',
   назад: 'hub',
 };
 

@@ -686,7 +686,8 @@ describe('day 1 validation idempotency branches persist', () => {
       expect(run.player.level).toBe(2);
       expect(run.last.text).toContain('Первый день окончен');
       const day2 = await act(run.runtime, run.vkUserId, 'BEGIN_DAY_2');
-      expect(day2.text).toContain('Продолжение скоро будет доступно');
+      expect(day2.text).toMatch(/стан|Затвор держит/i);
+      expect(day2.text).not.toContain('Продолжение скоро будет доступно');
     }
   });
 

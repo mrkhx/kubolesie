@@ -26,6 +26,7 @@ export const GAME_COMMANDS = [
   'GATHER_WOOD',
   'GATHER_STONE',
   'GATHER_IRON',
+  'GATHER_COAL',
   'CRAFT_ITEM',
   'EQUIP_ITEM',
   'USE_ITEM',
@@ -42,6 +43,10 @@ export const GAME_COMMANDS = [
   'MINE_BLUE_MINERAL',
   'REST_NIGHT',
   'BEGIN_DAY_2',
+  'FOUND_CAMP',
+  'PLACE_CAMP_TABLE',
+  'LIGHT_CAMP',
+  'COMPLETE_DAY_2',
 ] as const;
 
 export type GameCommandType = (typeof GAME_COMMANDS)[number];

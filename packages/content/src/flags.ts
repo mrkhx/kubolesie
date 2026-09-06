@@ -29,6 +29,19 @@ export const STORY_FLAGS = [
   'found_broken_lantern',
   'found_blue_light',
   'iron_ready',
+  'player_camp_founded',
+  'camp_on_shelter',
+  'camp_table_placed',
+  'camp_chest_built',
+  'camp_fire_built',
+  'found_coal',
+  'camp_lit',
+  'seen_soot_fissure',
+  'scavenger_day2_visit',
+  'scavenger_cache',
+  'pressed_rem_about_night',
+  'seen_ridge_tracks',
+  'day_2_complete',
 ] as const;
 
 export type StoryFlag = (typeof STORY_FLAGS)[number];

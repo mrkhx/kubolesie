@@ -269,10 +269,11 @@ describe('mock playthrough via nested menus', () => {
     expect((await store.getResources(player.id)).STONE ?? 0).toBe(0);
   });
 
-  it('day 2 stub is unchanged', async () => {
+  it('day 2 starts instead of the old stub', async () => {
     const { store, runtime, player, vkUserId } = await boot();
     await store.setFlag(player.id, 'day_1_complete', '1');
     const day2 = await act(runtime, vkUserId, 'BEGIN_DAY_2');
-    expect(day2.text).toContain('Продолжение скоро будет доступно');
+    expect(day2.text).toMatch(/стан|Затвор держит/i);
+    expect(day2.text).not.toContain('Продолжение скоро будет доступно');
   });
 });

@@ -3,6 +3,7 @@ import { FOREST_NODES } from './dialogues-forest';
 import { REM_NODES } from './dialogues-rem';
 import { MINE_NODES } from './dialogues-mine';
 import { NIGHT_NODES } from './dialogues-night';
+import { DAY2_NODES } from './dialogues-day2';
 import type { DialogueNode } from './dialogue-types';
 
 export * from './flags';
@@ -19,6 +20,7 @@ export const DIALOGUE_NODES: Record<string, DialogueNode> = {
   ...REM_NODES,
   ...MINE_NODES,
   ...NIGHT_NODES,
+  ...DAY2_NODES,
 };
 
 export function getDialogueNode(id: string): DialogueNode | undefined {

@@ -44,5 +44,9 @@ describe('vk adapter', () => {
     expect(gather.command).toEqual({ type: 'OPEN_MENU', payload: { menu: 'gather' } });
     const camp = parseMockVkEvent({ event_id: 'e-c', vk_user_id: 1, text: 'лагерь' });
     expect(camp.command.type).toBe('OPEN_CAMP');
+    const station = parseMockVkEvent({ event_id: 'e-st', vk_user_id: 1, text: 'стан' });
+    expect(station.command).toEqual({ type: 'OPEN_MENU', payload: { menu: 'camp' } });
+    const coal = parseMockVkEvent({ event_id: 'e-coal', vk_user_id: 1, text: 'уголь' });
+    expect(coal.command.type).toBe('GATHER_COAL');
   });
 });

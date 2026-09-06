@@ -23,6 +23,12 @@ export const GATHER_IRON = {
   collapseMaxHp: 10,
 } as const;
 
+export const GATHER_COAL = {
+  energyCost: 2,
+  minYield: 2,
+  maxYield: 4,
+} as const;
+
 export const START_CRATE = {
   log: 2,
 } as const;
@@ -61,7 +67,7 @@ export interface CommandRequirement {
 }
 
 export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequirement>> = {
-  GATHER_WOOD: { locations: ['forest_clearing', 'rem_camp'] },
+  GATHER_WOOD: { locations: ['forest_clearing', 'rem_camp', 'player_camp'] },
   GATHER_STONE: {
     locations: ['stone_scree'],
     itemsAny: ['wooden_pickaxe', 'stone_pickaxe'],
@@ -70,6 +76,10 @@ export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequir
     locations: ['old_adit'],
     itemsAny: ['stone_pickaxe'],
     quest: { id: 'iron_for_gate', statuses: ['ACTIVE'] },
+  },
+  GATHER_COAL: {
+    locations: ['soot_fissure'],
+    itemsAny: ['wooden_pickaxe', 'stone_pickaxe'],
   },
   BUILD_TEMP_SHELTER: { locations: ['forest_clearing'], once: { rewardType: 'structure', rewardRef: 'temp_shelter' } },
   FEED_SCAVENGER: { locations: ['stone_scree'] },
@@ -81,6 +91,10 @@ export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequir
   MINE_BLUE_MINERAL: { locations: ['secret_chamber'], flagsAll: ['found_blue_light'] },
   REST_NIGHT: { quest: { id: 'iron_for_gate', statuses: ['CLAIMED'] } },
   BEGIN_DAY_2: { flagsAll: ['day_1_complete'] },
+  FOUND_CAMP: { flagsAll: ['day_1_complete'] },
+  PLACE_CAMP_TABLE: { locations: ['player_camp'], flagsAll: ['player_camp_founded'] },
+  LIGHT_CAMP: { locations: ['player_camp'], flagsAll: ['player_camp_founded'] },
+  COMPLETE_DAY_2: { flagsAll: ['player_camp_founded'] },
   INSPECT_TOKEN: { itemsAny: ['rusty_token'] },
   OPEN_CRATE: { locations: ['forest_clearing'] },
 };

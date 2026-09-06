@@ -26,6 +26,13 @@ export const QUEST_TEMPLATES: QuestTemplateContent[] = [
     defaultStatus: 'LOCKED',
     target: { resource: 'IRON_ORE', amount: 8 },
   },
+  {
+    id: 'found_a_camp',
+    title: 'Свой стан',
+    description: 'Занять клетку, поставить верстак на землю и зажечь костёр.',
+    defaultStatus: 'LOCKED',
+  },
 ];
 
 export const IRON_FOR_GATE_TARGET = 8;
+export const CAMP_QUEST_XP = 30;
