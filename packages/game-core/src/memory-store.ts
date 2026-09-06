@@ -12,6 +12,7 @@ import { QUEST_TEMPLATES } from '@kubolesie/content';
 import type { BattleEvent } from '@kubolesie/combat-engine';
 import type {
   CombatMatchRecord,
+  DiscoveryRecord,
   GameStore,
   InventoryItemRecord,
   PlayerQuestRecord,
@@ -41,6 +42,7 @@ interface MemoryState {
   }[];
   matches: CombatMatchRecord[];
   matchEvents: { matchId: string; events: BattleEvent[] }[];
+  discoveries: DiscoveryRecord[];
 }
 
 function reviveDates(player: PlayerRecord): PlayerRecord {
@@ -76,6 +78,7 @@ export class MemoryGameStore implements GameStore {
         startedAt: new Date(match.startedAt),
         finishedAt: match.finishedAt ? new Date(match.finishedAt) : null,
       }));
+      parsed.discoveries = parsed.discoveries ?? [];
       store.state = parsed;
     } catch {
       store.state = emptyState();
@@ -317,6 +320,29 @@ export class MemoryGameStore implements GameStore {
     this.state.matchEvents.push({ matchId, events });
     await this.persist();
   }
+
+  async removeItem(itemId: string): Promise<void> {
+    this.state.equipment = this.state.equipment.filter((row) => row.itemId !== itemId);
+    this.state.items = this.state.items.filter((item) => item.id !== itemId);
+    await this.persist();
+  }
+
+  async listPlayerQuests(playerId: string): Promise<PlayerQuestRecord[]> {
+    return this.state.playerQuests.filter((row) => row.playerId === playerId);
+  }
+
+  async listDiscoveries(playerId: string): Promise<DiscoveryRecord[]> {
+    return this.state.discoveries.filter((row) => row.playerId === playerId);
+  }
+
+  async upsertDiscovery(record: DiscoveryRecord): Promise<void> {
+    const index = this.state.discoveries.findIndex(
+      (row) => row.playerId === record.playerId && row.discoveryId === record.discoveryId,
+    );
+    if (index >= 0) this.state.discoveries[index] = record;
+    else this.state.discoveries.push(record);
+    await this.persist();
+  }
 }
 
 function emptyState(): MemoryState {
@@ -340,6 +366,7 @@ function emptyState(): MemoryState {
     itemHistory: [],
     matches: [],
     matchEvents: [],
+    discoveries: [],
   };
 }
 

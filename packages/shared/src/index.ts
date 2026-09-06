@@ -1,9 +1,11 @@
-export const BALANCE_VERSION = '0.0.1';
+export const BALANCE_VERSION = '0.0.2';
+export const PROTOTYPE_VERSION = '0.0.2';
 
 export const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
 export const ENERGY_PER_INTERVAL = 1;
 export const STARTING_HP = 100;
 export const STARTING_ENERGY = 20;
+export const XP_TO_LEVEL_2 = 40;
 export const STARTING_STATS = {
   attack: 5,
   defense: 0,
@@ -21,6 +23,8 @@ export const GAME_COMMANDS = [
   'OPEN_INVENTORY',
   'OPEN_CAMP',
   'GATHER_WOOD',
+  'GATHER_STONE',
+  'GATHER_IRON',
   'CRAFT_ITEM',
   'EQUIP_ITEM',
   'USE_ITEM',
@@ -29,6 +33,14 @@ export const GAME_COMMANDS = [
   'CLAIM_REWARD',
   'OPEN_CRATE',
   'DIALOGUE_CHOICE',
+  'INSPECT_TOKEN',
+  'BUILD_TEMP_SHELTER',
+  'FEED_SCAVENGER',
+  'RETURN_IRON',
+  'OPEN_SECRET_CHEST',
+  'MINE_BLUE_MINERAL',
+  'REST_NIGHT',
+  'BEGIN_DAY_2',
 ] as const;
 
 export type GameCommandType = (typeof GAME_COMMANDS)[number];
@@ -60,6 +72,7 @@ export interface GameStateView {
   maxEnergy?: number;
   coins?: number;
   level?: number;
+  xp?: number;
 }
 
 export interface GameResponse {
@@ -76,7 +89,12 @@ export type ResourceType =
   | 'FIBER'
   | 'HIDE'
   | 'HERBS'
-  | 'COAL';
+  | 'COAL'
+  | 'RAW_MEAT'
+  | 'SHREW_FUR'
+  | 'CHITIN_PLATE'
+  | 'SHINY_STONE'
+  | 'FOOD';
 
 export const RESOURCE_TYPES: ResourceType[] = [
   'WOOD',
@@ -86,6 +104,11 @@ export const RESOURCE_TYPES: ResourceType[] = [
   'HIDE',
   'HERBS',
   'COAL',
+  'RAW_MEAT',
+  'SHREW_FUR',
+  'CHITIN_PLATE',
+  'SHINY_STONE',
+  'FOOD',
 ];
 
 export type Rarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' | 'MYTHIC';

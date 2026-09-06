@@ -149,5 +149,18 @@ export interface GameStore {
   createCombatMatch(input: Omit<CombatMatchRecord, 'id'> & { id?: string }): Promise<CombatMatchRecord>;
   addCombatEvents(matchId: string, events: BattleEvent[]): Promise<void>;
 
+  removeItem(itemId: string): Promise<void>;
+  listPlayerQuests(playerId: string): Promise<PlayerQuestRecord[]>;
+  listDiscoveries(playerId: string): Promise<DiscoveryRecord[]>;
+  upsertDiscovery(record: DiscoveryRecord): Promise<void>;
+
   persist?(): Promise<void>;
+}
+
+export interface DiscoveryRecord {
+  playerId: string;
+  discoveryId: string;
+  title: string;
+  seen: boolean;
+  defeated: boolean;
 }

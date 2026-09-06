@@ -54,7 +54,7 @@ export const MOCK_CONSOLE_HTML = `<!DOCTYPE html>
       <div class="avatar">К</div>
       <div>
         <div>Куболесье</div>
-        <div class="sub">Mock VK Adapter · чат-RPG, не Mini App</div>
+        <div class="sub">Mock VK Adapter · Prototype 0.0.2 · чат-RPG, не Mini App</div>
       </div>
     </header>
     <div class="log" id="log"></div>
@@ -75,9 +75,16 @@ export const MOCK_CONSOLE_HTML = `<!DOCTYPE html>
       <button type="button" data-cmd='START_GAME'>START_GAME</button>
       <button type="button" data-cmd='OPEN_CRATE'>OPEN_CRATE</button>
       <button type="button" data-cmd='GATHER_WOOD'>GATHER_WOOD</button>
+      <button type="button" data-cmd='GATHER_STONE'>GATHER_STONE</button>
+      <button type="button" data-cmd='GATHER_IRON'>GATHER_IRON</button>
+      <button type="button" data-cmd='INSPECT_TOKEN'>INSPECT_TOKEN</button>
+      <button type="button" data-cmd='BUILD_TEMP_SHELTER'>BUILD_TEMP_SHELTER</button>
       <button type="button" data-cmd='OPEN_CAMP'>OPEN_CAMP</button>
       <button type="button" data-cmd='OPEN_INVENTORY'>OPEN_INVENTORY</button>
+      <button type="button" data-cmd='EXPLORE'>EXPLORE</button>
     </div>
+    <h2>Как пройти День 1</h2>
+    <div class="sub">Ящик → рубить дерево (жетон) → осмотреть жетон → к дыму → помочь Рему → осыпь / кирка → штольня → железо ×8 → сдать → ночь. Отладка HP/флагов — только в этой панели, не в GameResponse.</div>
   </aside>
   <script>
     const log = document.getElementById('log');
@@ -137,7 +144,7 @@ export const MOCK_CONSOLE_HTML = `<!DOCTYPE html>
     document.querySelectorAll('[data-cmd]').forEach((el) => {
       el.addEventListener('click', () => send(el.dataset.cmd));
     });
-    add('VK — только интерфейс. Игровая логика живёт в Game Core.\\nНажми START_GAME или напиши /start.');
+    add('VK — только интерфейс. Игровая логика живёт в Game Core.\\nНажми START_GAME или напиши /start.\\nPrototype 0.0.2: полный День 1.');
   </script>
 </body>
 </html>

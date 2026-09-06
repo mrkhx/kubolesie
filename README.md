@@ -6,7 +6,7 @@
 
 Игрок взаимодействует через сообщения сообщества: текст, кнопки, callback actions и, при необходимости, карточки.
 
-Текущая версия: **Prototype 0.0.1** — рабочий фундамент, не полноценный игровой день.
+Текущая версия: **Prototype 0.0.2** — полный игровой День 1 в mock VK-консоли.
 
 ## Архитектура
 
@@ -29,8 +29,12 @@ PostgreSQL          packages/database (Prisma)
 - Redis — lock, rate limit, временный cache. **Не** хранилище прогресса.
 - BullMQ worker — фоновые задачи. Энергия регенерируется **лениво**, без cron по всем игрокам.
 - `processed_events` — идемпотентность внешних событий.
+- `reward_claims` — одноразовые награды (ящик, жетон, сундук, квест, ночь, survivor pack).
+- `player_discoveries` — кодекс встреч (`unknown_node7_creature` = `???`).
 
 Идентификатор игрока внутри ядра — `player.id`. `vk_user_id` уникален в таблице `players`, но core не принимает сырой VK JSON и не строит сюжет вокруг VK API.
+
+Сюжет **data-driven**: узлы диалогов в `packages/content/src/dialogues-*.ts`. Ядро не содержит гигантский `switch` по сюжету. Условия кнопок перепроверяются на каждый callback — старый payload отклоняется.
 
 ## Структура
 
@@ -40,35 +44,65 @@ apps/
   vk-bot/       адаптер mock-события → NormalizedIncomingEvent → GameResponse
   worker/       BullMQ skeleton (без energy cron)
 packages/
-  game-core/    команды, энергия, инвентарь, диалоги, флаги, квесты
-  combat-engine детерминированный бой (snapshot + seed)
-  database/     Prisma schema, migration, PrismaGameStore
-  content/      предметы, рецепты, враги, локации, диалоги Дня 1 (каркас)
+  game-core/    команды, энергия, инвентарь, диалоги, флаги, квесты, День 1
+  combat-engine детерминированный бой (snapshot + seed) + formatCombatLog
+  database/     Prisma schema, init + day_one migrations, PrismaGameStore
+  content/      предметы, рецепты, враги, локации, квесты, правила, диалоги
   shared/       команды, GameResponse, enums
 ```
 
 Монорепозиторий на **npm workspaces**.
 
+## День 1 — поток
+
+```
+START_GAME (HUD: HP / Energy / Coins / инвентарь)
+  → опушка: ящик / дым / кусты
+  → каменный нож, сухарь, дерево, камень (ящик один раз)
+  → дикая землеройка (бой необязателен)
+  → рубка дерева, жетон один раз, осмотр → «Узел 7» / «Не буди шахту»
+  → дым без жетона = пустой стан; с активированным жетоном = Рем и затвор
+  → закрыть затвор (камни / доски / механизм / вопрос) → существо ??? 
+  → квест iron_for_gate (8 IRON_ORE)
+  → осыпь: камень руками, падальщик (уйти / ударить / копать / покормить)
+  → крафт: топор (2+2), кирка (2+3)
+  → штольня (кирка + квест): железо, рельсы, слух, ползун
+  → 8 руды → голубой свет → секретный сундук (miner_belt) / синяя жила
+  → сдать железо Рему (+40 XP, +25 монет, trust)
+  → уровень 2 (порог 40 XP: квест сам по себе поднимает уровень)
+  → ночь у Рема или в своём укрытии
+  → DAY_1_COMPLETE + Survivor Pack (50 монет, еда ×2)
+  → «Начать День 2» → «Продолжение скоро будет доступно.»
+```
+
+Level 2: `max_hp +5`, `max_energy +1`, HP заполняется до нового максимума. Trust Рема числом не показывается.
+
 ## Local setup
 
-Нужны Node.js 20+ и Docker (для Postgres + Redis).
+Нужны Node.js 20+ и Docker (для Postgres + Redis). Без Docker ядро поднимается на in-memory store (`GAME_STORE=memory`).
 
 ```bash
 cp .env.example .env
 npm install
-npm run docker:up
-npm run prisma:migrate
+npm run docker:up          # опционально
+npm run prisma:migrate     # если есть Postgres
 npm run prisma:seed
 npm run start:api
 ```
 
-API по умолчанию слушает `PORT` из `.env` (3000).
+API слушает `PORT` из `.env` (локально часто 3000; в sandbox preview — 8080).
 
-Локально `GET /` отдаёт **mock VK-консоль** — это не игровой клиент и не Mini App, а стенд для mock-событий.
+`GET /` отдаёт **mock VK-консоль** — это не игровой клиент и не Mini App, а стенд для mock-событий.
 
-`VK_GROUP_TOKEN` **не нужен** для локального запуска ядра.
+`VK_GROUP_TOKEN` **не нужен**.
 
-Mock-событие:
+### Mock playthrough
+
+1. Открой mock-консоль (`GET /`).
+2. Нажми `START_GAME` (или напиши `/start`).
+3. Жми кнопки ответа: ящик → рубить дерево → осмотреть жетон → к дыму → помочь с затвором → осыпь → кирка → штольня → железо → сдать Рему → ночь.
+4. Текст и кнопки — это `GameResponse`. Текущее состояние видно в панели справа (`GET /v1/players/:vkUserId`).
+5. Отладка (флаги, квесты, discoveries, trust) **не** входит в обычный `GameResponse`.
 
 ```bash
 curl -s localhost:3000/v1/mock/event \
@@ -76,23 +110,9 @@ curl -s localhost:3000/v1/mock/event \
   -d '{"event_id":"e1","vk_user_id":"1001","action":"START_GAME"}'
 ```
 
-Ожидаемый ответ: стартовый текст и три кнопки — «Осмотреть ящик», «Пойти к дыму», «Проверить кусты».
+Ожидаемый ответ: HUD, стартовый текст и три кнопки — «Осмотреть разбитый ящик», «Пойти к дыму», «Проверить кусты».
 
-Дальше:
-
-```bash
-# ящик → rusty_token + flag found_rusty_token
-curl -s localhost:3000/v1/mock/event -H 'content-type: application/json' \
-  -d '{"event_id":"e2","vk_user_id":"1001","action":"OPEN_CRATE"}'
-
-# рубка дерева: −2 energy, +6 WOOD
-curl -s localhost:3000/v1/mock/event -H 'content-type: application/json' \
-  -d '{"event_id":"e3","vk_user_id":"1001","action":"GATHER_WOOD"}'
-
-curl -s localhost:3000/v1/players/1001
-```
-
-Перезапуск API при `GAME_STORE=prisma` и живом Postgres сохраняет прогресс.
+Повтор того же `event_id` ничего не делает второй раз.
 
 ## Docker Compose
 
@@ -110,7 +130,8 @@ docker compose ps
 
 Prisma schema: `packages/database/prisma/schema.prisma`
 
-Первая миграция: `packages/database/prisma/migrations/20260906120000_init`
+- `packages/database/prisma/migrations/20260906120000_init` — фундамент 0.0.1 (не переписывать)
+- `packages/database/prisma/migrations/20260906180000_day_one` — enum-ресурсы Дня 1 + `player_discoveries`
 
 ```bash
 npm run prisma:generate
@@ -126,7 +147,7 @@ PostgreSQL — source of truth. Redis не хранит прогресс игр�
 npm run prisma:seed
 ```
 
-Сидит квест `iron_for_gate`. Предметы, враги, локации и диалоги живут в `packages/content` (template layer).
+Сидит квест `iron_for_gate`. Предметы, враги, локации и диалоги живут в `packages/content`.
 
 ## Tests
 
@@ -134,16 +155,7 @@ npm run prisma:seed
 npm test
 ```
 
-Покрыто:
-
-1. ленивая регенерация энергии (1 / 10 минут)
-2. крафт `stone_axe`
-3. отказ в крафте при нехватке ресурсов
-4. повторный `event_id` не выполняет действие дважды
-5. повторный claim награды
-6. детерминированный бой при одинаковых snapshot + seed
-7. нельзя экипировать чужой предмет
-8. монеты не уходят ниже 0
+Сохранены тесты 0.0.1 и добавлены сценарии Дня 1: ящик, сухарь, укрытие, жетон, падальщик, штольня, ползун, квест, секрет, trust, уровень 2, ночь, survivor pack, stale callback, идемпотентность, все основные ветки, persist после restart.
 
 ## Env
 
@@ -164,9 +176,7 @@ npm test
 
 ## Game commands
 
-Нормализованные команды ядра (VK payload позже мапится сюда):
-
-`START_GAME` `EXPLORE` `OPEN_INVENTORY` `OPEN_CAMP` `GATHER_WOOD` `CRAFT_ITEM` `EQUIP_ITEM` `USE_ITEM` `TALK_NPC` `START_PVE` `CLAIM_REWARD` `OPEN_CRATE` `DIALOGUE_CHOICE`
+`START_GAME` `EXPLORE` `OPEN_INVENTORY` `OPEN_CAMP` `GATHER_WOOD` `GATHER_STONE` `GATHER_IRON` `CRAFT_ITEM` `EQUIP_ITEM` `USE_ITEM` `TALK_NPC` `START_PVE` `CLAIM_REWARD` `OPEN_CRATE` `DIALOGUE_CHOICE` `INSPECT_TOKEN` `BUILD_TEMP_SHELTER` `FEED_SCAVENGER` `RETURN_IRON` `OPEN_SECRET_CHEST` `MINE_BLUE_MINERAL` `REST_NIGHT` `BEGIN_DAY_2`
 
 `GameResponse` ядра:
 
@@ -176,20 +186,16 @@ npm test
 
 Ядро **не** собирает сырой VK keyboard JSON. Это делает VK Adapter.
 
-## Prototype 0.0.1 содержит
+## Prototype 0.0.2 содержит
 
-- backend skeleton (NestJS)
-- database layer (Prisma + PostgreSQL)
-- player, stats, energy (lazy), resources, inventory instances, equipment
-- story flags, NPC relations (`rem`), quests (`iron_for_gate`)
-- dialogue/state engine
-- command router
-- combat-engine + combat_matches/events
-- content layer (предметы, рецепты, враги, локации, каркас Дня 1)
-- VK adapter skeleton (mock events)
-- idempotency (`processed_events`)
-- reward claims, currency ledger, item history
-- Docker local environment
-- tests + README
+- полный День 1 с развилками без soft-lock
+- HUD на старте, consumable `dry_rusk`, укрытие, ржавый жетон / Узел 7
+- Рем, затвор, `unknown_node7_creature` (???)
+- квест `iron_for_gate`, осыпь, падальщик, affinity один раз
+- штольня, обвал, ползун, секретный сундук, синяя жила
+- уровень 2, первая ночь, Survivor Pack, заглушка Дня 2
+- data-driven диалоги, валидация команд и stale callback
+- идемпотентность event_id / reward_claims
+- mock VK-консоль для прохождения
 
-Не входит в этот патч: Mini App, React frontend, браузерная игра, PvP, рынок, кланы, сезоны, платежи, production VK webhook, admin panel.
+Не входит: Mini App, React frontend, браузерная игра, PvP, рынок, кланы, сезоны, платежи, production VK webhook, admin panel, контент Дня 2.

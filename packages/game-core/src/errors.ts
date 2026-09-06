@@ -43,3 +43,9 @@ export class UnknownCommandError extends GameError {
     super(`Неизвестная команда: ${command}`, 'UNKNOWN_COMMAND');
   }
 }
+
+export class ActionRejectedError extends GameError {
+  constructor(message = 'Сейчас это сделать нельзя.') {
+    super(message, 'ACTION_REJECTED');
+  }
+}

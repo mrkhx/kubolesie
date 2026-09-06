@@ -97,6 +97,15 @@ function resolveHit(
   return { type: 'HIT', value: damage };
 }
 
+export function seededRange(seed: number | string, min: number, max: number, salt = ''): number {
+  const rng = mulberry32(seedToUint(`${seed}:${salt}`));
+  return min + Math.floor(rng() * (max - min + 1));
+}
+
+export function seededChance(seed: number | string, percent: number, salt = ''): boolean {
+  return seededRange(seed, 1, 100, salt) <= percent;
+}
+
 export function simulateBattle(input: BattleInput): BattleResult {
   const balanceVersion = input.balanceVersion ?? BALANCE_VERSION;
   const seed = seedToUint(input.seed);

@@ -7,7 +7,7 @@ async function bootstrap() {
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? '0.0.0.0';
   await app.listen(port, host);
-  console.log(`[api] Kubolesie prototype 0.0.1 listening on ${host}:${port}`);
+  console.log(`[api] Kubolesie prototype 0.0.2 listening on ${host}:${port}`);
   console.log('[api] VK is an interface only. Game core does not require VK_GROUP_TOKEN.');
 }
 

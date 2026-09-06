@@ -68,12 +68,15 @@ export class GameController {
     this.assertMock();
     const player = await this.store.findPlayerByVkUserId(vkUserId);
     if (!player) throw new NotFoundException('player not found');
-    const [resources, items, flags, equipment] = await Promise.all([
+    const [resources, items, flags, equipment, quests, discoveries] = await Promise.all([
       this.store.getResources(player.id),
       this.store.listItems(player.id),
       this.store.getFlags(player.id),
       this.store.getEquipment(player.id),
+      this.store.listPlayerQuests(player.id),
+      this.store.listDiscoveries(player.id),
     ]);
+    const rem = await this.store.getNpcRelation(player.id, 'rem');
     return {
       player: {
         id: player.id,
@@ -94,6 +97,9 @@ export class GameController {
       items,
       flags,
       equipment,
+      quests,
+      discoveries,
+      relations: { rem },
     };
   }
 

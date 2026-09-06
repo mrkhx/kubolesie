@@ -9,6 +9,7 @@ import type {
 import type { BattleEvent } from '@kubolesie/combat-engine';
 import type {
   CombatMatchRecord,
+  DiscoveryRecord,
   GameStore,
   InventoryItemRecord,
   PlayerQuestRecord,
@@ -388,6 +389,42 @@ export class PrismaGameStore implements GameStore {
         type: event.type,
         value: event.value,
       })),
+    });
+  }
+
+  async removeItem(itemId: string): Promise<void> {
+    await this.prisma.playerEquipment.deleteMany({ where: { itemId } });
+    await this.prisma.inventoryItem.delete({ where: { id: itemId } }).catch(() => undefined);
+  }
+
+  async listPlayerQuests(playerId: string): Promise<PlayerQuestRecord[]> {
+    const rows = await this.prisma.playerQuest.findMany({ where: { playerId } });
+    return rows.map((row) => ({
+      playerId: row.playerId,
+      questId: row.questId,
+      status: row.status,
+      progress: (row.progress ?? {}) as Record<string, unknown>,
+    }));
+  }
+
+  async listDiscoveries(playerId: string): Promise<DiscoveryRecord[]> {
+    const rows = await this.prisma.playerDiscovery.findMany({ where: { playerId } });
+    return rows.map((row) => ({
+      playerId: row.playerId,
+      discoveryId: row.discoveryId,
+      title: row.title,
+      seen: row.seen,
+      defeated: row.defeated,
+    }));
+  }
+
+  async upsertDiscovery(record: DiscoveryRecord): Promise<void> {
+    await this.prisma.playerDiscovery.upsert({
+      where: {
+        playerId_discoveryId: { playerId: record.playerId, discoveryId: record.discoveryId },
+      },
+      update: { title: record.title, seen: record.seen, defeated: record.defeated },
+      create: record,
     });
   }
 }

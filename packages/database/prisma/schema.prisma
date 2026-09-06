@@ -16,6 +16,11 @@ enum ResourceType {
   HIDE
   HERBS
   COAL
+  RAW_MEAT
+  SHREW_FUR
+  CHITIN_PLATE
+  SHINY_STONE
+  FOOD
 }
 
 enum Rarity {
@@ -106,6 +111,7 @@ model Player {
   currencyTx       CurrencyTransaction[]
   itemHistory      ItemHistory[]
   combatMatches    CombatMatch[]
+  discoveries      PlayerDiscovery[]
 
   @@map("players")
 }
@@ -313,4 +319,20 @@ model CombatEvent {
 
   @@index([matchId, turn])
   @@map("combat_events")
+}
+
+model PlayerDiscovery {
+  id          String   @id @default(cuid())
+  playerId    String   @map("player_id")
+  discoveryId String   @map("discovery_id")
+  title       String
+  seen        Boolean  @default(true)
+  defeated    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, discoveryId])
+  @@map("player_discoveries")
 }

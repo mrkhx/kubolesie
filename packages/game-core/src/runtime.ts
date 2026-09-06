@@ -1,36 +1,52 @@
 import { randomUUID } from 'node:crypto';
 import {
   BALANCE_VERSION,
+  STARTING_ENERGY,
   STARTING_STATS,
-  type EquipmentSlot,
+  XP_TO_LEVEL_2,
   type GameButton,
   type GameCommand,
+  type GameCommandType,
   type GameResponse,
   type GameStateView,
   type NormalizedIncomingEvent,
   type ResourceType,
 } from '@kubolesie/shared';
 import {
-  CAMP_BUTTONS,
-  CRAFT_RECIPES,
+  COMBAT_REQUIREMENTS,
+  COMMAND_REQUIREMENTS,
   DIALOGUE_NODES,
   ENEMIES,
+  GATHER_IRON,
+  GATHER_STONE,
   GATHER_WOOD,
+  IRON_FOR_GATE_TARGET,
   ITEM_TEMPLATES,
+  LEVEL_UP,
   LOCATIONS,
+  NIGHT_REST,
+  SHELTER,
   getDialogueNode,
   getEnemy,
   getItemTemplate,
   getLocation,
   getRecipe,
   resourceLabel,
+  type CommandRequirement,
   type DialogueAction,
   type DialogueChoice,
   type DialogueCondition,
+  type DialogueNode,
 } from '@kubolesie/content';
-import { simulateBattle, type CombatantSnapshot } from '@kubolesie/combat-engine';
+import {
+  seededChance,
+  seededRange,
+  simulateBattle,
+  type CombatantSnapshot,
+} from '@kubolesie/combat-engine';
 import { regenerateEnergy } from './energy';
 import {
+  ActionRejectedError,
   GameError,
   InsufficientCoinsError,
   InsufficientEnergyError,
@@ -39,12 +55,29 @@ import {
   RewardAlreadyClaimedError,
   UnknownCommandError,
 } from './errors';
-import type { GameStore, InventoryItemRecord, PlayerRecord } from './store';
+import { formatCombatLog } from './combat-log';
+import type {
+  DiscoveryRecord,
+  GameStore,
+  InventoryItemRecord,
+  PlayerQuestRecord,
+  PlayerRecord,
+} from './store';
 
-const NAV_BUTTONS: GameButton[] = [
-  { label: 'Лагерь', action: 'OPEN_CAMP' },
+const NAV: GameButton[] = [
+  { label: 'Оглядеться', action: 'EXPLORE' },
   { label: 'Инвентарь', action: 'OPEN_INVENTORY' },
 ];
+
+interface Ctx {
+  player: PlayerRecord;
+  flags: Record<string, string>;
+  items: InventoryItemRecord[];
+  resources: Partial<Record<ResourceType, number>>;
+  equipment: Partial<Record<string, string>>;
+  quests: Record<string, PlayerQuestRecord>;
+  discoveries: DiscoveryRecord[];
+}
 
 export class GameRuntime {
   private readonly chains = new Map<string, Promise<unknown>>();
@@ -57,15 +90,10 @@ export class GameRuntime {
   async handle(event: NormalizedIncomingEvent): Promise<GameResponse> {
     return this.serialize(`event:${event.eventId}`, async () => {
       const existing = await this.store.findProcessedEvent(event.eventId);
-      if (existing) {
-        return existing.response;
-      }
-
-      const playerKey = event.identity.providerUserId;
-      return this.serialize(`player:${playerKey}`, async () => {
+      if (existing) return existing.response;
+      return this.serialize(`player:${event.identity.providerUserId}`, async () => {
         const again = await this.store.findProcessedEvent(event.eventId);
         if (again) return again.response;
-
         const response = await this.execute(event);
         await this.store.saveProcessedEvent({
           eventId: event.eventId,
@@ -97,10 +125,7 @@ export class GameRuntime {
       return await this.dispatch(current, event.command, event.eventId);
     } catch (error) {
       if (error instanceof GameError) {
-        return {
-          text: error.message,
-          buttons: NAV_BUTTONS,
-        };
+        return { text: error.message, buttons: NAV };
       }
       throw error;
     }
@@ -109,120 +134,828 @@ export class GameRuntime {
   private async ensurePlayer(event: NormalizedIncomingEvent): Promise<PlayerRecord> {
     const existing = await this.store.findPlayerByVkUserId(event.identity.providerUserId);
     if (existing) return existing;
-    return this.store.createPlayer({
+    const created = await this.store.createPlayer({
       vkUserId: event.identity.providerUserId,
       name: event.identity.displayName?.trim() || 'Путник',
     });
+    await this.store.setFlag(created.id, 'visited_forest_clearing', '1');
+    return created;
   }
 
-  private async dispatch(
-    player: PlayerRecord,
-    command: GameCommand,
-    eventId: string,
-  ): Promise<GameResponse> {
+  private async load(player: PlayerRecord): Promise<Ctx> {
+    const [flags, items, resources, equipment, quests, discoveries] = await Promise.all([
+      this.store.getFlags(player.id),
+      this.store.listItems(player.id),
+      this.store.getResources(player.id),
+      this.store.getEquipment(player.id),
+      this.store.listPlayerQuests(player.id),
+      this.store.listDiscoveries(player.id),
+    ]);
+    return {
+      player,
+      flags,
+      items,
+      resources,
+      equipment,
+      quests: Object.fromEntries(quests.map((quest) => [quest.questId, quest])),
+      discoveries,
+    };
+  }
+
+  private async dispatch(player: PlayerRecord, command: GameCommand, eventId: string): Promise<GameResponse> {
+    const ctx = await this.load(player);
+    this.assertAllowed(command, ctx);
     switch (command.type) {
       case 'START_GAME':
-        return this.renderNode(player, player.currentState || 'start');
+        return this.startGame(ctx);
       case 'EXPLORE':
-        return this.explore(player);
+        return this.explore(ctx);
       case 'OPEN_INVENTORY':
-        return this.openInventory(player);
+        return this.openInventory(ctx);
       case 'OPEN_CAMP':
-        return this.openCamp(player);
+        return this.openCamp(ctx);
       case 'GATHER_WOOD':
-        return this.gatherWood(player);
+        return this.gatherWood(ctx, eventId);
+      case 'GATHER_STONE':
+        return this.gatherStone(ctx, eventId);
+      case 'GATHER_IRON':
+        return this.gatherIron(ctx, eventId);
       case 'CRAFT_ITEM':
-        return this.craftItem(player, String(command.payload?.templateId ?? ''));
+        return this.craftItem(ctx, String(command.payload?.templateId ?? ''));
       case 'EQUIP_ITEM':
-        return this.equipItem(player, String(command.payload?.itemId ?? ''));
+        return this.equipItem(ctx, String(command.payload?.itemId ?? ''));
       case 'USE_ITEM':
-        return this.useItem(player, String(command.payload?.itemId ?? ''));
+        return this.useItem(ctx, String(command.payload?.itemId ?? ''));
       case 'TALK_NPC':
-        return this.talkNpc(player, String(command.payload?.npcId ?? 'rem'));
+        return this.talkNpc(ctx, String(command.payload?.npcId ?? 'rem'));
       case 'START_PVE':
-        return this.startPve(player, String(command.payload?.enemyId ?? 'wild_shrew'), eventId);
+        return this.startPve(ctx, String(command.payload?.enemyId ?? 'wild_shrew'), eventId);
       case 'CLAIM_REWARD':
-        return this.claimReward(
-          player,
-          String(command.payload?.rewardType ?? ''),
-          String(command.payload?.rewardRef ?? ''),
-        );
+        return this.claimReward(ctx, String(command.payload?.rewardType ?? ''), String(command.payload?.rewardRef ?? ''));
       case 'OPEN_CRATE':
-        return this.openCrate(player);
+        return this.openCrate(ctx);
       case 'DIALOGUE_CHOICE':
         return this.dialogueChoice(
-          player,
+          ctx,
           String(command.payload?.nodeId ?? player.currentState),
           String(command.payload?.choiceId ?? ''),
         );
+      case 'INSPECT_TOKEN':
+        return this.inspectToken(ctx);
+      case 'BUILD_TEMP_SHELTER':
+        return this.buildShelter(ctx);
+      case 'FEED_SCAVENGER':
+        return this.feedScavenger(ctx);
+      case 'RETURN_IRON':
+        return this.returnIron(ctx);
+      case 'OPEN_SECRET_CHEST':
+        return this.openSecretChest(ctx);
+      case 'MINE_BLUE_MINERAL':
+        return this.mineBlue(ctx);
+      case 'REST_NIGHT':
+        return this.restNight(ctx, String(command.payload?.place ?? 'rem'));
+      case 'BEGIN_DAY_2':
+        return this.beginDay2(ctx);
       default:
         throw new UnknownCommandError((command as GameCommand).type);
     }
   }
 
-  private async renderNode(player: PlayerRecord, nodeId: string): Promise<GameResponse> {
-    const node = getDialogueNode(nodeId) ?? DIALOGUE_NODES.start;
-    player.currentState = node.id;
-    await this.store.savePlayer(player);
-    const flags = await this.store.getFlags(player.id);
-    const items = await this.store.listItems(player.id);
-    const resources = await this.store.getResources(player.id);
-    const choices = node.choices.filter((choice) =>
-      this.matchesCondition(choice.condition, flags, items, resources),
-    );
-    return this.respond(player, node.text, this.choicesToButtons(node.id, choices));
+  private assertAllowed(command: GameCommand, ctx: Ctx): void {
+    const type = command.type;
+    const nightAllowed: GameCommandType[] = [
+      'START_GAME',
+      'EXPLORE',
+      'DIALOGUE_CHOICE',
+      'OPEN_INVENTORY',
+      'BEGIN_DAY_2',
+      'EQUIP_ITEM',
+      'USE_ITEM',
+    ];
+    if (ctx.player.currentState.startsWith('night_') && !nightAllowed.includes(type)) {
+      throw new ActionRejectedError('Сейчас ночь. Дождись утра.');
+    }
+    if (type === 'START_PVE') {
+      const enemyId = String(command.payload?.enemyId ?? '');
+      const req = COMBAT_REQUIREMENTS[enemyId];
+      if (req) this.assertRequirement(req, ctx);
+      return;
+    }
+    const req = COMMAND_REQUIREMENTS[type as GameCommandType];
+    if (req) this.assertRequirement(req, ctx);
   }
 
-  private choicesToButtons(nodeId: string, choices: DialogueChoice[]): GameButton[] {
-    return choices.map((choice) => {
-      if (choice.command) {
-        return {
-          label: choice.label,
-          action: choice.command,
-          payload: choice.commandPayload,
-        };
+  private assertRequirement(req: CommandRequirement, ctx: Ctx): void {
+    if (req.locations && !req.locations.includes(ctx.player.currentLocation)) {
+      throw new ActionRejectedError('Сейчас это сделать нельзя.');
+    }
+    if (req.flagsAll) {
+      for (const flag of req.flagsAll) {
+        if (ctx.flags[flag] == null) throw new ActionRejectedError('Сейчас это сделать нельзя.');
       }
-      return {
-        label: choice.label,
-        action: 'DIALOGUE_CHOICE',
-        payload: { nodeId, choiceId: choice.id },
-      };
+    }
+    if (req.flagsAny && !req.flagsAny.some((flag) => ctx.flags[flag] != null)) {
+      throw new ActionRejectedError('Сейчас это сделать нельзя.');
+    }
+    if (req.itemsAny && !req.itemsAny.some((id) => ctx.items.some((item) => item.templateId === id))) {
+      throw new ActionRejectedError('Сейчас это сделать нельзя.');
+    }
+    if (req.quest) {
+      const quest = ctx.quests[req.quest.id];
+      if (!quest || !req.quest.statuses.includes(quest.status)) {
+        throw new ActionRejectedError('Сейчас это сделать нельзя.');
+      }
+    }
+  }
+
+  private async startGame(ctx: Ctx): Promise<GameResponse> {
+    const nodeId = ctx.player.currentState || 'start';
+    const rendered = await this.renderNode(ctx.player, nodeId === 'gather_wood' ? 'forest_hub' : nodeId);
+    if (nodeId === 'start' || getDialogueNode(nodeId)?.id === 'start') {
+      rendered.text = `${this.hud(ctx)}\n\n${rendered.text}`;
+    }
+    return rendered;
+  }
+
+  private hud(ctx: Ctx): string {
+    const cap = this.energyCap(ctx);
+    const names = ctx.items.map((item) => getItemTemplate(item.templateId)?.name ?? item.templateId);
+    const inv = names.length ? names.slice(0, 4).join(', ') : 'пусто';
+    return `HP ${ctx.player.hp}/${ctx.player.maxHp} · Энергия ${ctx.player.energy}/${cap} · Монеты ${ctx.player.coins}\nИнвентарь: ${inv}`;
+  }
+
+  private energyCap(ctx: Ctx): number {
+    let bonus = 0;
+    for (const itemId of Object.values(ctx.equipment)) {
+      if (!itemId) continue;
+      const item = ctx.items.find((row) => row.id === itemId);
+      const template = item ? getItemTemplate(item.templateId) : undefined;
+      bonus += template?.maxEnergyBonus ?? 0;
+    }
+    return ctx.player.maxEnergy + bonus;
+  }
+
+  private async explore(ctx: Ctx): Promise<GameResponse> {
+    if (ctx.player.currentState.startsWith('night_') && !ctx.flags.day_1_complete) {
+      return this.renderNode(ctx.player, ctx.player.currentState);
+    }
+    const loc = ctx.player.currentLocation;
+    if (loc === 'rem_camp' && ctx.flags.met_rem) return this.renderNode(ctx.player, 'rem_camp');
+    if (loc === 'stone_scree') return this.renderNode(ctx.player, 'stone_scree');
+    if (loc === 'old_adit') return this.renderNode(ctx.player, 'old_adit');
+    if (loc === 'secret_chamber') return this.renderNode(ctx.player, 'secret_chamber');
+    if (loc === 'node_7' && !ctx.flags.node7_gate_closed && ctx.flags.activated_node7_token) {
+      return this.renderNode(ctx.player, 'rem_gate');
+    }
+    return this.renderNode(ctx.player, ctx.flags.day_1_complete ? 'day1_complete' : 'forest_hub');
+  }
+
+  private async openCamp(ctx: Ctx): Promise<GameResponse> {
+    const resourceLines = Object.entries(ctx.resources)
+      .filter(([, amount]) => (amount ?? 0) > 0)
+      .map(([key, amount]) => `• ${resourceLabel(key as ResourceType)}: ${amount}`)
+      .join('\n');
+    const location = getLocation(ctx.player.currentLocation)?.name ?? ctx.player.currentLocation;
+    const text = [
+      `Лагерь. ${location}`,
+      this.hud(ctx),
+      resourceLines ? `Ресурсы:\n${resourceLines}` : 'Ресурсов пока нет.',
+      'Крафт: топор (2 дерева + 2 камня), кирка (2 дерева + 3 камня).',
+    ].join('\n');
+    const buttons: GameButton[] = [
+      { label: 'Крафт: топор', action: 'CRAFT_ITEM', payload: { templateId: 'stone_axe' } },
+      { label: 'Крафт: кирка', action: 'CRAFT_ITEM', payload: { templateId: 'stone_pickaxe' } },
+      { label: 'Инвентарь', action: 'OPEN_INVENTORY' },
+      { label: 'Оглядеться', action: 'EXPLORE' },
+    ];
+    if (ctx.player.currentLocation === 'forest_clearing' || ctx.player.currentLocation === 'rem_camp') {
+      buttons.unshift({ label: 'Рубить дерево', action: 'GATHER_WOOD' });
+    }
+    if (ctx.player.currentLocation === 'stone_scree') {
+      buttons.unshift({ label: 'Добывать камень', action: 'GATHER_STONE' });
+    }
+    if (ctx.flags.met_rem) buttons.push({ label: 'К Рему', action: 'TALK_NPC', payload: { npcId: 'rem' } });
+    return this.respond(ctx.player, text, buttons);
+  }
+
+  private async openInventory(ctx: Ctx): Promise<GameResponse> {
+    const equipped = new Set(Object.values(ctx.equipment));
+    if (!ctx.items.length) return this.respond(ctx.player, 'Инвентарь пуст.', NAV);
+    const lines = ctx.items.map((item) => {
+      const template = getItemTemplate(item.templateId);
+      const mark = equipped.has(item.id) ? ' [экип.]' : '';
+      return `• ${template?.name ?? item.templateId} (${item.rarity})${mark}`;
     });
+    const buttons: GameButton[] = [];
+    for (const item of ctx.items) {
+      const template = getItemTemplate(item.templateId);
+      if (template?.slot && !equipped.has(item.id)) {
+        buttons.push({
+          label: `Надеть: ${template.name}`,
+          action: 'EQUIP_ITEM',
+          payload: { itemId: item.id },
+        });
+      }
+      if (template?.consumable) {
+        buttons.push({ label: `Съесть: ${template.name}`, action: 'USE_ITEM', payload: { itemId: item.id } });
+      }
+      if (item.templateId === 'rusty_token') {
+        buttons.push({ label: 'Осмотреть жетон', action: 'INSPECT_TOKEN' });
+      }
+    }
+    return this.respond(ctx.player, `Инвентарь:\n${lines.join('\n')}`, [...buttons, ...NAV]);
+  }
+
+  private async gatherWood(ctx: Ctx, eventId: string): Promise<GameResponse> {
+    await this.spend(ctx.player, GATHER_WOOD.energyCost);
+    const stats = await this.effectiveStats(ctx);
+    const amount = Math.floor(GATHER_WOOD.baseYield * (1 + stats.woodYieldBonus));
+    const total = await this.store.addResource(ctx.player.id, 'WOOD', amount);
+    ctx.player.currentState = 'gather_wood';
+    ctx.player.currentLocation = ctx.player.currentLocation === 'rem_camp' ? 'rem_camp' : 'forest_clearing';
+    await this.store.savePlayer(ctx.player);
+    const tokenNote = await this.tryGrantToken(ctx);
+    const axeNote = stats.woodYieldBonus > 0 ? ' Каменный топор дал бонус.' : '';
+    void eventId;
+    return this.respond(
+      ctx.player,
+      `Ты рубишь дерево. +${amount} дерево (всего ${total}). −${GATHER_WOOD.energyCost} энергии.${axeNote}${tokenNote}`,
+      [
+        { label: 'Рубить ещё', action: 'GATHER_WOOD' },
+        { label: 'Собрать укрытие', action: 'BUILD_TEMP_SHELTER' },
+        ...NAV,
+      ],
+    );
+  }
+
+  private async gatherStone(ctx: Ctx, eventId: string): Promise<GameResponse> {
+    await this.spend(ctx.player, GATHER_STONE.energyCost);
+    const stats = await this.effectiveStats(ctx);
+    let amount = seededRange(eventId, GATHER_STONE.minYield, GATHER_STONE.maxYield, 'stone');
+    amount = Math.max(1, Math.floor(amount * (1 + stats.stoneYieldBonus)));
+    let extraNote = '';
+    if (ctx.flags.fed_stone_scavenger && !ctx.flags.scavenger_extra_stone) {
+      amount += 1;
+      await this.store.setFlag(ctx.player.id, 'scavenger_extra_stone', '1');
+      ctx.flags.scavenger_extra_stone = '1';
+      extraNote = ' Падальщик не мешает: +1 камень.';
+    }
+    const total = await this.store.addResource(ctx.player.id, 'STONE', amount);
+    await this.store.savePlayer(ctx.player);
+    const tokenNote = await this.tryGrantToken(ctx);
+    return this.respond(ctx.player, `Ты берёшь камень. +${amount} (всего ${total}).${extraNote}${tokenNote}`, [
+      { label: 'Ещё камень', action: 'GATHER_STONE' },
+      { label: 'Падальщик', action: 'DIALOGUE_CHOICE', payload: { nodeId: 'stone_scree', choiceId: 'scavenger' } },
+      ...NAV,
+    ]);
+  }
+
+  private async gatherIron(ctx: Ctx, eventId: string): Promise<GameResponse> {
+    await this.spend(ctx.player, GATHER_IRON.energyCost);
+    const stats = await this.effectiveStats(ctx);
+    let amount = seededRange(eventId, GATHER_IRON.minYield, GATHER_IRON.maxYield, 'iron');
+    amount = Math.max(1, Math.floor(amount * (1 + stats.oreYieldBonus)));
+    const total = await this.store.addResource(ctx.player.id, 'IRON_ORE', amount);
+    let extra = `+${amount} железной руды (всего ${total}).`;
+    if (seededChance(eventId, GATHER_IRON.collapseChance, 'collapse')) {
+      const loss = seededRange(eventId, GATHER_IRON.collapseMinHp, GATHER_IRON.collapseMaxHp, 'hp');
+      ctx.player.hp = Math.max(1, ctx.player.hp - loss);
+      extra += `\nОбвал! −${loss} HP. Ты успеваешь отскочить.`;
+    }
+    await this.store.savePlayer(ctx.player);
+    if (total >= IRON_FOR_GATE_TARGET) {
+      await this.store.setFlag(ctx.player.id, 'iron_ready', '1');
+    }
+    const quest = ctx.quests.iron_for_gate;
+    if (quest && quest.status === 'ACTIVE') {
+      await this.store.upsertPlayerQuest({
+        playerId: ctx.player.id,
+        questId: 'iron_for_gate',
+        status: 'ACTIVE',
+        progress: { iron: total, target: IRON_FOR_GATE_TARGET, ready: total >= IRON_FOR_GATE_TARGET },
+      });
+    }
+    if (total >= IRON_FOR_GATE_TARGET && !ctx.flags.found_blue_light) {
+      await this.store.setFlag(ctx.player.id, 'found_blue_light', '1');
+      const node = await this.renderNode(ctx.player, 'adit_blue_light');
+      node.text = `${extra}\n\n${node.text}`;
+      return node;
+    }
+    return this.respond(ctx.player, extra, [
+      { label: 'Искать ещё', action: 'GATHER_IRON' },
+      { label: 'Штольня', action: 'DIALOGUE_CHOICE', payload: { nodeId: 'old_adit', choiceId: 'leave' } },
+      { label: 'Оглядеться', action: 'EXPLORE' },
+    ]);
+  }
+
+  private async craftItem(ctx: Ctx, templateId: string): Promise<GameResponse> {
+    const recipe = getRecipe(templateId);
+    const template = getItemTemplate(templateId);
+    if (!recipe || !template) return this.respond(ctx.player, 'Такого рецепта нет.', NAV);
+    for (const [resource, need] of Object.entries(recipe.cost)) {
+      const have = ctx.resources[resource as ResourceType] ?? 0;
+      if (have < (need ?? 0)) {
+        throw new InsufficientResourcesError(
+          `Не хватает ${resourceLabel(resource as ResourceType)}: нужно ${need}, есть ${have}.`,
+        );
+      }
+    }
+    for (const [resource, need] of Object.entries(recipe.cost)) {
+      await this.store.addResource(ctx.player.id, resource as ResourceType, -(need ?? 0));
+    }
+    const item = await this.store.createItem({
+      playerId: ctx.player.id,
+      templateId,
+      rarity: template.rarity,
+    });
+    await this.store.recordItemHistory({
+      itemId: item.id,
+      playerId: ctx.player.id,
+      type: 'CREATED',
+      meta: { recipe: templateId },
+    });
+    return this.respond(ctx.player, `Скрафчено: ${template.name}.`, [
+      { label: 'Надеть', action: 'EQUIP_ITEM', payload: { itemId: item.id } },
+      ...NAV,
+    ]);
+  }
+
+  private async equipItem(ctx: Ctx, itemId: string): Promise<GameResponse> {
+    const item = await this.store.getItem(itemId);
+    if (!item || item.playerId !== ctx.player.id) throw new ItemNotOwnedError();
+    const template = getItemTemplate(item.templateId);
+    if (!template?.slot) return this.respond(ctx.player, 'Этот предмет нельзя надеть.', NAV);
+    await this.store.setEquipmentSlot(ctx.player.id, template.slot, item.id);
+    await this.store.recordItemHistory({ itemId: item.id, playerId: ctx.player.id, type: 'EQUIPPED' });
+    const previousId = ctx.equipment[template.slot];
+    if (previousId && previousId !== item.id) {
+      const previous = ctx.items.find((row) => row.id === previousId);
+      const prevTemplate = previous ? getItemTemplate(previous.templateId) : undefined;
+      if (prevTemplate?.maxEnergyBonus) {
+        ctx.player.maxEnergy = Math.max(STARTING_ENERGY, ctx.player.maxEnergy - prevTemplate.maxEnergyBonus);
+      }
+    }
+    if (template.maxEnergyBonus && previousId !== item.id) {
+      ctx.player.maxEnergy += template.maxEnergyBonus;
+    }
+    ctx.equipment[template.slot] = item.id;
+    ctx.player.energy = Math.min(ctx.player.energy, this.energyCap(ctx));
+    await this.store.savePlayer(ctx.player);
+    return this.respond(ctx.player, `Надето: ${template.name} (${template.slot}).`, NAV);
+  }
+
+  private async useItem(ctx: Ctx, itemId: string): Promise<GameResponse> {
+    const item = await this.store.getItem(itemId);
+    if (!item || item.playerId !== ctx.player.id) throw new ItemNotOwnedError();
+    if (item.templateId === 'rusty_token') return this.inspectToken(ctx);
+    const template = getItemTemplate(item.templateId);
+    if (template?.consumable && template.energyRestore) {
+      const cap = this.energyCap(ctx);
+      if (ctx.player.energy >= cap) {
+        return this.respond(ctx.player, 'Энергия уже на максимуме. Тратить еду незачем.', NAV);
+      }
+      ctx.player.energy = Math.min(cap, ctx.player.energy + template.energyRestore);
+      await this.store.savePlayer(ctx.player);
+      await this.store.removeItem(item.id);
+      return this.respond(ctx.player, `Ты съедаешь ${template.name}. +${template.energyRestore} энергии.`, NAV);
+    }
+    return this.respond(ctx.player, 'Пока неясно, как это использовать.', NAV);
+  }
+
+  private async talkNpc(ctx: Ctx, npcId: string): Promise<GameResponse> {
+    if (npcId !== 'rem') return this.respond(ctx.player, 'Здесь никого нет.', NAV);
+    if (!ctx.flags.activated_node7_token) return this.renderNode(ctx.player, 'abandoned_camp');
+    if (!ctx.flags.node7_gate_closed) {
+      ctx.player.currentLocation = 'node_7';
+      await this.store.savePlayer(ctx.player);
+      return this.renderNode(ctx.player, 'rem_gate');
+    }
+    ctx.player.currentLocation = 'rem_camp';
+    await this.store.setFlag(ctx.player.id, 'met_rem', '1');
+    await this.store.savePlayer(ctx.player);
+    return this.renderNode(ctx.player, 'rem_camp');
+  }
+
+  private async inspectToken(ctx: Ctx): Promise<GameResponse> {
+    if (!ctx.items.some((item) => item.templateId === 'rusty_token')) {
+      throw new ActionRejectedError('Жетона нет.');
+    }
+    await this.store.setFlag(ctx.player.id, 'activated_node7_token', '1');
+    return this.renderNode(ctx.player, 'inspect_token');
+  }
+
+  private async buildShelter(ctx: Ctx): Promise<GameResponse> {
+    if (ctx.flags.temporary_shelter_level) throw new ActionRejectedError('Укрытие уже стоит.');
+    const wood = ctx.resources.WOOD ?? 0;
+    if (wood < SHELTER.woodCost) {
+      throw new InsufficientResourcesError(`Нужно ${SHELTER.woodCost} дерева, есть ${wood}.`);
+    }
+    const ok = await this.store.tryClaimReward(ctx.player.id, 'structure', 'temp_shelter');
+    if (!ok) throw new RewardAlreadyClaimedError('Укрытие уже построено.');
+    await this.store.addResource(ctx.player.id, 'WOOD', -SHELTER.woodCost);
+    await this.store.setFlag(ctx.player.id, 'temporary_shelter_level', '1');
+    return this.renderNode(ctx.player, 'shelter_built');
+  }
+
+  private async feedScavenger(ctx: Ctx): Promise<GameResponse> {
+    const rusk = ctx.items.find((item) => item.templateId === 'dry_rusk');
+    if (!rusk) {
+      return this.respond(
+        ctx.player,
+        'Ты протягиваешь пустую ладонь. Падальщик фыркает камешками. Почти смешно.',
+        [
+          { label: 'Уйти', action: 'DIALOGUE_CHOICE', payload: { nodeId: 'scavenger', choiceId: 'leave' } },
+          { label: 'Атаковать', action: 'START_PVE', payload: { enemyId: 'stone_scavenger' } },
+        ],
+      );
+    }
+    const first = await this.store.tryClaimReward(ctx.player.id, 'affinity', 'stone_scavenger');
+    if (!first) {
+      return this.respond(ctx.player, 'Он сыт и смотрит в сторону. Ещё один сухарь ничего не изменит.', NAV);
+    }
+    await this.store.removeItem(rusk.id);
+    await this.store.setFlag(ctx.player.id, 'fed_stone_scavenger', '1');
+    await this.store.setFlag(ctx.player.id, 'stone_scavenger_affinity', '1');
+    ctx.flags.fed_stone_scavenger = '1';
+    ctx.flags.stone_scavenger_affinity = '1';
+    return this.renderNode(ctx.player, 'scavenger_fed');
+  }
+
+  private async openCrate(ctx: Ctx): Promise<GameResponse> {
+    const claimed = await this.store.hasRewardClaim(ctx.player.id, 'crate', 'start_crate');
+    if (claimed) return this.renderNode(ctx.player, 'open_crate_empty');
+    const ok = await this.store.tryClaimReward(ctx.player.id, 'crate', 'start_crate');
+    if (!ok) throw new RewardAlreadyClaimedError();
+    await this.store.addResource(ctx.player.id, 'WOOD', 6);
+    await this.store.addResource(ctx.player.id, 'STONE', 3);
+    const knife = await this.store.createItem({
+      playerId: ctx.player.id,
+      templateId: 'stone_knife',
+      rarity: 'COMMON',
+    });
+    await this.store.recordItemHistory({ itemId: knife.id, playerId: ctx.player.id, type: 'LOOTED' });
+    const rusk = await this.store.createItem({
+      playerId: ctx.player.id,
+      templateId: 'dry_rusk',
+      rarity: 'COMMON',
+    });
+    await this.store.recordItemHistory({ itemId: rusk.id, playerId: ctx.player.id, type: 'LOOTED' });
+    await this.store.setFlag(ctx.player.id, 'opened_start_crate', '1');
+    ctx.player.currentState = 'open_crate';
+    await this.store.savePlayer(ctx.player);
+    return this.respond(
+      ctx.player,
+      `${DIALOGUE_NODES.open_crate.text}\n\nПолучено: дерево ×6, камень ×3, сухарь, каменный нож.`,
+      this.choicesToButtons('open_crate', DIALOGUE_NODES.open_crate.choices),
+    );
+  }
+
+  private async openSecretChest(ctx: Ctx): Promise<GameResponse> {
+    const ok = await this.store.tryClaimReward(ctx.player.id, 'chest', 'adit_secret');
+    if (!ok) throw new RewardAlreadyClaimedError('Сундук уже пуст.');
+    const item = await this.store.createItem({
+      playerId: ctx.player.id,
+      templateId: 'miner_belt',
+      rarity: 'UNCOMMON',
+    });
+    await this.store.recordItemHistory({ itemId: item.id, playerId: ctx.player.id, type: 'LOOTED' });
+    return this.renderNode(ctx.player, 'secret_chest_done');
+  }
+
+  private async mineBlue(ctx: Ctx): Promise<GameResponse> {
+    await this.store.setFlag(ctx.player.id, 'unknown_blue_mineral', '1');
+    return this.renderNode(ctx.player, 'secret_blue_fail');
+  }
+
+  private async returnIron(ctx: Ctx): Promise<GameResponse> {
+    const ore = ctx.resources.IRON_ORE ?? 0;
+    if (ore < IRON_FOR_GATE_TARGET) {
+      throw new InsufficientResourcesError(`Нужно ${IRON_FOR_GATE_TARGET} руды, есть ${ore}.`);
+    }
+    const ok = await this.store.tryClaimReward(ctx.player.id, 'quest', 'iron_for_gate');
+    if (!ok) throw new RewardAlreadyClaimedError('Железо уже сдано.');
+    await this.store.addResource(ctx.player.id, 'IRON_ORE', -IRON_FOR_GATE_TARGET);
+    await this.store.upsertPlayerQuest({
+      playerId: ctx.player.id,
+      questId: 'iron_for_gate',
+      status: 'CLAIMED',
+      progress: { delivered: IRON_FOR_GATE_TARGET },
+    });
+    await this.store.adjustNpcRelation(ctx.player.id, 'rem', 1, 0);
+    const xpNote = await this.addXp(ctx.player, 40);
+    await this.changeCoins(ctx.player, 25, 'quest_iron_for_gate', 'iron_for_gate');
+    const node = await this.renderNode(ctx.player, 'rem_quest_done');
+    node.text = `${node.text}\n+25 монет. ${xpNote}`;
+    return node;
+  }
+
+  private async restNight(ctx: Ctx, place: string): Promise<GameResponse> {
+    if (ctx.flags.day_1_complete) throw new ActionRejectedError('Первая ночь уже прожита.');
+    if (place === 'shelter' && !ctx.flags.temporary_shelter_level) {
+      throw new ActionRejectedError('Укрытия нет.');
+    }
+    const claimed = await this.store.tryClaimReward(ctx.player.id, 'night', 'day_1');
+    if (!claimed) throw new ActionRejectedError('Первая ночь уже началась.');
+    const cap = this.energyCap(ctx);
+    const bonus = place === 'shelter' ? SHELTER.nightEnergyBonus : 0;
+    ctx.player.energy = Math.min(cap, ctx.player.energy + NIGHT_REST.energyBase + bonus);
+    if (NIGHT_REST.hpToFull) ctx.player.hp = ctx.player.maxHp;
+    ctx.player.currentLocation = place === 'shelter' ? 'forest_clearing' : 'rem_camp';
+    await this.store.savePlayer(ctx.player);
+    if (place === 'shelter' && ctx.flags.fed_stone_scavenger) {
+      const gift = await this.store.tryClaimReward(ctx.player.id, 'gift', 'scavenger_shiny');
+      if (gift) {
+        await this.store.addResource(ctx.player.id, 'SHINY_STONE', 1);
+        return this.renderNode(ctx.player, 'night_shelter_gift');
+      }
+    }
+    if (place === 'shelter') return this.renderNode(ctx.player, 'night_shelter');
+    return this.renderNode(ctx.player, 'night_rem');
+  }
+
+  private async beginDay2(ctx: Ctx): Promise<GameResponse> {
+    if (!ctx.flags.day_1_complete) throw new ActionRejectedError();
+    return this.renderNode(ctx.player, 'day2_locked');
+  }
+
+  private async startPve(ctx: Ctx, enemyId: string, eventId: string): Promise<GameResponse> {
+    const enemy = getEnemy(enemyId) ?? ENEMIES.wild_shrew;
+    if (enemyId === 'mine_crawler') await this.spend(ctx.player, 2);
+    const stats = await this.effectiveStats(ctx);
+    const playerSnap: CombatantSnapshot = {
+      id: ctx.player.id,
+      name: ctx.player.name,
+      hp: ctx.player.hp,
+      maxHp: ctx.player.maxHp,
+      attack: stats.attack,
+      defense: stats.defense,
+      speed: stats.speed + (enemyId === 'mine_crawler' && ctx.flags.heard_mine_crawler ? 5 : 0),
+      critChance: stats.critChance,
+      critDamage: stats.critDamage,
+      dodge: stats.dodge + (enemyId === 'mine_crawler' && ctx.flags.heard_mine_crawler ? 10 : 0),
+      accuracy: stats.accuracy,
+      luck: stats.luck,
+      minDamage: stats.minDamage,
+      maxDamage: stats.maxDamage,
+    };
+    const enemySnap: CombatantSnapshot = {
+      id: enemy.id,
+      name: enemy.name,
+      hp: enemy.hp,
+      maxHp: enemy.hp,
+      attack: enemy.minDamage,
+      defense: enemy.defense,
+      speed: enemy.speed,
+      critChance: enemy.critChance,
+      critDamage: enemy.critDamage,
+      dodge: enemy.dodge,
+      accuracy: enemy.accuracy - (enemyId === 'mine_crawler' && ctx.flags.heard_mine_crawler ? 15 : 0),
+      luck: 0,
+      minDamage: enemy.minDamage,
+      maxDamage: enemy.maxDamage,
+    };
+    const battle = simulateBattle({
+      player: playerSnap,
+      enemy: enemySnap,
+      seed: eventId,
+      balanceVersion: BALANCE_VERSION,
+    });
+    const match = await this.store.createCombatMatch({
+      playerId: ctx.player.id,
+      mode: 'PVE',
+      enemyId: enemy.id,
+      seed: String(battle.seed),
+      balanceVersion: battle.balanceVersion,
+      result: battle.result,
+      playerSnapshot: battle.playerSnapshot,
+      enemySnapshot: battle.enemySnapshot,
+      startedAt: this.now(),
+      finishedAt: this.now(),
+    });
+    await this.store.addCombatEvents(match.id, battle.events);
+    if (battle.result === 'LOSS') {
+      ctx.player.hp = Math.max(1, Math.floor(ctx.player.maxHp * 0.2));
+    } else {
+      ctx.player.hp = Math.max(1, battle.playerHp);
+    }
+    await this.store.savePlayer(ctx.player);
+    const log = formatCombatLog(battle, ctx.player.id, ctx.player.name, enemy.name);
+    let extra = '';
+    const buttons: GameButton[] = [...NAV];
+    if (battle.result === 'WIN') {
+      extra = await this.applyCombatLoot(ctx, enemyId, eventId, buttons);
+      await this.store.upsertDiscovery({
+        playerId: ctx.player.id,
+        discoveryId: enemy.id,
+        title: enemy.name,
+        seen: true,
+        defeated: true,
+      });
+    } else {
+      extra = '\nПредметы при тебе. Можно восстановиться и попробовать снова.';
+    }
+    return this.respond(ctx.player, `${log}${extra}`, buttons);
+  }
+
+  private async applyCombatLoot(
+    ctx: Ctx,
+    enemyId: string,
+    eventId: string,
+    buttons: GameButton[],
+  ): Promise<string> {
+    const notes: string[] = [];
+    if (enemyId === 'wild_shrew') {
+      const first = await this.store.tryClaimReward(ctx.player.id, 'combat_loot', 'wild_shrew');
+      if (first) {
+        await this.store.addResource(ctx.player.id, 'RAW_MEAT', 1);
+        await this.store.addResource(ctx.player.id, 'SHREW_FUR', 1);
+        await this.store.setFlag(ctx.player.id, 'defeated_wild_shrew', '1');
+        notes.push(await this.addXp(ctx.player, 18));
+        notes.push('+1 сырое мясо, +1 шкурка.');
+      }
+    }
+    if (enemyId === 'mine_crawler') {
+      const first = await this.store.tryClaimReward(ctx.player.id, 'combat_loot', 'mine_crawler');
+      if (first) {
+        await this.store.addResource(ctx.player.id, 'CHITIN_PLATE', 1);
+        await this.changeCoins(ctx.player, 14, 'combat_loot', 'mine_crawler');
+        await this.store.setFlag(ctx.player.id, 'defeated_mine_crawler', '1');
+        notes.push(await this.addXp(ctx.player, 24));
+        notes.push('+14 монет, хитиновая пластина.');
+        if (seededChance(eventId, 20, 'gloves')) {
+          const gloves = await this.store.createItem({
+            playerId: ctx.player.id,
+            templateId: 'worn_gloves',
+            rarity: 'COMMON',
+          });
+          await this.store.recordItemHistory({ itemId: gloves.id, playerId: ctx.player.id, type: 'LOOTED' });
+          notes.push('Потёртые перчатки!');
+          buttons.unshift({ label: 'Надеть перчатки', action: 'EQUIP_ITEM', payload: { itemId: gloves.id } });
+        }
+      }
+    }
+    if (enemyId === 'stone_scavenger') {
+      const first = await this.store.tryClaimReward(ctx.player.id, 'combat_loot', 'stone_scavenger');
+      if (first) {
+        await this.store.setFlag(ctx.player.id, 'defeated_stone_scavenger', '1');
+        notes.push(await this.addXp(ctx.player, 12));
+      }
+    }
+    return notes.length ? `\n${notes.filter(Boolean).join(' ')}` : '';
+  }
+
+  private async claimReward(ctx: Ctx, rewardType: string, rewardRef: string): Promise<GameResponse> {
+    if (!rewardType || !rewardRef) return this.respond(ctx.player, 'Награда не найдена.', NAV);
+    const ok = await this.store.tryClaimReward(ctx.player.id, rewardType, rewardRef);
+    if (!ok) throw new RewardAlreadyClaimedError();
+    if (rewardType === 'coins' && rewardRef === 'demo_coins') {
+      await this.changeCoins(ctx.player, 10, 'claim_reward', rewardRef);
+      return this.respond(ctx.player, 'Получено 10 монет.', NAV);
+    }
+    return this.respond(ctx.player, 'Награда отмечена.', NAV);
+  }
+
+  async changeCoins(player: PlayerRecord, amount: number, reason: string, referenceId?: string): Promise<PlayerRecord> {
+    const next = player.coins + amount;
+    if (next < 0) throw new InsufficientCoinsError();
+    await this.store.addCurrencyTransaction({
+      playerId: player.id,
+      currency: 'COINS',
+      amount,
+      balanceBefore: player.coins,
+      balanceAfter: next,
+      reason,
+      referenceId,
+    });
+    player.coins = next;
+    await this.store.savePlayer(player);
+    return player;
+  }
+
+  private async addXp(player: PlayerRecord, amount: number): Promise<string> {
+    player.xp += amount;
+    let note = `+${amount} XP.`;
+    if (player.level === 1 && player.xp >= XP_TO_LEVEL_2) {
+      player.level = 2;
+      player.maxHp += LEVEL_UP.maxHpGain;
+      player.maxEnergy += LEVEL_UP.maxEnergyGain;
+      if (LEVEL_UP.fillHpToMax) player.hp = player.maxHp;
+      player.energy = Math.min(player.maxEnergy, player.energy + LEVEL_UP.maxEnergyGain);
+      note += ` Уровень 2! Макс. HP +${LEVEL_UP.maxHpGain}, макс. энергия +${LEVEL_UP.maxEnergyGain}. HP восстановлено.`;
+    }
+    await this.store.savePlayer(player);
+    return note;
+  }
+
+  private async spend(player: PlayerRecord, amount: number): Promise<void> {
+    const refreshed = regenerateEnergy(player, this.now());
+    Object.assign(player, refreshed);
+    if (player.energy < amount) {
+      throw new InsufficientEnergyError(`Нужно ${amount} энергии. Сейчас ${player.energy}.`);
+    }
+    player.energy -= amount;
+    await this.store.savePlayer(player);
+  }
+
+  private async tryGrantToken(ctx: Ctx): Promise<string> {
+    if (ctx.items.some((item) => item.templateId === 'rusty_token') || ctx.flags.found_rusty_token) return '';
+    const ok = await this.store.tryClaimReward(ctx.player.id, 'item', 'rusty_token');
+    if (!ok) return '';
+    const item = await this.store.createItem({
+      playerId: ctx.player.id,
+      templateId: 'rusty_token',
+      rarity: 'UNCOMMON',
+    });
+    await this.store.recordItemHistory({ itemId: item.id, playerId: ctx.player.id, type: 'LOOTED' });
+    await this.store.setFlag(ctx.player.id, 'found_rusty_token', '1');
+    ctx.items.push(item);
+    ctx.flags.found_rusty_token = '1';
+    return '\nПод корнями — ржавый жетон. Один. Больше таких не будет.';
+  }
+
+  private async effectiveStats(ctx: Ctx) {
+    const stats = {
+      ...STARTING_STATS,
+      ...ctx.player.stats,
+      woodYieldBonus: 0,
+      stoneYieldBonus: 0,
+      oreYieldBonus: 0,
+      minDamage: 1,
+      maxDamage: 2,
+    };
+    for (const itemId of Object.values(ctx.equipment)) {
+      if (!itemId) continue;
+      const item = ctx.items.find((row) => row.id === itemId) ?? (await this.store.getItem(itemId));
+      if (!item) continue;
+      const template = getItemTemplate(item.templateId);
+      if (!template) continue;
+      stats.attack += template.attackBonus ?? 0;
+      stats.defense += template.defenseBonus ?? 0;
+      stats.woodYieldBonus += template.woodYieldBonus ?? 0;
+      stats.stoneYieldBonus += template.stoneYieldBonus ?? 0;
+      stats.oreYieldBonus += template.oreYieldBonus ?? 0;
+      if (template.minDamage != null && template.maxDamage != null) {
+        stats.minDamage = template.minDamage;
+        stats.maxDamage = template.maxDamage;
+      }
+    }
+    return stats;
   }
 
   private matchesCondition(
     condition: DialogueCondition | DialogueCondition[] | undefined,
-    flags: Record<string, string>,
-    items: InventoryItemRecord[],
-    resources: Partial<Record<ResourceType, number>>,
+    ctx: Ctx,
   ): boolean {
     if (!condition) return true;
     const list = Array.isArray(condition) ? condition : [condition];
     return list.every((rule) => {
       if (rule.type === 'always') return true;
       if (rule.type === 'flag') {
-        const value = flags[rule.flag ?? ''];
+        const value = ctx.flags[rule.flag ?? ''];
         if (rule.exists === false) return value == null;
         if (rule.equals != null) return value === rule.equals;
         return value != null;
       }
-      if (rule.type === 'item') {
-        return items.some((item) => item.templateId === rule.templateId);
+      if (rule.type === 'item') return ctx.items.some((item) => item.templateId === rule.templateId);
+      if (rule.type === 'resource') return (ctx.resources[rule.resource!] ?? 0) >= (rule.min ?? 0);
+      if (rule.type === 'quest') {
+        const quest = ctx.quests[rule.questId ?? ''];
+        if (!quest) return false;
+        return (rule.statuses ?? []).includes(quest.status);
       }
-      if (rule.type === 'resource') {
-        return (resources[rule.resource!] ?? 0) >= (rule.min ?? 0);
+      if (rule.type === 'location') return ctx.player.currentLocation === rule.locationId;
+      if (rule.type === 'equipped') {
+        return Object.values(ctx.equipment).some((id) => {
+          const item = ctx.items.find((row) => row.id === id);
+          return item?.templateId === rule.templateId;
+        });
       }
       return true;
     });
   }
 
-  private async applyActions(player: PlayerRecord, actions: DialogueAction[] | undefined): Promise<string[]> {
-    if (!actions?.length) return [];
+  private choicesToButtons(nodeId: string, choices: DialogueChoice[]): GameButton[] {
+    return choices.map((choice) => {
+      if (choice.command) {
+        return { label: choice.label, action: choice.command, payload: choice.commandPayload };
+      }
+      return { label: choice.label, action: 'DIALOGUE_CHOICE', payload: { nodeId, choiceId: choice.id } };
+    });
+  }
+
+  private async applyActions(
+    player: PlayerRecord,
+    actions: DialogueAction[] | undefined,
+    ctx: Ctx,
+  ): Promise<{ notes: string[]; nextOverride?: string }> {
+    if (!actions?.length) return { notes: [] };
     const notes: string[] = [];
+    let nextOverride: string | undefined;
     for (const action of actions) {
       switch (action.type) {
         case 'set_flag':
           await this.store.setFlag(player.id, action.flag, action.value ?? '1');
+          ctx.flags[action.flag] = action.value ?? '1';
           break;
         case 'add_resource': {
           const amount = await this.store.addResource(player.id, action.resource, action.amount);
@@ -232,6 +965,10 @@ export class GameRuntime {
         case 'give_item': {
           const template = getItemTemplate(action.templateId);
           if (!template) break;
+          if (action.templateId === 'broken_lantern') {
+            const claimed = await this.store.hasRewardClaim(player.id, 'item', 'broken_lantern');
+            if (claimed) break;
+          }
           const item = await this.store.createItem({
             playerId: player.id,
             templateId: template.id,
@@ -242,6 +979,7 @@ export class GameRuntime {
             playerId: player.id,
             type: action.source ?? 'CREATED',
           });
+          ctx.items.push(item);
           notes.push(`Получено: ${template.name}`);
           break;
         }
@@ -263,17 +1001,40 @@ export class GameRuntime {
           await this.store.tryClaimReward(player.id, action.rewardType, action.rewardRef);
           break;
         case 'start_quest': {
-          const templates = await this.store.listQuestTemplates();
-          const template = templates.find((row) => row.id === action.questId);
-          if (template) {
-            await this.store.upsertPlayerQuest({
-              playerId: player.id,
-              questId: action.questId,
-              status: 'ACTIVE',
-              progress: {},
-            });
-            notes.push(`Задание: ${template.title}`);
+          await this.store.upsertPlayerQuest({
+            playerId: player.id,
+            questId: action.questId,
+            status: 'ACTIVE',
+            progress: {},
+          });
+          notes.push('Задание: Железо для ворот.');
+          break;
+        }
+        case 'set_discovery':
+          await this.store.upsertDiscovery({
+            playerId: player.id,
+            discoveryId: action.discoveryId,
+            title: action.title,
+            seen: action.seen ?? true,
+            defeated: action.defeated ?? false,
+          });
+          break;
+        case 'spend_energy':
+          player.energy = Math.max(0, player.energy - action.amount);
+          break;
+        case 'visit':
+          await this.store.setFlag(player.id, `visited_${action.locationId}`, '1');
+          ctx.flags[`visited_${action.locationId}`] = '1';
+          break;
+        case 'consume_item': {
+          const found = ctx.items.find((item) => item.templateId === action.templateId);
+          if (!found) {
+            nextOverride = action.elseNode;
+            break;
           }
+          await this.store.removeItem(found.id);
+          ctx.items = ctx.items.filter((item) => item.id !== found.id);
+          nextOverride = action.thenNode ?? nextOverride;
           break;
         }
         default:
@@ -281,345 +1042,92 @@ export class GameRuntime {
       }
     }
     await this.store.savePlayer(player);
-    return notes;
+    return { notes, nextOverride };
   }
 
-  private async dialogueChoice(player: PlayerRecord, nodeId: string, choiceId: string): Promise<GameResponse> {
+  private async dialogueChoice(ctx: Ctx, nodeId: string, choiceId: string): Promise<GameResponse> {
     const node = getDialogueNode(nodeId);
     const choice = node?.choices.find((entry) => entry.id === choiceId);
-    if (!choice) {
-      return this.renderNode(player, player.currentState || 'start');
+    if (!choice) return this.renderNode(ctx.player, ctx.player.currentState || 'start');
+    if (!this.matchesCondition(choice.condition, ctx)) {
+      throw new ActionRejectedError('Этот выбор уже недоступен.');
     }
-    const notes = await this.applyActions(player, choice.actions);
+    const applied = await this.applyActions(ctx.player, choice.actions, ctx);
+    const fresh = (await this.store.findPlayerById(ctx.player.id)) ?? ctx.player;
     if (choice.command) {
-      const inner = await this.dispatch(
-        (await this.store.findPlayerById(player.id)) ?? player,
-        { type: choice.command, payload: choice.commandPayload },
-        `inner:${randomUUID()}`,
-      );
-      if (notes.length) inner.text = `${inner.text}\n\n${notes.join('\n')}`;
+      const inner = await this.dispatch(fresh, { type: choice.command, payload: choice.commandPayload }, `inner:${randomUUID()}`);
+      if (applied.notes.length) inner.text = `${inner.text}\n\n${applied.notes.join('\n')}`;
       return inner;
     }
-    const nextId = choice.nextNode ?? nodeId;
-    const rendered = await this.renderNode((await this.store.findPlayerById(player.id)) ?? player, nextId);
-    if (notes.length) rendered.text = `${rendered.text}\n\n${notes.join('\n')}`;
+    const nextId = applied.nextOverride ?? choice.nextNode ?? nodeId;
+    const rendered = await this.renderNode(fresh, nextId);
+    if (applied.notes.length) rendered.text = `${rendered.text}\n\n${applied.notes.join('\n')}`;
     return rendered;
   }
 
-  private async explore(player: PlayerRecord): Promise<GameResponse> {
-    const location = getLocation(player.currentLocation) ?? LOCATIONS.forest_clearing;
-    const extra =
-      player.currentLocation === 'node_7'
-        ? '\nВорота закрыты.'
-        : '';
-    return this.respond(player, `${location.name}\n${location.text}${extra}`, [
-      { label: 'Начать сцену', action: 'START_GAME' },
-      ...CAMP_BUTTONS.filter((button) => button.action !== 'EXPLORE'),
-    ]);
-  }
-
-  private async openInventory(player: PlayerRecord): Promise<GameResponse> {
-    const items = await this.store.listItems(player.id);
-    const equipment = await this.store.getEquipment(player.id);
-    const equipped = new Set(Object.values(equipment));
-    if (!items.length) {
-      return this.respond(player, 'Инвентарь пуст.', NAV_BUTTONS);
+  private async renderNode(player: PlayerRecord, nodeId: string): Promise<GameResponse> {
+    let node: DialogueNode | undefined = getDialogueNode(nodeId) ?? DIALOGUE_NODES.start;
+    if (node.id === 'day1_complete' || nodeId === 'day1_complete') {
+      return this.completeDay1(player);
     }
-    const lines = items.map((item) => {
-      const template = getItemTemplate(item.templateId);
-      const mark = equipped.has(item.id) ? ' [экип.]' : '';
-      return `• ${template?.name ?? item.templateId} (${item.rarity})${mark}`;
-    });
-    const buttons: GameButton[] = items
-      .filter((item) => {
-        const template = getItemTemplate(item.templateId);
-        return Boolean(template?.slot) && !equipped.has(item.id);
-      })
-      .map((item) => ({
-        label: `Надеть: ${getItemTemplate(item.templateId)?.name ?? item.templateId}`,
-        action: 'EQUIP_ITEM',
-        payload: { itemId: item.id },
-      }));
-    return this.respond(player, `Инвентарь:\n${lines.join('\n')}`, [...buttons, ...NAV_BUTTONS]);
-  }
-
-  private async openCamp(player: PlayerRecord): Promise<GameResponse> {
-    const resources = await this.store.getResources(player.id);
-    const resourceLines = Object.entries(resources)
-      .filter(([, amount]) => (amount ?? 0) > 0)
-      .map(([key, amount]) => `• ${resourceLabel(key as ResourceType)}: ${amount}`)
-      .join('\n');
-    const location = getLocation(player.currentLocation)?.name ?? player.currentLocation;
-    const text = [
-      `Лагерь. Локация: ${location}`,
-      `HP ${player.hp}/${player.maxHp} · Энергия ${player.energy}/${player.maxEnergy} · Монеты ${player.coins}`,
-      resourceLines ? `Ресурсы:\n${resourceLines}` : 'Ресурсов пока нет.',
-    ].join('\n');
-    return this.respond(player, text, CAMP_BUTTONS);
-  }
-
-  private async gatherWood(player: PlayerRecord): Promise<GameResponse> {
-    const refreshed = regenerateEnergy(player, this.now());
-    if (refreshed.energy < GATHER_WOOD.energyCost) {
-      throw new InsufficientEnergyError(
-        `Нужно ${GATHER_WOOD.energyCost} энергии. Сейчас ${refreshed.energy}.`,
-      );
+    player.currentState = node.id;
+    await this.store.savePlayer(player);
+    const ctx = await this.load(player);
+    let text = node.text;
+    if (node.id === 'abandoned_camp' || node.id === 'check_bushes') {
+      const tokenNote = await this.tryGrantToken(ctx);
+      if (tokenNote) text = `${text}${tokenNote}`;
     }
-    refreshed.energy -= GATHER_WOOD.energyCost;
-    const equipped = await this.effectiveStats(refreshed);
-    const multiplier = 1 + equipped.woodYieldBonus;
-    const yieldAmount = Math.floor(GATHER_WOOD.baseYield * multiplier);
-    const total = await this.store.addResource(refreshed.id, 'WOOD', yieldAmount);
-    refreshed.currentState = 'gather_wood';
-    await this.store.savePlayer(refreshed);
-    const axeNote = equipped.woodYieldBonus > 0 ? ' Каменный топор дал бонус.' : '';
-    return this.respond(
-      refreshed,
-      `Ты рубишь дерево. +${yieldAmount} дерево (всего ${total}). −${GATHER_WOOD.energyCost} энергии.${axeNote}`,
-      [
-        { label: 'Рубить ещё', action: 'GATHER_WOOD' },
-        { label: 'Лагерь', action: 'OPEN_CAMP' },
-        { label: 'Инвентарь', action: 'OPEN_INVENTORY' },
-      ],
-    );
+    const choices = node.choices.filter((choice) => this.matchesCondition(choice.condition, ctx));
+    return this.respond(player, text, this.choicesToButtons(node.id, choices));
   }
 
-  private async craftItem(player: PlayerRecord, templateId: string): Promise<GameResponse> {
-    const recipe = getRecipe(templateId);
-    const template = getItemTemplate(templateId);
-    if (!recipe || !template) {
-      return this.respond(player, 'Такого рецепта нет.', CAMP_BUTTONS);
-    }
-    const resources = await this.store.getResources(player.id);
-    for (const [resource, need] of Object.entries(recipe.cost)) {
-      const have = resources[resource as ResourceType] ?? 0;
-      if (have < (need ?? 0)) {
-        throw new InsufficientResourcesError(
-          `Не хватает ${resourceLabel(resource as ResourceType)}: нужно ${need}, есть ${have}.`,
-        );
+  private async completeDay1(player: PlayerRecord): Promise<GameResponse> {
+    await this.store.setFlag(player.id, 'day_1_complete', '1');
+    player.currentState = 'day1_complete';
+    await this.store.savePlayer(player);
+    const ctx = await this.load(player);
+    const pack = await this.store.tryClaimReward(player.id, 'day1', 'survivor_pack');
+    let packNote = '';
+    if (pack) {
+      await this.changeCoins(player, 50, 'day1_survivor', 'survivor_pack');
+      await this.store.addResource(player.id, 'FOOD', 2);
+      for (let i = 0; i < 2; i += 1) {
+        const food = await this.store.createItem({
+          playerId: player.id,
+          templateId: 'dry_rusk',
+          rarity: 'COMMON',
+        });
+        await this.store.recordItemHistory({ itemId: food.id, playerId: player.id, type: 'LOOTED' });
       }
+      packNote = '\nНаграда выжившего: +50 монет, еда ×2.';
     }
-    for (const [resource, need] of Object.entries(recipe.cost)) {
-      await this.store.addResource(player.id, resource as ResourceType, -(need ?? 0));
-    }
-    const item = await this.store.createItem({
-      playerId: player.id,
-      templateId,
-      rarity: template.rarity,
-    });
-    await this.store.recordItemHistory({
-      itemId: item.id,
-      playerId: player.id,
-      type: 'CREATED',
-      meta: { recipe: templateId },
-    });
-    return this.respond(player, `Скрафчено: ${template.name}.`, [
-      { label: 'Надеть', action: 'EQUIP_ITEM', payload: { itemId: item.id } },
-      ...CAMP_BUTTONS,
-    ]);
-  }
-
-  private async equipItem(player: PlayerRecord, itemId: string): Promise<GameResponse> {
-    const item = await this.store.getItem(itemId);
-    if (!item || item.playerId !== player.id) {
-      throw new ItemNotOwnedError();
-    }
-    const template = getItemTemplate(item.templateId);
-    if (!template?.slot) {
-      return this.respond(player, 'Этот предмет нельзя надеть.', NAV_BUTTONS);
-    }
-    await this.store.setEquipmentSlot(player.id, template.slot, item.id);
-    await this.store.recordItemHistory({
-      itemId: item.id,
-      playerId: player.id,
-      type: 'EQUIPPED',
-    });
-    return this.respond(player, `Надето: ${template.name} (${template.slot}).`, NAV_BUTTONS);
-  }
-
-  private async useItem(player: PlayerRecord, itemId: string): Promise<GameResponse> {
-    const item = await this.store.getItem(itemId);
-    if (!item || item.playerId !== player.id) {
-      throw new ItemNotOwnedError();
-    }
-    if (item.templateId === 'rusty_token') {
-      return this.renderNode(player, 'inspect_token');
-    }
-    return this.respond(player, 'Пока неясно, как это использовать.', NAV_BUTTONS);
-  }
-
-  private async talkNpc(player: PlayerRecord, npcId: string): Promise<GameResponse> {
-    if (npcId === 'rem') {
-      player.currentLocation = 'rem_camp';
-      await this.store.setFlag(player.id, 'met_rem', '1');
-      await this.store.adjustNpcRelation(player.id, 'rem', 0, 0);
-      return this.renderNode(player, 'meet_rem');
-    }
-    return this.respond(player, 'Здесь никого нет.', NAV_BUTTONS);
-  }
-
-  private async openCrate(player: PlayerRecord): Promise<GameResponse> {
-    const claimed = await this.store.hasRewardClaim(player.id, 'crate', 'start_crate');
-    if (claimed) {
-      return this.renderNode(player, 'open_crate_empty');
-    }
-    const ok = await this.store.tryClaimReward(player.id, 'crate', 'start_crate');
-    if (!ok) {
-      throw new RewardAlreadyClaimedError();
-    }
-    const template = ITEM_TEMPLATES.rusty_token;
-    const item = await this.store.createItem({
-      playerId: player.id,
-      templateId: template.id,
-      rarity: template.rarity,
-    });
-    await this.store.recordItemHistory({
-      itemId: item.id,
-      playerId: player.id,
-      type: 'LOOTED',
-      meta: { source: 'start_crate' },
-    });
-    await this.store.setFlag(player.id, 'found_rusty_token', '1');
-    player.currentState = 'open_crate';
-    await this.store.savePlayer(player);
-    return this.respond(
-      player,
-      `${DIALOGUE_NODES.open_crate.text}\n\nПолучено: ${template.name}.`,
-      this.choicesToButtons('open_crate', DIALOGUE_NODES.open_crate.choices),
-    );
-  }
-
-  private async startPve(player: PlayerRecord, enemyId: string, eventId: string): Promise<GameResponse> {
-    const enemy = getEnemy(enemyId) ?? ENEMIES.wild_shrew;
-    const stats = await this.effectiveStats(player);
-    const playerSnap: CombatantSnapshot = {
-      id: player.id,
-      name: player.name,
-      hp: player.hp,
-      maxHp: player.maxHp,
-      attack: stats.attack,
-      defense: stats.defense,
-      speed: stats.speed,
-      critChance: stats.critChance,
-      critDamage: stats.critDamage,
-      dodge: stats.dodge,
-      accuracy: stats.accuracy,
-      luck: stats.luck,
-    };
-    const enemySnap: CombatantSnapshot = {
-      id: enemy.id,
-      name: enemy.name,
-      hp: enemy.hp,
-      maxHp: enemy.hp,
-      attack: enemy.minDamage,
-      defense: enemy.defense,
-      speed: enemy.speed,
-      critChance: enemy.critChance,
-      critDamage: enemy.critDamage,
-      dodge: enemy.dodge,
-      accuracy: enemy.accuracy,
-      luck: 0,
-      minDamage: enemy.minDamage,
-      maxDamage: enemy.maxDamage,
-    };
-    const seed = eventId;
-    const battle = simulateBattle({
-      player: playerSnap,
-      enemy: enemySnap,
-      seed,
-      balanceVersion: BALANCE_VERSION,
-    });
-    const match = await this.store.createCombatMatch({
-      playerId: player.id,
-      mode: 'PVE',
-      enemyId: enemy.id,
-      seed: String(battle.seed),
-      balanceVersion: battle.balanceVersion,
-      result: battle.result,
-      playerSnapshot: battle.playerSnapshot,
-      enemySnapshot: battle.enemySnapshot,
-      startedAt: this.now(),
-      finishedAt: this.now(),
-    });
-    await this.store.addCombatEvents(match.id, battle.events);
-    player.hp = Math.max(1, battle.playerHp);
-    await this.store.savePlayer(player);
-    const log = battle.events
-      .slice(0, 12)
-      .map((event) => `ход ${event.turn}: ${event.actor} ${event.type}${event.value ? ` ${event.value}` : ''}`)
+    const locations = ['forest_clearing', 'rem_camp', 'stone_scree', 'old_adit', 'node_7', 'secret_chamber']
+      .filter((id) => ctx.flags[`visited_${id}`])
+      .map((id) => LOCATIONS[id]?.name ?? id);
+    const killed = [];
+    if (ctx.flags.defeated_wild_shrew) killed.push('дикая землеройка');
+    if (ctx.flags.defeated_mine_crawler) killed.push('шахтный ползун');
+    if (ctx.flags.defeated_stone_scavenger) killed.push('каменный падальщик');
+    const discoveries = [];
+    if (ctx.flags.found_rusty_token) discoveries.push('ржавый жетон');
+    if (ctx.discoveries.some((row) => row.discoveryId === 'unknown_node7_creature')) discoveries.push('существо Узла 7 (???)');
+    if (ctx.flags.unknown_blue_mineral) discoveries.push('неизвестный синий минерал');
+    if (ctx.flags.found_broken_lantern) discoveries.push('сломанный фонарь');
+    const summary = [
+      DIALOGUE_NODES.day1_complete.text,
+      packNote.trim(),
+      `Уровень: ${player.level}`,
+      `Локации: ${locations.join(', ') || 'опушка'}`,
+      `Побеждённые: ${killed.join(', ') || 'никто'}`,
+      `Находки: ${discoveries.join(', ') || '—'}`,
+    ]
+      .filter(Boolean)
       .join('\n');
-    const ending =
-      battle.result === 'WIN'
-        ? `\nПобеда над: ${enemy.name}.`
-        : battle.result === 'LOSS'
-          ? `\nТы падаешь, но приходишь в себя с 1 HP.`
-          : '\nБой затягивается в ничью.';
-    return this.respond(player, `Бой с ${enemy.name}.\n${log}${ending}`, NAV_BUTTONS);
+    return this.respond(player, summary, [{ label: 'Начать День 2', action: 'BEGIN_DAY_2' }]);
   }
 
-  private async claimReward(
-    player: PlayerRecord,
-    rewardType: string,
-    rewardRef: string,
-  ): Promise<GameResponse> {
-    if (!rewardType || !rewardRef) {
-      return this.respond(player, 'Награда не найдена.', NAV_BUTTONS);
-    }
-    const ok = await this.store.tryClaimReward(player.id, rewardType, rewardRef);
-    if (!ok) {
-      throw new RewardAlreadyClaimedError();
-    }
-    if (rewardType === 'coins') {
-      // Amount is never taken from the payload — only from known refs.
-      const amount = rewardRef === 'demo_coins' ? 10 : 0;
-      if (amount > 0) {
-        await this.changeCoins(player, amount, 'claim_reward', rewardRef);
-      }
-      return this.respond(player, amount ? `Получено ${amount} монет.` : 'Пустая награда.', NAV_BUTTONS);
-    }
-    return this.respond(player, 'Награда отмечена.', NAV_BUTTONS);
-  }
-
-  async changeCoins(player: PlayerRecord, amount: number, reason: string, referenceId?: string): Promise<PlayerRecord> {
-    const next = player.coins + amount;
-    if (next < 0) {
-      throw new InsufficientCoinsError();
-    }
-    await this.store.addCurrencyTransaction({
-      playerId: player.id,
-      currency: 'COINS',
-      amount,
-      balanceBefore: player.coins,
-      balanceAfter: next,
-      reason,
-      referenceId,
-    });
-    player.coins = next;
-    await this.store.savePlayer(player);
-    return player;
-  }
-
-  private async effectiveStats(player: PlayerRecord) {
-    const stats = { ...STARTING_STATS, ...player.stats, woodYieldBonus: 0 };
-    const equipment = await this.store.getEquipment(player.id);
-    for (const itemId of Object.values(equipment)) {
-      if (!itemId) continue;
-      const item = await this.store.getItem(itemId);
-      if (!item) continue;
-      const template = getItemTemplate(item.templateId);
-      if (!template) continue;
-      stats.attack += template.attackBonus ?? 0;
-      stats.defense += template.defenseBonus ?? 0;
-      stats.woodYieldBonus += template.woodYieldBonus ?? 0;
-    }
-    return stats;
-  }
-
-  private async respond(
-    player: PlayerRecord,
-    text: string,
-    buttons: GameButton[],
-  ): Promise<GameResponse> {
+  private async respond(player: PlayerRecord, text: string, buttons: GameButton[]): Promise<GameResponse> {
     const state: GameStateView = {
       playerId: player.id,
       location: player.currentLocation,
@@ -630,9 +1138,10 @@ export class GameRuntime {
       maxEnergy: player.maxEnergy,
       coins: player.coins,
       level: player.level,
+      xp: player.xp,
     };
     return { text, buttons, state };
   }
 }
 
-export type { EquipmentSlot };
+export { ITEM_TEMPLATES };

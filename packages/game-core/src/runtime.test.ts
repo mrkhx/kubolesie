@@ -66,7 +66,7 @@ describe('dialogue start', () => {
     const response = await runtime.handle(event('START_GAME', {}, 'start-1'));
     expect(response.text).toContain('Ты приходишь в себя на холодной земле.');
     expect(response.buttons.map((button) => button.label)).toEqual([
-      'Осмотреть ящик',
+      'Осмотреть разбитый ящик',
       'Пойти к дыму',
       'Проверить кусты',
     ]);
@@ -181,14 +181,21 @@ describe('gather and crate', () => {
     expect(resources.WOOD).toBe(6);
   });
 
-  it('opens the crate once and grants rusty token', async () => {
+  it('opens the crate once and grants knife, rusk, wood and stone', async () => {
     const { store, runtime, player } = await boot();
     const first = await runtime.handle(event('OPEN_CRATE', {}, 'crate-1'));
-    expect(first.text).toContain('ржавый жетон');
+    expect(first.text).toContain('каменный нож');
+    expect(first.text).toContain('дерево ×6');
     const flags = await store.getFlags(player.id);
-    expect(flags.found_rusty_token).toBe('1');
+    expect(flags.opened_start_crate).toBe('1');
+    expect(flags.found_rusty_token).toBeUndefined();
     const items = await store.listItems(player.id);
-    expect(items.some((item) => item.templateId === 'rusty_token')).toBe(true);
+    expect(items.some((item) => item.templateId === 'stone_knife')).toBe(true);
+    expect(items.some((item) => item.templateId === 'dry_rusk')).toBe(true);
+    expect(items.some((item) => item.templateId === 'rusty_token')).toBe(false);
+    const resources = await store.getResources(player.id);
+    expect(resources.WOOD).toBe(6);
+    expect(resources.STONE).toBe(3);
     const second = await runtime.handle(event('OPEN_CRATE', {}, 'crate-2'));
     expect(second.text).toContain('уже забрал');
   });

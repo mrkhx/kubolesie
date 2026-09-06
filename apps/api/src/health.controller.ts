@@ -7,7 +7,7 @@ export class HealthController {
     return {
       ok: true,
       service: 'kubolesie-api',
-      version: '0.0.1',
+      version: '0.0.2',
       env: process.env.NODE_ENV ?? 'development',
     };
   }
