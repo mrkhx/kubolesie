@@ -797,11 +797,16 @@ describe('day 1 content contracts', () => {
     expect(started.text).toContain('Энергия');
     expect(started.text).toContain('Монеты');
     expect(started.text).toContain('Ты приходишь в себя на холодной земле.');
-    expect(started.buttons.map((button) => button.label)).toEqual([
-      'Осмотреть разбитый ящик',
-      'Пойти к дыму',
-      'Проверить кусты',
+    expect(started.buttons.map((button) => button.label).slice(0, 3)).toEqual([
+      '📦 Осмотреть ящик',
+      '🔥 Пойти к дыму',
+      '🌿 Проверить кусты',
     ]);
+    expect(started.buttons.every((button) => /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/u.test(button.label))).toBe(
+      true,
+    );
+    expect(started.buttons.some((button) => button.action === 'PROMPT_HERO_NAME')).toBe(true);
+    expect(JSON.stringify(started)).not.toMatch(/COMMON|UNCOMMON|BACK/);
   });
 
   it('combat response includes a short readable log', async () => {

@@ -81,7 +81,7 @@ describe('action menus', () => {
   it('4. крафт opens craft categories', async () => {
     const { runtime, vkUserId } = await boot();
     const craft = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'craft' });
-    expect(labels(craft)).toEqual(['🛠 Инструменты', '⚔ Оружие', '🏕 Предметы', '🔙 Назад']);
+    expect(labels(craft)).toEqual(['🛠 Инструменты', '⚔ Оружие', '📦 Предметы', '⬅ Назад']);
   });
 
   it('5–7. craft categories open tools, weapons and items', async () => {
@@ -106,11 +106,11 @@ describe('action menus', () => {
   it('8. назад returns to the previous menu', async () => {
     const { runtime, vkUserId } = await boot();
     const items = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'items' });
-    const back = items.buttons.find((button) => button.label === '🔙 Назад');
+    const back = items.buttons.find((button) => button.label === '⬅ Назад');
     expect(back).toMatchObject({ action: 'OPEN_MENU', payload: { menu: 'craft' } });
     const craft = await act(runtime, vkUserId, 'OPEN_MENU', back?.payload);
     expect(hasLabel(craft, 'Инструменты')).toBe(true);
-    const toHub = craft.buttons.find((button) => button.label === '🔙 Назад');
+    const toHub = craft.buttons.find((button) => button.label === '⬅ Назад');
     expect(toHub).toMatchObject({ action: 'OPEN_MENU', payload: { menu: 'hub' } });
     const hub = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'hub' });
     expect(isMainHub(hub.buttons)).toBe(true);
@@ -162,16 +162,16 @@ describe('action menus', () => {
     atScree!.currentLocation = 'stone_scree';
     await store.savePlayer(atScree!);
     const gather = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'gather' });
-    expect(hasLabel(gather, 'Добывать камень')).toBe(false);
-    expect(hasLabel(gather, 'Добывать руду')).toBe(false);
+    expect(hasLabel(gather, 'Добыть булыжник')).toBe(false);
+    expect(hasLabel(gather, 'Добыть железо')).toBe(false);
     const denied = await act(runtime, vkUserId, 'GATHER_STONE');
     expect(denied.text).toContain('нельзя');
     expect((await store.getResources(player.id)).COBBLESTONE ?? 0).toBe(0);
 
     await store.createItem({ playerId: player.id, templateId: 'wooden_pickaxe', rarity: 'COMMON' });
     const withWood = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'gather' });
-    expect(hasLabel(withWood, 'Добывать камень')).toBe(true);
-    expect(hasLabel(withWood, 'Добывать руду')).toBe(false);
+    expect(hasLabel(withWood, 'Добыть булыжник')).toBe(true);
+    expect(hasLabel(withWood, 'Добыть железо')).toBe(false);
 
     const inAdit = (await store.findPlayerById(player.id))!;
     inAdit.currentLocation = 'old_adit';
@@ -183,7 +183,7 @@ describe('action menus', () => {
       progress: {},
     });
     const ironDenied = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'gather' });
-    expect(hasLabel(ironDenied, 'Добывать руду')).toBe(false);
+    expect(hasLabel(ironDenied, 'Добыть железо')).toBe(false);
   });
 
   it('16. stale menu callbacks do not break state', async () => {
@@ -234,6 +234,8 @@ describe('mock playthrough via nested menus', () => {
     const inv = await act(runtime, vkUserId, 'OPEN_INVENTORY');
     expect(inv.text).toContain('Инвентарь');
     expect(hasLabel(inv, 'Назад')).toBe(true);
+    expect(inv.buttons.some((button) => button.label === '⬅ Назад')).toBe(true);
+    expect(inv.text).not.toMatch(/COMMON|UNCOMMON|BACK/);
 
     const look = await act(runtime, vkUserId, 'EXPLORE');
     expect(look.text.length).toBeGreaterThan(0);
@@ -259,7 +261,7 @@ describe('mock playthrough via nested menus', () => {
     loc.currentLocation = 'stone_scree';
     await store.savePlayer(loc);
     const gather = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'gather' });
-    expect(hasLabel(gather, 'Добывать камень')).toBe(true);
+    expect(hasLabel(gather, 'Добыть булыжник')).toBe(true);
     await act(runtime, vkUserId, 'GATHER_STONE');
     await act(runtime, vkUserId, 'GATHER_STONE');
     await store.addResource(player.id, 'STICK', 2);

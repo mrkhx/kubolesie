@@ -3,6 +3,7 @@ import type { GameCommand } from '@kubolesie/shared';
 import { commandFromText } from './commands';
 import { VK_CHAT_PEER_OFFSET, type VkConfig } from './config';
 import { decodeButtonPayload } from './payload';
+import { isStartAlias } from '@kubolesie/shared';
 
 export type CallbackAuth = 'ok' | 'secret' | 'group' | 'misconfigured';
 
@@ -126,6 +127,18 @@ function parseMessageNew(payload: Record<string, unknown>, eventId: string): Par
   if (rawPayload != null && String(rawPayload).trim() !== '') {
     const decoded = decodeButtonPayload(rawPayload);
     if (!decoded.ok) {
+      const fromText = commandFromText(text);
+      if (fromText.type === 'START_GAME' && isStartAlias(text)) {
+        return {
+          kind: 'command',
+          type: 'message_new',
+          eventId,
+          userId: String(fromId),
+          peerId,
+          command: fromText,
+          text,
+        };
+      }
       return { kind: 'tampered', eventId, userId: String(fromId), peerId };
     }
     return {

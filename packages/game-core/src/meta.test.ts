@@ -407,7 +407,7 @@ describe('hub and playthrough', () => {
     expect(labels(hub)).toContain('👤 Герой');
     const hero = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'hero' });
     expect(hero.buttons.length).toBeLessThanOrEqual(5);
-    expect(labels(hero)).toEqual(['👤 Профиль', '📊 Статистика', '🏆 Рейтинги', '🛡 Клан', '🔙 Назад']);
+    expect(labels(hero)).toEqual(['👤 Профиль', '📊 Статистика', '🏆 Рейтинги', '🛡 Клан', '⬅ Назад']);
     const profile = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'profile' });
     expect(profile.text).toContain(player.name);
     expect(profile.text).not.toContain(player.id);
@@ -416,7 +416,7 @@ describe('hub and playthrough', () => {
     expect(stats.text).toContain('считает сервер');
     const ratings = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'ratings' });
     expect(ratings.buttons.length).toBeLessThanOrEqual(5);
-    expect(labels(ratings)).toEqual(['🌍 Общий', '⚔ PvP', '📅 Недельный', '🛡 Кланы', '🔙 Назад']);
+    expect(labels(ratings)).toEqual(['🌍 Общий', '⚔ PvP', '📅 Недельный', '🛡 Кланы', '⬅ Назад']);
   });
 
   it('mock playthrough: profile, clan join, contribution, week-1 title, no power', async () => {

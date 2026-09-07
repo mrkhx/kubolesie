@@ -65,10 +65,10 @@ describe('dialogue start', () => {
     const { runtime } = await boot();
     const response = await runtime.handle(event('START_GAME', {}, 'start-1'));
     expect(response.text).toContain('Ты приходишь в себя на холодной земле.');
-    expect(response.buttons.map((button) => button.label)).toEqual([
-      'Осмотреть разбитый ящик',
-      'Пойти к дыму',
-      'Проверить кусты',
+    expect(response.buttons.map((button) => button.label).slice(0, 3)).toEqual([
+      '📦 Осмотреть ящик',
+      '🔥 Пойти к дыму',
+      '🌿 Проверить кусты',
     ]);
   });
 });

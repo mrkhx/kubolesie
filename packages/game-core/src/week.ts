@@ -1,4 +1,5 @@
 import {
+  BACK_LABEL,
   BALANCE_VERSION,
   type GameButton,
   type GameCommand,
@@ -571,7 +572,7 @@ function wedgeMenu(_host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
   ) {
     buttons.push({ label: 'Завершить День 3', action: 'COMPLETE_DAY_3' });
   }
-  buttons.push({ label: '🔙 Назад', action: 'OPEN_CAMP' });
+  buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
   const text = [
     'Сизый клин. Хвоя кубами. Смола пахнет железом.',
     ctx.flags.defeated_stumpfang ? 'Пнеклык повержен. Фарм открыт.' : 'Пнеклык ждёт в котловине.',
@@ -590,7 +591,7 @@ function dailyMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
     [
       { label: 'На тропу', action: 'START_PVE', payload: { enemyId: 'moss_boar' } },
       { label: 'Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } },
-      { label: '🔙 Назад', action: 'OPEN_CAMP' },
+      { label: BACK_LABEL, action: 'OPEN_CAMP' },
     ],
   );
 }
@@ -764,7 +765,7 @@ async function tradeAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, un
       action: 'TRADE_ACT',
       payload: { act: 'sell', sku: sku.id },
     }));
-    sellBtns.push({ label: '🔙 Назад', action: 'TRADE_ACT', payload: { act: 'open' } });
+    sellBtns.push({ label: BACK_LABEL, action: 'TRADE_ACT', payload: { act: 'open' } });
     return host.respond(
       ctx.player,
       owned.length ? 'Что продаёшь? Вел платит меньше, чем берёт за своё.' : 'Нечего продать из его списка.',
@@ -776,7 +777,7 @@ async function tradeAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, un
       { label: 'Стекло (15)', action: 'TRADE_ACT', payload: { act: 'buy', sku: 'glass' } },
       { label: 'Сухарь (8)', action: 'TRADE_ACT', payload: { act: 'buy', sku: 'rusk' } },
       { label: 'Палки ×4 (6)', action: 'TRADE_ACT', payload: { act: 'buy', sku: 'sticks' } },
-      { label: '🔙 Назад', action: 'TRADE_ACT', payload: { act: 'open' } },
+      { label: BACK_LABEL, action: 'TRADE_ACT', payload: { act: 'open' } },
     ]);
   }
   if (act === 'token') return host.renderNode(ctx.player, 'vel_token');
@@ -804,7 +805,7 @@ function tradeButtons(ctx: WeekCtx): GameButton[] {
   } else if (ctx.flags.traded_with_vel && !ctx.flags.day_5_complete) {
     buttons.push({ label: 'Завершить День 5', action: 'COMPLETE_DAY_5' });
   }
-  buttons.push({ label: '🔙 Назад', action: 'OPEN_CAMP' });
+  buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
   return buttons.slice(0, 5);
 }
 
@@ -827,7 +828,7 @@ function pvpMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
     action: 'DIALOGUE_CHOICE',
     payload: { nodeId: 'yara_edge', choiceId: 'back' },
   });
-  buttons.push({ label: '🔙 Назад', action: 'OPEN_CAMP' });
+  buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
   return host.respond(
     ctx.player,
     `Осыпь. Вешка Яры.\nСтычек: ${used}/${PVP_MAX}. Рейтинг: ${standing}.\nМонет с PvP мало — так и задумано.`,
@@ -1072,7 +1073,7 @@ async function salvageItem(host: WeekHost, ctx: WeekCtx, itemId: string): Promis
   return host.respond(
     ctx.player,
     `Разобрано. +1 булыжник. Железо не разбираем — рано.`,
-    [{ label: '🔙 Назад', action: 'OPEN_INVENTORY' }, ...NAV],
+    [{ label: BACK_LABEL, action: 'OPEN_INVENTORY' }, ...NAV],
   );
 }
 
@@ -1120,7 +1121,7 @@ function prepMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
       payload: { enemyId: 'wenzel_warden', move: 'blue' },
     });
   }
-  buttons.push({ label: '🔙 Назад', action: 'OPEN_CAMP' });
+  buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
   return host.respond(ctx.player, lines.join('\n'), buttons.slice(0, 5));
 }
 

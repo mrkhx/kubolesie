@@ -1,5 +1,7 @@
 import {
   isGameCommandType,
+  presentButton,
+  BACK_LABEL,
   type GameButton,
   type GameCommand,
   type GameCommandType,
@@ -50,6 +52,8 @@ const TEXT_ALIASES: Record<string, GameCommandType> = {
   укрытие: 'BUILD_TEMP_SHELTER',
   ночь: 'REST_NIGHT',
   профиль: 'OPEN_PROFILE',
+  'назвать героя': 'PROMPT_HERO_NAME',
+  'сменить имя': 'PROMPT_HERO_NAME',
 };
 
 const TEXT_MENU_ALIASES: Record<string, string> = {
@@ -145,18 +149,41 @@ export function parseMockVkEvent(input: MockVkEvent): NormalizedIncomingEvent {
 }
 
 export function toVkKeyboard(buttons: GameButton[]): VkKeyboard {
+  const styled = buttons.map(presentButton).filter((button) => button.label.trim().length > 0);
+  const usable = styled.slice(0, 10);
   const rows: VkKeyboard['buttons'] = [];
-  const usable = buttons.filter((button) => button.label.trim().length > 0).slice(0, 5);
-  for (let i = 0; i < usable.length; i += 2) {
-    const slice = usable.slice(i, i + 2).map((button) => ({
-      action: {
-        type: 'callback' as const,
-        label: button.label.slice(0, 40),
-        payload: serializeButtonPayload(String(button.action), button.payload),
-      },
-      color: 'secondary' as const,
-    }));
-    if (slice.length) rows.push(slice);
+  let i = 0;
+  while (i < usable.length) {
+    const current = usable[i]!;
+    const isSolo =
+      current.label === BACK_LABEL ||
+      current.action === 'CANCEL_HERO_NAME' ||
+      [...current.label].length > 18;
+    const next = usable[i + 1];
+    const nextSolo =
+      !next ||
+      next.label === BACK_LABEL ||
+      next.action === 'CANCEL_HERO_NAME' ||
+      [...next.label].length > 18;
+    if (isSolo || nextSolo) {
+      rows.push([toVkButton(current)]);
+      i += 1;
+      continue;
+    }
+    rows.push([toVkButton(current), toVkButton(next)]);
+    i += 2;
   }
   return { one_time: false, inline: true, buttons: rows };
+}
+
+function toVkButton(button: GameButton): VkKeyboard['buttons'][number][number] {
+  const styled = presentButton(button);
+  return {
+    action: {
+      type: 'callback' as const,
+      label: styled.label.slice(0, 40),
+      payload: serializeButtonPayload(String(styled.action), styled.payload),
+    },
+    color: styled.color ?? 'primary',
+  };
 }

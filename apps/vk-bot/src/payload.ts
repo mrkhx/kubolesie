@@ -35,11 +35,30 @@ export function parseJsonPayload(raw: unknown): unknown {
 
 export function decodeButtonPayload(raw: unknown): PayloadDecode {
   if (raw == null) return { ok: false, reason: 'missing' };
+  if (typeof raw === 'string') {
+    const token = raw.trim().toLowerCase();
+    if (token === 'start' || token === 'начать' || token === '/start') {
+      return { ok: true, command: { type: 'START_GAME', payload: {} } };
+    }
+  }
   const parsed = typeof raw === 'string' || typeof raw === 'object' ? parseJsonPayload(raw) : null;
+  if (typeof parsed === 'string') {
+    const token = parsed.trim().toLowerCase();
+    if (token === 'start' || token === 'начать' || token === '/start') {
+      return { ok: true, command: { type: 'START_GAME', payload: {} } };
+    }
+    return { ok: false, reason: 'tampered' };
+  }
   const record = asFlatRecord(parsed);
   if (!record) return { ok: false, reason: 'tampered' };
   const action = String(record.action ?? '').trim();
-  if (!action || !isGameCommandType(action)) return { ok: false, reason: 'tampered' };
+  if (!action || !isGameCommandType(action)) {
+    const vkCommand = String(record.command ?? record.cmd ?? '').trim().toLowerCase();
+    if (vkCommand === 'start' || vkCommand === 'начать' || vkCommand === '/start') {
+      return { ok: true, command: { type: 'START_GAME', payload: {} } };
+    }
+    return { ok: false, reason: 'tampered' };
+  }
   const payload: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
     if (key === 'action') continue;

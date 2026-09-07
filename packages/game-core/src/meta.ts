@@ -18,6 +18,7 @@ import {
   type CosmeticSlot,
 } from '@kubolesie/content';
 import type { GameButton, GameCommand, GameResponse } from '@kubolesie/shared';
+import { BACK_LABEL, isDefaultHeroName } from '@kubolesie/shared';
 import {
   ActionRejectedError,
   StaleActionError,
@@ -68,7 +69,7 @@ export type MetaEvent =
 
 const NAV: GameButton[] = [
   { label: '👤 Герой', action: 'OPEN_MENU', payload: { menu: 'hero' } },
-  { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hub' } },
+  { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
 ];
 
 export async function noteActivity(
@@ -343,7 +344,7 @@ async function heroMenu(store: GameStore, player: PlayerRecord): Promise<GameRes
       { label: '📊 Статистика', action: 'OPEN_MENU', payload: { menu: 'stats' } },
       { label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } },
       { label: '🛡 Клан', action: 'OPEN_MENU', payload: { menu: 'clan' } },
-      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hub' } },
+      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
     ],
   );
 }
@@ -370,10 +371,11 @@ async function profileScreen(store: GameStore, player: PlayerRecord): Promise<Ga
     `Победы PvE ${stats.pveWins} / PvP ${stats.pvpWins} · боссы ${stats.bossWins}`,
   ].join('\n');
   return respond(player, text, [
+    { label: isDefaultHeroName(player.name) ? '✏ Назвать героя' : '✏ Сменить имя', action: 'PROMPT_HERO_NAME' },
     { label: '🎨 Оформление', action: 'OPEN_MENU', payload: { menu: 'cosmetics' } },
     { label: '🏅 Достижения', action: 'OPEN_MENU', payload: { menu: 'achievements' } },
     { label: '📊 Статистика', action: 'OPEN_MENU', payload: { menu: 'stats' } },
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hero' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } },
   ]);
 }
 
@@ -386,10 +388,10 @@ function currentDayLabel(flags: Record<string, string>): string {
 
 async function statsScreen(store: GameStore, player: PlayerRecord): Promise<GameResponse> {
   const stats = await store.getStatistics(player.id);
-  const text = formatStats(stats);
+  const text = `${player.name}\n${formatStats(stats)}`;
   return respond(player, text, [
     { label: '👤 Профиль', action: 'OPEN_MENU', payload: { menu: 'profile' } },
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hero' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } },
   ]);
 }
 
@@ -414,7 +416,7 @@ function ratingsRoot(): Promise<GameResponse> {
       { label: '⚔ PvP', action: 'OPEN_MENU', payload: { menu: 'ratings_pvp' } },
       { label: '📅 Недельный', action: 'OPEN_MENU', payload: { menu: 'ratings_weekly' } },
       { label: '🛡 Кланы', action: 'OPEN_MENU', payload: { menu: 'ratings_clans' } },
-      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hero' } },
+      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } },
     ],
   });
 }
@@ -458,7 +460,7 @@ async function leaderboard(
   const buttons: GameButton[] = [];
   if (safePage > 0) {
     buttons.push({
-      label: '◀ Назад',
+      label: '◀ Ранее',
       action: 'LEADERBOARD_PAGE',
       payload: { board, page: safePage - 1 },
     });
@@ -471,7 +473,7 @@ async function leaderboard(
     });
   }
   buttons.push({ label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } });
-  buttons.push({ label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hero' } });
+  buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } });
   return respond(player, text, buttons.slice(0, 5));
 }
 
@@ -482,7 +484,7 @@ async function clanHome(store: GameStore, player: PlayerRecord, now: Date): Prom
       { label: '🔎 Найти клан', action: 'OPEN_MENU', payload: { menu: 'clan_find' } },
       { label: '➕ Создать клан', action: 'CLAN_ACT', payload: { act: 'prompt_create' } },
       { label: '📨 Мои заявки', action: 'CLAN_ACT', payload: { act: 'my_apps' } },
-      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hero' } },
+      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } },
     ]);
   }
   const period = isoWeekKey(now);
@@ -507,7 +509,7 @@ async function clanHome(store: GameStore, player: PlayerRecord, now: Date): Prom
   } else {
     buttons.push({ label: '🚪 Покинуть', action: 'CLAN_ACT', payload: { act: 'leave' } });
   }
-  buttons.push({ label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hero' } });
+  buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } });
   return respond(player, text, buttons.slice(0, 5));
 }
 
@@ -518,7 +520,7 @@ async function clanFind(store: GameStore, query: string): Promise<GameResponse> 
     action: 'CLAN_ACT',
     payload: { act: 'apply', clanId: clan.id },
   }));
-  buttons.push({ label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan' } });
+  buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } });
   return {
     text: clans.length ? 'Найденные стаи. Заявка — одна на клан.' : 'Стаи не найдены.',
     buttons: buttons.slice(0, 5),
@@ -535,7 +537,7 @@ async function clanMembers(store: GameStore, player: PlayerRecord): Promise<Game
     lines.push(`• ${who?.name ?? 'Путник'} — ${roleLabel(member.role)}`);
   }
   return respond(player, `Участники ${membership.clan.name}:\n${lines.join('\n')}`, [
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } },
   ]);
 }
 
@@ -554,7 +556,7 @@ async function clanManage(store: GameStore, player: PlayerRecord): Promise<GameR
   } else {
     buttons.push({ label: '🚪 Покинуть', action: 'CLAN_ACT', payload: { act: 'leave' } });
   }
-  buttons.push({ label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan' } });
+  buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } });
   return respond(player, 'Управление стаей. Боевых бонусов нет.', buttons.slice(0, 5));
 }
 
@@ -571,7 +573,7 @@ async function clanAct(
       'Создать клан: имя 2–24 и тег 2–5. Боевых бонусов клан не даёт.',
       [
         { label: 'Создать', action: 'CLAN_ACT', payload: { act: 'create', name: payload.name, tag: payload.tag, description: payload.description } },
-        { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan' } },
+        { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } },
       ],
     );
   }
@@ -590,7 +592,7 @@ async function clanAct(
       lines.push(`• ${clan?.name ?? 'стая'} — ждёт`);
     }
     return respond(player, lines.length ? lines.join('\n') : 'Заявок нет.', [
-      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan' } },
+      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } },
     ]);
   }
   if (act === 'apps') return reviewApps(store, player);
@@ -608,7 +610,7 @@ async function clanAct(
     if (!membership) throw new ActionRejectedError('Нет клана.');
     const score = await store.getContribution(membership.clan.id, player.id, isoWeekKey(now));
     return respond(player, `Вклад за неделю: ${score}. Не монеты — дела.`, [
-      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan' } },
+      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } },
     ]);
   }
   if (act === 'search') return clanFind(store, String(payload.query ?? ''));
@@ -662,7 +664,7 @@ async function applyClan(store: GameStore, player: PlayerRecord, clanId: string)
     throw error;
   }
   return respond(player, `Заявка в ${clan.name} отправлена.`, [
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } },
   ]);
 }
 
@@ -671,7 +673,7 @@ async function reviewApps(store: GameStore, player: PlayerRecord): Promise<GameR
   const apps = await store.listPendingApplications(membership.clan.id);
   if (!apps.length) {
     return respond(player, 'Заявок нет.', [
-      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
+      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
     ]);
   }
   const app = apps[0]!;
@@ -679,7 +681,7 @@ async function reviewApps(store: GameStore, player: PlayerRecord): Promise<GameR
   return respond(player, `Заявка: ${who?.name ?? 'Путник'}`, [
     { label: 'Принять', action: 'CLAN_ACT', payload: { act: 'accept', appId: app.id } },
     { label: 'Отклонить', action: 'CLAN_ACT', payload: { act: 'reject', appId: app.id } },
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
   ]);
 }
 
@@ -707,7 +709,7 @@ async function acceptApp(store: GameStore, player: PlayerRecord, appId: string):
   await maybeGrant(store, app.playerId, 'CLAN_MEMBER');
   return respond(player, 'Принят в стаю.', [
     { label: 'Ещё заявки', action: 'CLAN_ACT', payload: { act: 'apps' } },
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
   ]);
 }
 
@@ -718,7 +720,7 @@ async function rejectApp(store: GameStore, player: PlayerRecord, appId: string):
   if (app.status !== 'PENDING') throw new StaleActionError('Заявка уже обработана.');
   await store.setApplicationStatus(app.id, 'REJECTED');
   return respond(player, 'Заявка отклонена.', [
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
   ]);
 }
 
@@ -755,7 +757,7 @@ async function kickMember(store: GameStore, player: PlayerRecord, targetId: stri
   }
   await store.removeClanMember(membership.clan.id, targetId);
   return respond(player, 'Исключён.', [
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
   ]);
 }
 
@@ -769,7 +771,7 @@ async function setRole(
   if (targetId === player.id) throw new ActionRejectedError('Себе роль так не сменить.');
   await store.setClanMemberRole(membership.clan.id, targetId, role);
   return respond(player, role === 'OFFICER' ? 'Повышен.' : 'Понижен.', [
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
   ]);
 }
 
@@ -799,7 +801,7 @@ async function pickMember(
       payload: { act, targetId: member.playerId },
     });
   }
-  buttons.push({ label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan_manage' } });
+  buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } });
   return respond(player, title, buttons.slice(0, 5));
 }
 
@@ -845,7 +847,7 @@ async function cosmeticsScreen(store: GameStore, player: PlayerRecord): Promise<
     });
     if (buttons.length >= 3) break;
   }
-  buttons.push({ label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'profile' } });
+  buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'profile' } });
   return respond(
     player,
     [
@@ -880,7 +882,7 @@ async function cosmeticAct(
   await store.setCosmetic(player.id, product.slot, productId);
   return respond(player, `Надето: ${product.name}. Боевые статы те же.`, [
     { label: '🎨 Оформление', action: 'OPEN_MENU', payload: { menu: 'cosmetics' } },
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'profile' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'profile' } },
   ]);
 }
 
@@ -890,7 +892,7 @@ async function achievementsScreen(store: GameStore, player: PlayerRecord): Promi
   const lines = Object.values(ACHIEVEMENTS).map((row) => `${ids.has(row.id) ? '✔' : '·'} ${row.name}`);
   return respond(player, `Достижения.\n${lines.join('\n')}`, [
     { label: '🎨 Оформление', action: 'OPEN_MENU', payload: { menu: 'cosmetics' } },
-    { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'profile' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'profile' } },
   ]);
 }
 

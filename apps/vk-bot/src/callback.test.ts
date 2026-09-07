@@ -329,6 +329,8 @@ describe('vk event ids', () => {
 describe('vk command flow', () => {
   it('maps text aliases through the existing parser', () => {
     expect(commandFromText('Начать').type).toBe('START_GAME');
+    expect(commandFromText('начать').type).toBe('START_GAME');
+    expect(commandFromText('Старт').type).toBe('START_GAME');
     expect(commandFromText('герой')).toEqual({ type: 'OPEN_MENU', payload: { menu: 'hero' } });
     expect(commandFromText('профиль').type).toBe('OPEN_PROFILE');
     expect(commandFromText('клан')).toEqual({ type: 'OPEN_MENU', payload: { menu: 'clan' } });
@@ -455,6 +457,14 @@ describe('vk payload allowlist', () => {
     expect(decodeButtonPayload({ action: 'START_GAME', nested: { x: 1 } }).ok).toBe(false);
     expect(decodeButtonPayload({ action: 'GRANT_PREMIUM' }).ok).toBe(false);
     expect(decodeButtonPayload('not-json').ok).toBe(false);
+    expect(decodeButtonPayload({ command: 'start' })).toEqual({
+      ok: true,
+      command: { type: 'START_GAME', payload: {} },
+    });
+    expect(decodeButtonPayload('start')).toEqual({
+      ok: true,
+      command: { type: 'START_GAME', payload: {} },
+    });
   });
 });
 
@@ -544,5 +554,41 @@ describe('vk domain errors', () => {
     expect(client.sent[0]!.text).not.toContain('access_token');
     expect(client.sent[0]!.keyboard?.buttons[0]?.[0]?.action.payload).not.toContain('test-token');
   });
-});
 
+  it('treats VK community Начать payload as START_GAME', async () => {
+    const { adapter, runtime, client } = boot();
+    const handle = vi.spyOn(runtime, 'handle');
+    const body = messageNew({ text: 'Начать', eventId: 'vk-start-btn' });
+    (body.object as { message: Record<string, unknown> }).message.payload = '{"command":"start"}';
+    const result = await adapter.handleCallback(body);
+    expect(result).toEqual({ status: 200, body: 'ok' });
+    expect(handle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: { type: 'START_GAME', payload: {} },
+      }),
+    );
+    expect(client.sent[0]!.text).toContain('приходишь в себя');
+    expect(client.sent[0]!.keyboard?.buttons.flat().some((btn) => /📦/.test(btn.action.label))).toBe(true);
+    expect(JSON.stringify(client.sent[0]!.keyboard)).not.toMatch(/COMMON|UNCOMMON|"BACK"/);
+  });
+
+  it('sets a hero name from chat text after the name prompt', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(messageNew({ text: 'Старт', eventId: 'name-start' }));
+    client.sent.length = 0;
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'name-prompt',
+        payload: { action: 'PROMPT_HERO_NAME' },
+      }),
+    );
+    expect(client.sent[0]!.text).toMatch(/звать/);
+    client.sent.length = 0;
+    const named = await adapter.handleCallback(messageNew({ text: 'Виктор', eventId: 'name-set' }));
+    expect(named.body).toBe('ok');
+    expect((await store.findPlayerByVkUserId('9001'))!.name).toBe('Виктор');
+    expect(client.sent[0]!.text).toContain('Виктор');
+    expect(JSON.stringify(client.sent[0]!.keyboard)).toMatch(/⬅ Назад/);
+    expect(JSON.stringify(client.sent)).not.toMatch(/COMMON|UNCOMMON/);
+  });
+});

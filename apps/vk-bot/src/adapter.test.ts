@@ -34,7 +34,10 @@ describe('vk adapter', () => {
       action: 'OPEN_MENU',
       menu: 'gather',
     });
-    expect(JSON.parse(keyboard.buttons[0][1].action.payload).menu).toBe('craft');
+    expect(JSON.parse(keyboard.buttons[1][0].action.payload).menu).toBe('craft');
+    expect(keyboard.buttons[0][0].color).toBe('primary');
+    expect(keyboard.buttons[1][0].color).toBe('secondary');
+    expect(keyboard.buttons[1][0].action.label).toBe('⬅ Назад');
   });
 
   it('parses text aliases for craft categories as OPEN_MENU', () => {

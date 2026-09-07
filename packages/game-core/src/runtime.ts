@@ -12,6 +12,16 @@ import {
   type GameStateView,
   type NormalizedIncomingEvent,
   type ResourceType,
+  presentGameResponse,
+  BACK_LABEL,
+  AWAITING_NAME_FLAG,
+  DEFAULT_HERO_NAME,
+  INVALID_NAME_TEXT,
+  NAME_PROMPT_TEXT,
+  formatItemLine,
+  isDefaultHeroName,
+  isStartAlias,
+  validateHeroName,
 } from '@kubolesie/shared';
 import {
   COMBAT_REQUIREMENTS,
@@ -121,13 +131,13 @@ export class GameRuntime {
   async handle(event: NormalizedIncomingEvent): Promise<GameResponse> {
     return this.serialize(`event:${event.eventId}`, async () => {
       const existing = await this.store.findProcessedEvent(event.eventId);
-      if (existing?.response?.text) return existing.response;
+      if (existing?.response?.text) return presentGameResponse(existing.response);
       if (existing) {
-        return { text: 'Сейчас это сделать нельзя.', buttons: NAV };
+        return presentGameResponse({ text: 'Сейчас это сделать нельзя.', buttons: NAV });
       }
       return this.serialize(`player:${event.identity.providerUserId}`, async () => {
         const again = await this.store.findProcessedEvent(event.eventId);
-        if (again?.response?.text) return again.response;
+        if (again?.response?.text) return presentGameResponse(again.response);
         const claimed = await this.store.tryBeginProcessedEvent({
           eventId: event.eventId,
           playerId: null,
@@ -136,11 +146,11 @@ export class GameRuntime {
         });
         if (!claimed) {
           const won = await this.store.findProcessedEvent(event.eventId);
-          if (won?.response?.text) return won.response;
-          return { text: 'Сейчас это сделать нельзя.', buttons: NAV };
+          if (won?.response?.text) return presentGameResponse(won.response);
+          return presentGameResponse({ text: 'Сейчас это сделать нельзя.', buttons: NAV });
         }
         try {
-          const response = await this.execute(event);
+          const response = presentGameResponse(await this.execute(event));
           await this.store.completeProcessedEvent(
             event.eventId,
             response,
@@ -148,10 +158,10 @@ export class GameRuntime {
           );
           return response;
         } catch (error) {
-          const response: GameResponse = {
+          const response = presentGameResponse({
             text: error instanceof GameError ? error.message : 'Сейчас это сделать нельзя.',
             buttons: NAV,
-          };
+          });
           await this.store.completeProcessedEvent(event.eventId, response, null);
           return response;
         }
@@ -162,7 +172,7 @@ export class GameRuntime {
   /** Adapter-only: replay check before command rate-limit. Does not mutate. */
   async peekProcessed(eventId: string): Promise<GameResponse | null> {
     const existing = await this.store.findProcessedEvent(eventId);
-    if (existing?.response?.text) return existing.response;
+    if (existing?.response?.text) return presentGameResponse(existing.response);
     return null;
   }
 
@@ -181,7 +191,7 @@ export class GameRuntime {
         await this.store.savePlayer(refreshed);
       }
       const current = (await this.store.findPlayerById(player.id)) ?? refreshed;
-      return await this.dispatch(current, event.command, event.eventId);
+      return await this.dispatch(current, event.command, event.eventId, event.text);
     } catch (error) {
       if (error instanceof GameError) {
         return { text: error.message, buttons: NAV };
@@ -195,7 +205,7 @@ export class GameRuntime {
     if (existing) return existing;
     const created = await this.store.createPlayer({
       vkUserId: event.identity.providerUserId,
-      name: event.identity.displayName?.trim() || 'Путник',
+      name: event.identity.displayName?.trim() || DEFAULT_HERO_NAME,
     });
     await this.store.setFlag(created.id, 'visited_forest_clearing', '1');
     return created;
@@ -221,8 +231,17 @@ export class GameRuntime {
     };
   }
 
-  private async dispatch(player: PlayerRecord, command: GameCommand, eventId: string): Promise<GameResponse> {
+  private async dispatch(
+    player: PlayerRecord,
+    command: GameCommand,
+    eventId: string,
+    text?: string,
+    ignoreNameMode = false,
+  ): Promise<GameResponse> {
     const ctx = await this.load(player);
+    if (!ignoreNameMode && ctx.flags[AWAITING_NAME_FLAG] === '1') {
+      return this.handleNameInput(ctx, command, eventId, text);
+    }
     this.assertAllowed(command, ctx);
     switch (command.type) {
       case 'START_GAME':
@@ -295,6 +314,10 @@ export class GameRuntime {
         return this.lightCamp(ctx);
       case 'COMPLETE_DAY_2':
         return this.completeDay2(ctx);
+      case 'PROMPT_HERO_NAME':
+        return this.promptHeroName(ctx);
+      case 'CANCEL_HERO_NAME':
+        return this.openMenu(ctx, 'profile');
       default:
         if ((META_COMMANDS as readonly string[]).includes(command.type)) {
           return dispatchMeta(this.store, player, command, this.now());
@@ -340,6 +363,8 @@ export class GameRuntime {
       'CLAN_ACT',
       'COSMETIC_ACT',
       'LEADERBOARD_PAGE',
+      'PROMPT_HERO_NAME',
+      'CANCEL_HERO_NAME',
     ];
     if (ctx.player.currentState.startsWith('night_') && !nightAllowed.includes(type)) {
       throw new ActionRejectedError('Сейчас ночь. Дождись утра.');
@@ -378,6 +403,12 @@ export class GameRuntime {
     const rendered = await this.renderNode(ctx.player, nodeId === 'gather_wood' ? 'forest_hub' : nodeId);
     if (nodeId === 'start' || getDialogueNode(nodeId)?.id === 'start') {
       rendered.text = `${this.hud(ctx)}\n\n${rendered.text}`;
+      if (isDefaultHeroName(ctx.player.name) && rendered.buttons.length < 5) {
+        rendered.buttons.push({
+          label: '✏ Назвать героя',
+          action: 'PROMPT_HERO_NAME',
+        });
+      }
     }
     return rendered;
   }
@@ -386,7 +417,7 @@ export class GameRuntime {
     const cap = this.energyCap(ctx);
     const names = ctx.items.map((item) => getItemTemplate(item.templateId)?.name ?? item.templateId);
     const inv = names.length ? names.slice(0, 4).join(', ') : 'пусто';
-    return `HP ${ctx.player.hp}/${ctx.player.maxHp} · Энергия ${ctx.player.energy}/${cap} · Монеты ${ctx.player.coins}\nИнвентарь: ${inv}`;
+    return `❤️ HP ${ctx.player.hp}/${ctx.player.maxHp} · ⚡ Энергия ${ctx.player.energy}/${cap} · 🪙 Монеты ${ctx.player.coins}\n🎒 Инвентарь: ${inv}`;
   }
 
   private energyCap(ctx: Ctx): number {
@@ -566,14 +597,13 @@ export class GameRuntime {
     const equipped = new Set(Object.values(ctx.equipment));
     if (!ctx.items.length) {
       return this.respond(ctx.player, 'Инвентарь пуст.', [
-        { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hub' } },
+        { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
         { label: '👁 Осмотреться', action: 'EXPLORE' },
       ]);
     }
     const lines = ctx.items.map((item) => {
       const template = getItemTemplate(item.templateId);
-      const mark = equipped.has(item.id) ? ' [экип.]' : '';
-      return `• ${template?.name ?? item.templateId} (${item.rarity})${mark}`;
+      return `• ${formatItemLine(template?.name ?? item.templateId, item.rarity, equipped.has(item.id))}`;
     });
     const buttons: GameButton[] = [];
     for (const item of ctx.items) {
@@ -594,7 +624,7 @@ export class GameRuntime {
     }
     return this.respond(ctx.player, `Инвентарь:\n${lines.join('\n')}`, [
       ...buttons,
-      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'hub' } },
+      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
       { label: '👁 Осмотреться', action: 'EXPLORE' },
     ]);
   }
@@ -683,7 +713,7 @@ export class GameRuntime {
     return this.respond(ctx.player, extra, [
       { label: '⛏ Искать ещё', action: 'GATHER_IRON' },
       { label: 'Штольня', action: 'DIALOGUE_CHOICE', payload: { nodeId: 'old_adit', choiceId: 'leave' } },
-      { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'gather' } },
+      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'gather' } },
     ]);
   }
 
@@ -1690,7 +1720,64 @@ export class GameRuntime {
     ]
       .filter(Boolean)
       .join('\n');
-    return this.respond(player, summary, [{ label: 'Начать День 2', action: 'BEGIN_DAY_2' }]);
+    return this.respond(player, summary, [{ label: '▶ День 2', action: 'BEGIN_DAY_2' }]);
+  }
+
+  private async handleNameInput(
+    ctx: Ctx,
+    command: GameCommand,
+    eventId: string,
+    text?: string,
+  ): Promise<GameResponse> {
+    if (command.type === 'CANCEL_HERO_NAME') {
+      await this.store.setFlag(ctx.player.id, AWAITING_NAME_FLAG, '0');
+      const fresh = (await this.store.findPlayerById(ctx.player.id)) ?? ctx.player;
+      return this.openMenu(await this.load(fresh), 'profile');
+    }
+    if (command.type === 'PROMPT_HERO_NAME') {
+      return this.promptHeroName(ctx);
+    }
+    const raw = (text ?? '').trim();
+    if (command.type === 'START_GAME' && (isStartAlias(raw) || !raw)) {
+      await this.store.setFlag(ctx.player.id, AWAITING_NAME_FLAG, '0');
+      const fresh = (await this.store.findPlayerById(ctx.player.id)) ?? ctx.player;
+      return this.startGame(await this.load(fresh));
+    }
+    if (command.type === 'START_GAME' && raw) {
+      return this.applyHeroName(ctx, raw);
+    }
+    await this.store.setFlag(ctx.player.id, AWAITING_NAME_FLAG, '0');
+    const fresh = (await this.store.findPlayerById(ctx.player.id)) ?? ctx.player;
+    return this.dispatch(fresh, command, eventId, text, true);
+  }
+
+  private async promptHeroName(ctx: Ctx): Promise<GameResponse> {
+    await this.store.setFlag(ctx.player.id, AWAITING_NAME_FLAG, '1');
+    const current = isDefaultHeroName(ctx.player.name) ? DEFAULT_HERO_NAME : ctx.player.name;
+    const prompt = isDefaultHeroName(ctx.player.name)
+      ? NAME_PROMPT_TEXT
+      : `Сейчас тебя зовут ${current}.\n${NAME_PROMPT_TEXT}`;
+    return this.respond(ctx.player, prompt, [
+      { label: '❌ Отмена', action: 'CANCEL_HERO_NAME' },
+      { label: '👤 Профиль', action: 'OPEN_MENU', payload: { menu: 'profile' } },
+    ]);
+  }
+
+  private async applyHeroName(ctx: Ctx, raw: string): Promise<GameResponse> {
+    const parsed = validateHeroName(raw);
+    if (!parsed.ok) {
+      return this.respond(ctx.player, INVALID_NAME_TEXT, [
+        { label: '❌ Отмена', action: 'CANCEL_HERO_NAME' },
+        { label: '👤 Профиль', action: 'OPEN_MENU', payload: { menu: 'profile' } },
+      ]);
+    }
+    ctx.player.name = parsed.name;
+    await this.store.savePlayer(ctx.player);
+    await this.store.setFlag(ctx.player.id, AWAITING_NAME_FLAG, '0');
+    return this.respond(ctx.player, `Готово. В Куболесье тебя знают как ${parsed.name}.`, [
+      { label: '👤 Профиль', action: 'OPEN_MENU', payload: { menu: 'profile' } },
+      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
+    ]);
   }
 
   private async respond(player: PlayerRecord, text: string, buttons: GameButton[]): Promise<GameResponse> {

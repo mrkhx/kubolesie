@@ -71,6 +71,8 @@ export const GAME_COMMANDS = [
   'CLAN_ACT',
   'COSMETIC_ACT',
   'LEADERBOARD_PAGE',
+  'PROMPT_HERO_NAME',
+  'CANCEL_HERO_NAME',
 ] as const;
 
 export type GameCommandType = (typeof GAME_COMMANDS)[number];
@@ -84,6 +86,7 @@ export interface GameButton {
   label: string;
   action: GameCommandType | string;
   payload?: Record<string, unknown>;
+  color?: 'primary' | 'positive' | 'negative' | 'secondary';
 }
 
 export interface GameAttachment {
@@ -216,3 +219,6 @@ export interface NormalizedIncomingEvent {
 export function isGameCommandType(value: string): value is GameCommandType {
   return (GAME_COMMANDS as readonly string[]).includes(value);
 }
+
+export * from './ui';
+

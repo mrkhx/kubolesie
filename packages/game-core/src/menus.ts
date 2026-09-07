@@ -10,6 +10,7 @@ import type {
   GameCommandType,
   ResourceType,
 } from '@kubolesie/shared';
+import { BACK_LABEL } from '@kubolesie/shared';
 
 export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'cosmetics' | 'achievements';
 
@@ -189,7 +190,7 @@ export function backButton(from: ActionMenuId): GameButton {
     return { label: '👁 Осмотреться', action: 'EXPLORE' };
   }
   return {
-    label: '🔙 Назад',
+    label: BACK_LABEL,
     action: 'OPEN_MENU',
     payload: { menu: parent },
   };
@@ -255,16 +256,16 @@ export function hubButtons(ctx: MenuSnapshot): GameButton[] {
 export function gatherButtons(ctx: MenuSnapshot): GameButton[] {
   const buttons: GameButton[] = [];
   if (canUseCommand('GATHER_WOOD', ctx)) {
-    buttons.push({ label: '🌲 Рубить дерево', action: 'GATHER_WOOD' });
+    buttons.push({ label: '🪓 Рубить дерево', action: 'GATHER_WOOD' });
   }
   if (canUseCommand('GATHER_STONE', ctx)) {
-    buttons.push({ label: '🪨 Добывать камень', action: 'GATHER_STONE' });
+    buttons.push({ label: '🪨 Добыть булыжник', action: 'GATHER_STONE' });
   }
   if (canUseCommand('GATHER_IRON', ctx)) {
-    buttons.push({ label: '⛏ Добывать руду', action: 'GATHER_IRON' });
+    buttons.push({ label: '⛏ Добыть железо', action: 'GATHER_IRON' });
   }
   if (canUseCommand('GATHER_COAL', ctx)) {
-    buttons.push({ label: '🪨 Добывать уголь', action: 'GATHER_COAL' });
+    buttons.push({ label: '⚫ Добыть уголь', action: 'GATHER_COAL' });
   }
   if (canUseCommand('BUILD_TEMP_SHELTER', ctx) && !ctx.flags.temporary_shelter_level) {
     buttons.push({ label: '🏕 Собрать укрытие', action: 'BUILD_TEMP_SHELTER' });
@@ -324,7 +325,7 @@ export function craftRootButtons(): GameButton[] {
   return [
     { label: '🛠 Инструменты', action: 'OPEN_MENU', payload: { menu: 'tools' } },
     { label: '⚔ Оружие', action: 'OPEN_MENU', payload: { menu: 'weapons' } },
-    { label: '🏕 Предметы', action: 'OPEN_MENU', payload: { menu: 'items' } },
+    { label: '📦 Предметы', action: 'OPEN_MENU', payload: { menu: 'items' } },
     backButton('craft'),
   ];
 }
