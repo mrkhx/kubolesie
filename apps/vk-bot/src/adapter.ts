@@ -12,6 +12,11 @@ import { randomIdFromEvent, VkApiError, type VkMessenger } from './client';
 import { isVkCallbackReady, loadVkConfig, type VkConfig } from './config';
 import type { AbuseGuard } from './abuse-guard';
 import { THROTTLE_TEXT } from './abuse-policy';
+import {
+  GROUP_HELP_TEXT,
+  presentGroupChatResponse,
+  type ChatContext,
+} from './group-chat';
 
 export interface CallbackHttpResult {
   status: number;
@@ -103,7 +108,7 @@ export class VkAdapter {
         return { status: 200, body: 'ok' };
       }
 
-      const parsed = parseGameplayEvent(raw, type);
+      const parsed = parseGameplayEvent(raw, type, { groupId: config.groupId });
       if (parsed.kind === 'malformed') {
         log({ msg: 'vk.callback', type, status: 'malformed', reason: parsed.reason });
         return { status: 200, body: 'ok' };
@@ -153,6 +158,19 @@ export class VkAdapter {
         }
       }
 
+      if (parsed.kind === 'help') {
+        log({
+          msg: 'vk.callback',
+          type,
+          status: 'help',
+          eventId: parsed.eventId,
+          peerId: parsed.peerId,
+          durationMs: Date.now() - started,
+        });
+        await this.notifySafe(parsed.peerId, parsed.eventId, GROUP_HELP_TEXT);
+        return { status: 200, body: 'ok' };
+      }
+
       if (parsed.kind === 'tampered') {
         log({
           msg: 'vk.callback',
@@ -181,7 +199,7 @@ export class VkAdapter {
             durationMs: Date.now() - started,
           });
           try {
-            await this.sendGame(parsed.peerId, parsed.eventId, replay);
+            await this.sendGame(parsed.peerId, parsed.eventId, replay, parsed.chat, parsed.userId);
             if (type === 'message_event' && parsed.callbackEventId) {
               await this.deps.client?.answerEvent({
                 eventId: parsed.callbackEventId,
@@ -277,7 +295,7 @@ export class VkAdapter {
         }
         const playerId = game.state?.playerId;
         try {
-          await this.sendGame(parsed.peerId, parsed.eventId, game);
+          await this.sendGame(parsed.peerId, parsed.eventId, game, parsed.chat, parsed.userId);
           if (type === 'message_event' && parsed.callbackEventId) {
             await this.deps.client?.answerEvent({
               eventId: parsed.callbackEventId,
@@ -320,13 +338,20 @@ export class VkAdapter {
     }
   }
 
-  private async sendGame(peerId: number, eventId: string, game: GameResponse): Promise<void> {
+  private async sendGame(
+    peerId: number,
+    eventId: string,
+    game: GameResponse,
+    chat: ChatContext,
+    userId: string,
+  ): Promise<void> {
     const client = this.deps.client;
     if (!client) throw new VkApiError('messages.send', 'no_client');
+    const presented = chat === 'group_chat' ? presentGroupChatResponse(game, userId) : game;
     await client.sendMessage({
       peerId,
-      text: game.text,
-      keyboard: toVkKeyboard(game.buttons),
+      text: presented.text,
+      keyboard: toVkKeyboard(presented.buttons),
       randomId: randomIdFromEvent(eventId),
     });
   }

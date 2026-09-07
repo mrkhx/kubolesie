@@ -257,17 +257,27 @@ describe('vk message_new policy', () => {
     expect(client.sent).toHaveLength(0);
   });
 
-  it('ignores group chats and community senders', async () => {
+  it('ignores community senders and cross-user DM destinations', async () => {
     const { adapter, runtime } = boot();
     const handle = vi.spyOn(runtime, 'handle');
-    const group = await adapter.handleCallback(
-      messageNew({ text: 'начать', userId: 9001, peerId: 2000000001 }),
-    );
     const community = await adapter.handleCallback(
       messageNew({ text: 'начать', userId: -111, peerId: -111 }),
     );
-    expect(group.body).toBe('ok');
+    const cross = await adapter.handleCallback(
+      messageNew({ text: 'начать', userId: 9001, peerId: 9002 }),
+    );
     expect(community.body).toBe('ok');
+    expect(cross.body).toBe('ok');
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  it('does not treat ordinary group chatter as a command', async () => {
+    const { adapter, runtime } = boot();
+    const handle = vi.spyOn(runtime, 'handle');
+    const group = await adapter.handleCallback(
+      messageNew({ text: 'привет всем', userId: 9001, peerId: 2000000001 }),
+    );
+    expect(group.body).toBe('ok');
     expect(handle).not.toHaveBeenCalled();
   });
 
@@ -331,6 +341,7 @@ describe('vk command flow', () => {
     expect(commandFromText('Начать').type).toBe('START_GAME');
     expect(commandFromText('начать').type).toBe('START_GAME');
     expect(commandFromText('Старт').type).toBe('START_GAME');
+    expect(commandFromText('играть').type).toBe('START_GAME');
     expect(commandFromText('герой')).toEqual({ type: 'OPEN_MENU', payload: { menu: 'hero' } });
     expect(commandFromText('профиль').type).toBe('OPEN_PROFILE');
     expect(commandFromText('клан')).toEqual({ type: 'OPEN_MENU', payload: { menu: 'clan' } });

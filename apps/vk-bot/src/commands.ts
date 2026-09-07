@@ -37,6 +37,7 @@ const TEXT_ALIASES: Record<string, GameCommandType> = {
   '/start': 'START_GAME',
   старт: 'START_GAME',
   начать: 'START_GAME',
+  играть: 'START_GAME',
   инвентарь: 'OPEN_INVENTORY',
   лагерь: 'OPEN_CAMP',
   меню: 'OPEN_CAMP',
@@ -88,22 +89,28 @@ export function normalizeCommandText(text: string): string {
   return text.trim().toLowerCase();
 }
 
-export function commandFromText(text: string, payload: Record<string, unknown> = {}): GameCommand {
+/** Strict parser: unknown chat text is `null`, never silently START_GAME. */
+export function tryCommandFromText(text: string, payload: Record<string, unknown> = {}): GameCommand | null {
   const normalized = normalizeCommandText(text);
+  if (!normalized) return null;
   if (normalized === 'вел') return { type: 'TALK_NPC', payload: { npcId: 'vel' } };
   if (normalized === 'яра') return { type: 'TALK_NPC', payload: { npcId: 'yara' } };
   if (normalized === 'мира') return { type: 'TALK_NPC', payload: { npcId: 'mira' } };
   if (normalized === 'дань') return { type: 'PAY_TRIBUTE', payload };
-  if (normalized && TEXT_MENU_ALIASES[normalized]) {
+  if (TEXT_MENU_ALIASES[normalized]) {
     return { type: 'OPEN_MENU', payload: { menu: TEXT_MENU_ALIASES[normalized] } };
   }
-  if (normalized && TEXT_ALIASES[normalized]) {
+  if (TEXT_ALIASES[normalized]) {
     return { type: TEXT_ALIASES[normalized], payload };
   }
   if (normalized === 'осмотреть ящик' || normalized === 'осмотреть разбитый ящик') {
     return { type: 'OPEN_CRATE', payload };
   }
-  return { type: 'START_GAME', payload };
+  return null;
+}
+
+export function commandFromText(text: string, payload: Record<string, unknown> = {}): GameCommand {
+  return tryCommandFromText(text, payload) ?? { type: 'START_GAME', payload };
 }
 
 export function parseMockVkEvent(input: MockVkEvent): NormalizedIncomingEvent {

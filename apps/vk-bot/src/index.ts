@@ -20,6 +20,7 @@ export {
   commandFromText,
   parseMockVkEvent,
   toVkKeyboard,
+  tryCommandFromText,
   type MockVkEvent,
   type VkKeyboard,
 } from './commands';
@@ -76,3 +77,15 @@ export {
   type CommandClass,
   type LimitSpec,
 } from './abuse-policy';
+export {
+  BOT_SCREEN_NAME,
+  GROUP_HELP_TEXT,
+  classifyChat,
+  compactGroupText,
+  extractAddress,
+  isGroupPeer,
+  presentGroupChatResponse,
+  resolveGroupText,
+  type ChatContext,
+  type GroupInvocation,
+} from './group-chat';

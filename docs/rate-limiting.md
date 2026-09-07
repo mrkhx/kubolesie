@@ -58,6 +58,8 @@ kubolesie:lock:{kind}:{id}
 
 TTL обязателен. Нет `KEYS *`, `FLUSHALL`, `FLUSHDB` в runtime. В ключах нет token/secret/raw text.
 
+Лимиты ключуются по `from_id` игрока (`vk:{userId}`), **не** по `peer_id` беседы. Один активный групповой чат не блокирует других игроков. Callback из лички и из беседы делят один per-player bucket.
+
 Identity: `vk:{vk_user_id}` на adapter boundary. IP ключи отдельные (`kind=ip`) и не смешиваются с player keys.
 
 ## Locks

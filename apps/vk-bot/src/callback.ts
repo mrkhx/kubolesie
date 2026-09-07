@@ -1,7 +1,12 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { GameCommand } from '@kubolesie/shared';
-import { commandFromText } from './commands';
-import { VK_CHAT_PEER_OFFSET, type VkConfig } from './config';
+import { commandFromText, tryCommandFromText } from './commands';
+import type { VkConfig } from './config';
+import {
+  classifyChat,
+  resolveGroupText,
+  type ChatContext,
+} from './group-chat';
 import { decodeButtonPayload } from './payload';
 import { isStartAlias } from '@kubolesie/shared';
 
@@ -15,6 +20,15 @@ export type ParsedGameplay =
       eventId: string;
       userId: string;
       peerId: number;
+      chat: ChatContext;
+      callbackEventId?: string;
+    }
+  | {
+      kind: 'help';
+      eventId: string;
+      userId: string;
+      peerId: number;
+      chat: ChatContext;
       callbackEventId?: string;
     }
   | {
@@ -23,10 +37,15 @@ export type ParsedGameplay =
       eventId: string;
       userId: string;
       peerId: number;
+      chat: ChatContext;
       command: GameCommand;
       text?: string;
       callbackEventId?: string;
     };
+
+export interface ParseGameplayOptions {
+  groupId?: number | null;
+}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -96,16 +115,29 @@ function positiveId(value: unknown): number | null {
   return num;
 }
 
+function groupIdFrom(payload: Record<string, unknown>, options?: ParseGameplayOptions): number | null {
+  if (options?.groupId != null && Number.isFinite(options.groupId) && options.groupId > 0) {
+    return options.groupId;
+  }
+  const gid = Number(payload.group_id);
+  return Number.isFinite(gid) && gid > 0 ? gid : null;
+}
+
 export function parseGameplayEvent(
   payload: Record<string, unknown>,
   type: 'message_new' | 'message_event',
+  options?: ParseGameplayOptions,
 ): ParsedGameplay {
   const eventId = internalEventId(type, payload);
-  if (type === 'message_new') return parseMessageNew(payload, eventId);
+  if (type === 'message_new') return parseMessageNew(payload, eventId, options);
   return parseMessageEvent(payload, eventId);
 }
 
-function parseMessageNew(payload: Record<string, unknown>, eventId: string): ParsedGameplay {
+function parseMessageNew(
+  payload: Record<string, unknown>,
+  eventId: string,
+  options?: ParseGameplayOptions,
+): ParsedGameplay {
   const message = messageFromPayload(payload);
   if (!message) return { kind: 'malformed', reason: 'no_message' };
   if (message.out === 1 || message.out === '1') {
@@ -119,47 +151,89 @@ function parseMessageNew(payload: Record<string, unknown>, eventId: string): Par
   if (!Number.isFinite(fromId) || fromId <= 0) {
     return { kind: 'ignore', reason: 'community', eventId };
   }
-  if (!Number.isFinite(peerId) || peerId >= VK_CHAT_PEER_OFFSET || peerId !== fromId) {
-    return { kind: 'ignore', reason: 'group_chat', eventId };
+  const chat = classifyChat(fromId, peerId);
+  if (!chat) {
+    return { kind: 'ignore', reason: 'bad_peer', eventId };
   }
+
+  const userId = String(fromId);
   const text = typeof message.text === 'string' ? message.text : '';
   const rawPayload = message.payload;
+  const groupId = groupIdFrom(payload, options);
+
   if (rawPayload != null && String(rawPayload).trim() !== '') {
     const decoded = decodeButtonPayload(rawPayload);
-    if (!decoded.ok) {
-      const fromText = commandFromText(text);
-      if (fromText.type === 'START_GAME' && isStartAlias(text)) {
-        return {
-          kind: 'command',
-          type: 'message_new',
-          eventId,
-          userId: String(fromId),
-          peerId,
-          command: fromText,
-          text,
-        };
-      }
-      return { kind: 'tampered', eventId, userId: String(fromId), peerId };
+    if (decoded.ok) {
+      return {
+        kind: 'command',
+        type: 'message_new',
+        eventId,
+        userId,
+        peerId,
+        chat,
+        command: decoded.command,
+        text,
+      };
     }
-    return {
-      kind: 'command',
-      type: 'message_new',
-      eventId,
-      userId: String(fromId),
-      peerId,
-      command: decoded.command,
-      text,
-    };
+    const fromText = tryCommandFromText(text);
+    if (fromText?.type === 'START_GAME' && isStartAlias(text)) {
+      return {
+        kind: 'command',
+        type: 'message_new',
+        eventId,
+        userId,
+        peerId,
+        chat,
+        command: fromText,
+        text,
+      };
+    }
+    if (chat === 'group_chat') {
+      return resolveGroupOrIgnore(text, groupId, eventId, userId, peerId, chat);
+    }
+    return { kind: 'tampered', eventId, userId, peerId, chat };
   }
+
   if (!text.trim()) return { kind: 'ignore', reason: 'empty', eventId };
+
+  if (chat === 'group_chat') {
+    return resolveGroupOrIgnore(text, groupId, eventId, userId, peerId, chat);
+  }
+
   return {
     kind: 'command',
     type: 'message_new',
     eventId,
-    userId: String(fromId),
+    userId,
     peerId,
+    chat,
     command: commandFromText(text),
     text,
+  };
+}
+
+function resolveGroupOrIgnore(
+  text: string,
+  groupId: number | null,
+  eventId: string,
+  userId: string,
+  peerId: number,
+  chat: ChatContext,
+): ParsedGameplay {
+  const invoked = resolveGroupText(text, groupId);
+  if (!invoked) return { kind: 'ignore', reason: 'unaddressed', eventId };
+  if (invoked.kind === 'help') {
+    return { kind: 'help', eventId, userId, peerId, chat };
+  }
+  return {
+    kind: 'command',
+    type: 'message_new',
+    eventId,
+    userId,
+    peerId,
+    chat,
+    command: invoked.command,
+    text: invoked.text,
   };
 }
 
@@ -167,11 +241,12 @@ function parseMessageEvent(payload: Record<string, unknown>, eventId: string): P
   const object = asRecord(payload.object);
   if (!object) return { kind: 'malformed', reason: 'no_object' };
   const userId = positiveId(object.user_id);
-  const peerId = positiveId(object.peer_id ?? object.user_id);
+  const peerId = Number(object.peer_id ?? object.user_id);
   const callbackEventId = object.event_id != null ? String(object.event_id) : undefined;
   if (!userId) return { kind: 'ignore', reason: 'community', eventId };
-  if (!peerId || peerId >= VK_CHAT_PEER_OFFSET || peerId !== userId) {
-    return { kind: 'ignore', reason: 'group_chat', eventId };
+  const chat = classifyChat(userId, peerId);
+  if (!chat) {
+    return { kind: 'ignore', reason: 'bad_peer', eventId };
   }
   const decoded = decodeButtonPayload(object.payload);
   if (!decoded.ok) {
@@ -180,6 +255,7 @@ function parseMessageEvent(payload: Record<string, unknown>, eventId: string): P
       eventId,
       userId: String(userId),
       peerId,
+      chat,
       callbackEventId,
     };
   }
@@ -189,6 +265,7 @@ function parseMessageEvent(payload: Record<string, unknown>, eventId: string): P
     eventId,
     userId: String(userId),
     peerId,
+    chat,
     command: decoded.command,
     callbackEventId,
   };
