@@ -205,7 +205,7 @@ describe('week content canon', () => {
     expect(ENEMIES.stumpfang.name).toBe('Пнеклык');
     expect(ENEMIES.unknown_node7_creature).toBeUndefined();
     expect(LOCATIONS.ashen_wedge.name).toBe('Сизый клин');
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_8')).toBe(false);
+    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_8')).toBe(true);
     expect(QUEST_TEMPLATES.some((quest) => quest.id === 'hold_the_hinges')).toBe(true);
   });
 });
@@ -713,8 +713,10 @@ describe('day 7 wenzel and seals', () => {
     expect(look.text).not.toMatch(/Вензель смотрит/);
     expect(UNKNOWN_NODE7_CREATURE.name).toBe('???');
     const done = await act(runtime, vkUserId, 'BEGIN_DAY_7');
-    expect(done.text).toMatch(/Продолжение скоро будет доступно/i);
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_8')).toBe(false);
+    expect(done.text).toMatch(/Осталось: 6/);
+    expect(done.text).not.toMatch(/Продолжение скоро будет доступно/i);
+    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_8')).toBe(true);
+    expect(hasLabel(done, 'День 8') || done.text.includes('Туман')).toBe(true);
   });
 
   it('builds a cheaper barricade with an axe/shelter and accepts the blue optional move', async () => {

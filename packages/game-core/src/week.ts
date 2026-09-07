@@ -202,6 +202,10 @@ export function afterCraftFlags(recipeId: string, flags: Record<string, string>)
       );
     }
   }
+  if (recipeId === 'stone_hoe' || recipeId === 'iron_hoe') extra.push('has_hoe');
+  if (recipeId === 'bow') extra.push('has_bow', 'first_bow');
+  if (recipeId === 'shield') extra.push('has_shield');
+  if (recipeId === 'bucket') extra.push('has_bucket');
   return extra;
 }
 
@@ -640,6 +644,15 @@ async function furnaceAct(host: WeekHost, ctx: WeekCtx, act: string): Promise<Ga
     }
     return furnaceScreen(host, await host.load(ctx.player), `Плавка. Слиток в золе. Топливо ${nextFuel}.`);
   }
+  if (act === 'cook_fish' || act === 'cook') {
+    if ((ctx.resources.RAW_FISH ?? 0) < 1) throw new InsufficientResourcesError('Нет сырой рыбы.');
+    if (fuel < FURNACE.cookCost) throw new ActionRejectedError('Не хватает топлива. Положи уголь.');
+    await host.store.addResource(ctx.player.id, 'RAW_FISH', -1);
+    const nextFuel = Math.max(0, fuel - FURNACE.cookCost);
+    await setFlag(host, ctx, 'furnace_fuel', String(nextFuel));
+    await host.store.addResource(ctx.player.id, 'COOKED_FISH', 1);
+    return furnaceScreen(host, await host.load(ctx.player), `Рыба готова. Топливо ${nextFuel}.`);
+  }
   if (act === 'take') {
     if (output < 1) throw new ActionRejectedError('В золе пусто.');
     await host.store.addResource(ctx.player.id, 'IRON_INGOT', output);
@@ -656,18 +669,22 @@ function furnaceScreen(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameRe
   const text = [
     extra,
     `Печь. Топливо: ${fuel}. Слитки в золе: ${output}. Руда: ${ctx.resources.IRON_ORE ?? 0}.`,
+    (ctx.resources.RAW_FISH ?? 0) > 0 ? `Сырая рыба: ${ctx.resources.RAW_FISH}.` : '',
     '1 уголь = 8 плавок. 2 бревна = 3. Синее не класть.',
   ]
     .filter(Boolean)
     .join('\n');
   const buttons: GameButton[] = [
     { label: 'Положить руду', action: 'FURNACE_ACT', payload: { act: 'smelt' } },
-    { label: 'Положить уголь', action: 'FURNACE_ACT', payload: { act: 'add_coal' } },
-    { label: 'Забрать слитки', action: 'FURNACE_ACT', payload: { act: 'take' } },
   ];
-  if (ctx.flags.unknown_blue_mineral) {
+  if ((ctx.resources.RAW_FISH ?? 0) > 0) {
+    buttons.push({ label: 'Жарить рыбу', action: 'FURNACE_ACT', payload: { act: 'cook_fish' } });
+  }
+  buttons.push({ label: 'Положить уголь', action: 'FURNACE_ACT', payload: { act: 'add_coal' } });
+  buttons.push({ label: 'Забрать слитки', action: 'FURNACE_ACT', payload: { act: 'take' } });
+  if (buttons.length < 4 && ctx.flags.unknown_blue_mineral && (ctx.resources.RAW_FISH ?? 0) < 1) {
     buttons.push({ label: 'Синее', action: 'FURNACE_ACT', payload: { act: 'smelt_blue' } });
-  } else {
+  } else if (buttons.length < 4) {
     buttons.push({ label: 'Дрова', action: 'FURNACE_ACT', payload: { act: 'add_log' } });
   }
   buttons.push({ label: 'Отойти', action: 'OPEN_CAMP' });

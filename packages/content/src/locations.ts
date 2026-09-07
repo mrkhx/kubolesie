@@ -60,6 +60,26 @@ export const LOCATIONS: Record<string, LocationTemplate> = {
     name: 'Преддверие печати',
     text: 'Затвор кривой. Цепь стонет. Это не шахта.',
   },
+  mist_border: {
+    id: 'mist_border',
+    name: 'Кромка тумана',
+    text: 'Холодный туман стоит стеной. Старые ручьи вышли. След ведёт вниз, в низину.',
+  },
+  mist_lowland: {
+    id: 'mist_lowland',
+    name: 'Туманная низина',
+    text: 'Вода по щиколотку. Камыш кубами. Белые нити на ветках. Гул идёт из глубины.',
+  },
+  drowned_quarry: {
+    id: 'drowned_quarry',
+    name: 'Утонувший карьер',
+    text: 'Старая выработка под водой. Берег, затопленный проход, нижняя камера. Не клин.',
+  },
+  second_seal: {
+    id: 'second_seal',
+    name: 'Вторая печать',
+    text: 'Глубокая впадина. Туман не выходит — втягивается внутрь.',
+  },
 };
 
 export const DEFAULT_LOCATION = 'forest_clearing';

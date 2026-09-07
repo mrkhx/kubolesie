@@ -64,7 +64,7 @@ export type MetaEvent =
   | { type: 'trade' }
   | { type: 'quest'; id: string; daily?: boolean }
   | { type: 'day'; day: number }
-  | { type: 'week' }
+  | { type: 'week'; week?: number }
   | { type: 'coins'; amount: number };
 
 const NAV: GameButton[] = [
@@ -144,10 +144,12 @@ export async function noteActivity(
       await bumpWeekly(store, player.id, WEEKLY_SCORE.day);
     }
   } else if (event.type === 'week') {
-    const once = await store.tryClaimReward(player.id, 'meta_week', '1');
+    const week = event.week ?? 1;
+    const once = await store.tryClaimReward(player.id, 'meta_week', String(week));
     if (once) {
       await addClanProgress(store, player.id, period, CLAN_XP.weekComplete, WEEKLY_SCORE.weekComplete);
-      await maybeGrant(store, player.id, 'WEEK_ONE_COMPLETE');
+      if (week === 1) await maybeGrant(store, player.id, 'WEEK_ONE_COMPLETE');
+      if (week === 2) await maybeGrant(store, player.id, 'WEEK_TWO_COMPLETE');
     }
   } else if (event.type === 'coins') {
     if (event.amount > 0) await store.incrementStatistics(player.id, { coinsEarned: event.amount });
@@ -260,13 +262,14 @@ export async function backfillMeta(store: GameStore, player: PlayerRecord): Prom
   const flags = await store.getFlags(player.id);
   const stats = await store.getStatistics(player.id);
   let days = 0;
-  for (let day = 1; day <= 7; day += 1) {
+  for (let day = 1; day <= 14; day += 1) {
     if (flags[`day_${day}_complete`]) {
       days += 1;
       await store.tryClaimReward(player.id, 'meta_day', String(day));
     }
   }
   if (flags.week_1_complete) await store.tryClaimReward(player.id, 'meta_week', '1');
+  if (flags.week_2_complete) await store.tryClaimReward(player.id, 'meta_week', '2');
   if (stats.daysCompleted < days) {
     await store.incrementStatistics(player.id, { daysCompleted: days - stats.daysCompleted });
   }
@@ -274,6 +277,8 @@ export async function backfillMeta(store: GameStore, player: PlayerRecord): Prom
   if (flags.first_ingot) await maybeGrant(store, player.id, 'FIRST_IRON');
   if (flags.defeated_stumpfang || flags.wenzel_defeated) await maybeGrant(store, player.id, 'FIRST_BOSS');
   if (flags.week_1_complete) await maybeGrant(store, player.id, 'WEEK_ONE_COMPLETE');
+  if (flags.week_2_complete) await maybeGrant(store, player.id, 'WEEK_TWO_COMPLETE');
+  if (flags.first_bow) await maybeGrant(store, player.id, 'FIRST_BOW');
   const fresh = await store.getStatistics(player.id);
   if (fresh.pvpWins >= 1) await maybeGrant(store, player.id, 'FIRST_PVP_WIN');
   if (fresh.craftedItems >= 100) await maybeGrant(store, player.id, 'CRAFT_100');
@@ -359,14 +364,18 @@ async function profileScreen(store: GameStore, player: PlayerRecord): Promise<Ga
   ]);
   const title = cosmetics.title ? getProduct(cosmetics.title)?.name : null;
   const clan = membership ? `${membership.clan.name} [${membership.clan.tag}]` : 'нет';
-  const week = flags.week_1_complete ? 'Неделя 1 закрыта' : currentDayLabel(flags);
+  const week = flags.week_2_complete
+    ? 'Неделя 2 закрыта'
+    : flags.week_1_complete
+      ? currentDayLabel(flags)
+      : currentDayLabel(flags);
   const started = player.createdAt.toISOString().slice(0, 10);
   const text = [
     title ? `${player.name} · «${title}»` : player.name,
     `Уровень ${player.level} · XP ${player.xp} · Монеты ${player.coins}`,
     week,
     `Клан: ${clan}`,
-    `PvP ${rating.pvpRating} · Score ${rating.lifetimeScore}`,
+    `PvP ${rating.pvpRating} · Очки ${rating.lifetimeScore}`,
     `В Куболесье с ${started}`,
     `Победы PvE ${stats.pveWins} / PvP ${stats.pvpWins} · боссы ${stats.bossWins}`,
   ].join('\n');
@@ -380,6 +389,11 @@ async function profileScreen(store: GameStore, player: PlayerRecord): Promise<Ga
 }
 
 function currentDayLabel(flags: Record<string, string>): string {
+  if (flags.week_2_complete) return 'Неделя 2 закрыта';
+  for (let day = 14; day >= 8; day -= 1) {
+    if (flags[`day_${day}_complete`]) return `День ${day} закрыт`;
+  }
+  if (flags.week_1_complete) return 'Неделя 1 закрыта';
   for (let day = 7; day >= 1; day -= 1) {
     if (flags[`day_${day}_complete`]) return `День ${day} закрыт`;
   }

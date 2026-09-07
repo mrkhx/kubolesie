@@ -153,6 +153,22 @@ const ACTION_STYLE: Partial<Record<string, { emoji?: string; label?: string; col
   BEGIN_DAY_5: { emoji: '▶', color: 'positive' },
   BEGIN_DAY_6: { emoji: '▶', color: 'positive' },
   BEGIN_DAY_7: { emoji: '▶', color: 'positive' },
+  BEGIN_DAY_8: { emoji: '▶', color: 'positive' },
+  BEGIN_DAY_9: { emoji: '▶', color: 'positive' },
+  BEGIN_DAY_10: { emoji: '▶', color: 'positive' },
+  BEGIN_DAY_11: { emoji: '▶', color: 'positive' },
+  BEGIN_DAY_12: { emoji: '▶', color: 'positive' },
+  BEGIN_DAY_13: { emoji: '▶', color: 'positive' },
+  BEGIN_DAY_14: { emoji: '▶', color: 'positive' },
+  COMPLETE_DAY_8: { emoji: '✅', color: 'positive' },
+  COMPLETE_DAY_9: { emoji: '✅', color: 'positive' },
+  COMPLETE_DAY_10: { emoji: '✅', color: 'positive' },
+  COMPLETE_DAY_11: { emoji: '✅', color: 'positive' },
+  COMPLETE_DAY_12: { emoji: '✅', color: 'positive' },
+  COMPLETE_DAY_13: { emoji: '✅', color: 'positive' },
+  COMPLETE_DAY_14: { emoji: '✅', color: 'positive' },
+  FARM_ACT: { emoji: '🌾', color: 'positive' },
+  WEEK2_ACT: { emoji: '🌫', color: 'primary' },
   FOUND_CAMP: { emoji: '🏕', color: 'positive' },
   PLACE_CAMP_TABLE: { emoji: '🛠', color: 'positive' },
   LIGHT_CAMP: { emoji: '💡', color: 'positive' },
@@ -176,6 +192,11 @@ const MENU_STYLE: Record<string, { label: string; color: ButtonColor }> = {
   hub: { label: '🏕 Стан', color: 'primary' },
   camp: { label: '🏕 Стан', color: 'primary' },
   wedge: { label: '🌲 Клин', color: 'primary' },
+  farm: { label: '🌾 Грядка', color: 'primary' },
+  quarry: { label: '⛏ Карьер', color: 'primary' },
+  mist: { label: '🌫 Кромка', color: 'primary' },
+  lowland: { label: '🌫 Низина', color: 'primary' },
+  seal2: { label: '🔷 Печать', color: 'primary' },
   hero: { label: '👤 Герой', color: 'primary' },
   profile: { label: '👤 Профиль', color: 'primary' },
   stats: { label: '📊 Статистика', color: 'primary' },
@@ -208,10 +229,12 @@ function inferColor(button: GameButton, label: string): ButtonColor {
   if (
     /(взять|получить|помочь|приручить|покормить|вытащить|подтвердить|надеть|съесть)/.test(stripped) ||
     button.action === 'CLAIM_REWARD' ||
-    String(button.action).startsWith('BEGIN_DAY')
+    String(button.action).startsWith('BEGIN_DAY') ||
+    String(button.action).startsWith('COMPLETE_DAY')
   ) {
     return 'positive';
   }
+  if (/(посадить|вскопать|полить|урожай|грядк)/.test(stripped)) return 'positive';
   return 'primary';
 }
 

@@ -1,5 +1,5 @@
-export const BALANCE_VERSION = '0.0.3';
-export const PROTOTYPE_VERSION = '0.0.3';
+export const BALANCE_VERSION = '0.0.4';
+export const PROTOTYPE_VERSION = '0.0.4';
 
 export const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
 export const ENERGY_PER_INTERVAL = 1;
@@ -73,6 +73,22 @@ export const GAME_COMMANDS = [
   'LEADERBOARD_PAGE',
   'PROMPT_HERO_NAME',
   'CANCEL_HERO_NAME',
+  'BEGIN_DAY_8',
+  'BEGIN_DAY_9',
+  'BEGIN_DAY_10',
+  'BEGIN_DAY_11',
+  'BEGIN_DAY_12',
+  'BEGIN_DAY_13',
+  'BEGIN_DAY_14',
+  'COMPLETE_DAY_8',
+  'COMPLETE_DAY_9',
+  'COMPLETE_DAY_10',
+  'COMPLETE_DAY_11',
+  'COMPLETE_DAY_12',
+  'COMPLETE_DAY_13',
+  'COMPLETE_DAY_14',
+  'FARM_ACT',
+  'WEEK2_ACT',
 ] as const;
 
 export type GameCommandType = (typeof GAME_COMMANDS)[number];
@@ -132,7 +148,17 @@ export type ResourceType =
   | 'PLANK'
   | 'STICK'
   | 'COBBLESTONE'
-  | 'IRON_INGOT';
+  | 'IRON_INGOT'
+  | 'SEED'
+  | 'WHEAT'
+  | 'STRING'
+  | 'REED'
+  | 'CLAY'
+  | 'RAW_FISH'
+  | 'COOKED_FISH'
+  | 'MIST_RESIN'
+  | 'BOG_CORE'
+  | 'SEAL_SHARD_6';
 
 export const RESOURCE_TYPES: ResourceType[] = [
   'WOOD',
@@ -152,6 +178,16 @@ export const RESOURCE_TYPES: ResourceType[] = [
   'STICK',
   'COBBLESTONE',
   'IRON_INGOT',
+  'SEED',
+  'WHEAT',
+  'STRING',
+  'REED',
+  'CLAY',
+  'RAW_FISH',
+  'COOKED_FISH',
+  'MIST_RESIN',
+  'BOG_CORE',
+  'SEAL_SHARD_6',
 ];
 
 export type Rarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' | 'MYTHIC';
@@ -221,4 +257,3 @@ export function isGameCommandType(value: string): value is GameCommandType {
 }
 
 export * from './ui';
-

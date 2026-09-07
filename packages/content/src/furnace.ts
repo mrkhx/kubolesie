@@ -4,4 +4,5 @@ export const FURNACE = {
   logFuel: 3,
   logCost: 2,
   smeltCost: 1,
+  cookCost: 1,
 } as const;

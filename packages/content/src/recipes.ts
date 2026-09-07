@@ -136,6 +136,46 @@ export const CRAFT_RECIPES: Record<string, CraftRecipe> = {
     station: 'crafting_table',
     output: { kind: 'item', templateId: 'iron_sword' },
   },
+  stone_hoe: {
+    id: 'stone_hoe',
+    name: 'Каменная мотыга',
+    cost: { COBBLESTONE: 2, STICK: 2 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'stone_hoe' },
+  },
+  iron_hoe: {
+    id: 'iron_hoe',
+    name: 'Железная мотыга',
+    cost: { IRON_INGOT: 2, STICK: 2 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'iron_hoe' },
+  },
+  bow: {
+    id: 'bow',
+    name: 'Лук',
+    cost: { STICK: 3, STRING: 3 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'bow' },
+  },
+  shield: {
+    id: 'shield',
+    name: 'Щит',
+    cost: { PLANK: 6, IRON_INGOT: 1 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'shield' },
+  },
+  bucket: {
+    id: 'bucket',
+    name: 'Ведро',
+    cost: { IRON_INGOT: 3 },
+    output: { kind: 'item', templateId: 'bucket' },
+  },
+  bread: {
+    id: 'bread',
+    name: 'Хлеб',
+    cost: { WHEAT: 3 },
+    output: { kind: 'item', templateId: 'bread' },
+  },
 };
 
 export const CRAFT_PIPELINE = [

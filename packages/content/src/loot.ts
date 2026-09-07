@@ -57,6 +57,41 @@ export const COMBAT_LOOT: Record<string, CombatLootSpec> = {
     coins: 14,
     resources: { CHITIN_PLATE: [1, 1] },
   },
+  threadling: {
+    xp: 16,
+    xpRepeat: 8,
+    resources: { STRING: [1, 1], REED: [0, 1] },
+    firstFlags: ['first_string'],
+    dailyKill: false,
+  },
+  reed_stalker: {
+    xp: 22,
+    xpRepeat: 10,
+    resources: { STRING: [1, 2], REED: [1, 1] },
+    firstFlags: ['first_string'],
+  },
+  bog_gnawer: {
+    xp: 18,
+    xpRepeat: 9,
+    resources: { RAW_FISH: [1, 1], CLAY: [0, 1] },
+  },
+  pitch_carapace: {
+    xp: 28,
+    xpRepeat: 12,
+    resources: { MIST_RESIN: [1, 2], STRING: [0, 1] },
+  },
+  smolnik: {
+    xp: 50,
+    xpRepeat: 16,
+    resources: { MIST_RESIN: [2, 3] },
+    firstFlags: ['defeated_smolnik'],
+  },
+  mist_warden: {
+    xp: 90,
+    xpRepeat: 20,
+    firstItems: ['mist_charm', 'seal_shard_6'],
+    firstFlags: ['mist_warden_defeated'],
+  },
 };
 
 export const WEDGE_STAGE_ENEMIES: Record<string, string> = {

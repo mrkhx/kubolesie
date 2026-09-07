@@ -78,6 +78,10 @@ const TEXT_MENU_ALIASES: Record<string, string> = {
   рейтинги: 'ratings',
   статистика: 'stats',
   достижения: 'achievements',
+  грядка: 'farm',
+  низина: 'lowland',
+  карьер: 'quarry',
+  кромка: 'mist',
 };
 
 export function normalizeCommandText(text: string): string {
@@ -88,6 +92,7 @@ export function commandFromText(text: string, payload: Record<string, unknown> =
   const normalized = normalizeCommandText(text);
   if (normalized === 'вел') return { type: 'TALK_NPC', payload: { npcId: 'vel' } };
   if (normalized === 'яра') return { type: 'TALK_NPC', payload: { npcId: 'yara' } };
+  if (normalized === 'мира') return { type: 'TALK_NPC', payload: { npcId: 'mira' } };
   if (normalized === 'дань') return { type: 'PAY_TRIBUTE', payload };
   if (normalized && TEXT_MENU_ALIASES[normalized]) {
     return { type: 'OPEN_MENU', payload: { menu: TEXT_MENU_ALIASES[normalized] } };

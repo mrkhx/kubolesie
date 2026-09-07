@@ -31,17 +31,20 @@ export const DAY7_NODES: Record<string, DialogueNode> = {
       '— Семь — не номер шахты. Это номер печати. Я думал, если молчать, она не услышит имя. Услышала всё равно.',
       'Пауза.',
       '— Осталось: 6.',
-      'Продолжение скоро будет доступно.',
+      'В низинах уже стоит туман.',
     ].join('\n'),
     choices: [
       { id: 'signs', label: 'Смотреть на знаки', nextNode: 'seven_seals_look' },
-      { id: 'silent', label: 'Молчать', nextNode: 'week1_complete' },
+      { id: 'day8', label: 'Начать День 8', command: 'BEGIN_DAY_8' },
     ],
   },
   seven_seals_look: {
     id: 'seven_seals_look',
     text: 'Шесть знаков тусклые. Один горит. За щелью — не Вензель. ??? смотрит. Имени нет.\nОсталось: 6.',
-    choices: [{ id: 'done', label: 'Отойти', nextNode: 'week1_complete' }],
+    choices: [
+      { id: 'done', label: 'Отойти', nextNode: 'week1_complete' },
+      { id: 'day8', label: 'Начать День 8', command: 'BEGIN_DAY_8' },
+    ],
   },
   week1_complete: {
     id: 'week1_complete',
@@ -49,11 +52,11 @@ export const DAY7_NODES: Record<string, DialogueNode> = {
       'Неделя закрыта. Затвор держит криво, но держит.',
       'Семь печатей. Одна задета. Осталось: 6.',
       '??? за решёткой не побеждён и не назван.',
-      'Продолжение скоро будет доступно.',
+      'Туман поднимается из низины. Рем уже смотрит туда, не на Узел.',
     ].join('\n'),
     choices: [
+      { id: 'day8', label: 'Начать День 8', command: 'BEGIN_DAY_8' },
       { id: 'camp', label: 'К стану', command: 'OPEN_CAMP' },
-      { id: 'look', label: 'Осмотреться', command: 'EXPLORE' },
     ],
   },
 };

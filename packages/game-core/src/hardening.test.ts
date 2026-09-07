@@ -726,7 +726,7 @@ describe('meta entitlements achievements pagination', () => {
     expect(SHARED_COMMANDS).not.toContain('GRANT_PREMIUM');
     expect(SHARED_COMMANDS).not.toContain('SET_RATING');
     expect(SHARED_COMMANDS).not.toContain('SET_STATS');
-    expect(SHARED_COMMANDS).not.toContain('BEGIN_DAY_8');
+    expect(SHARED_COMMANDS).not.toContain('BEGIN_DAY_15');
   });
 
   it('does not expose player ids or SQL in a compact hero hub', async () => {

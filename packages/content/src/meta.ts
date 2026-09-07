@@ -137,6 +137,16 @@ export const COSMETIC_PRODUCTS: Record<string, CosmeticProduct> = {
     availability: 'ACHIEVEMENT',
     slot: 'badge',
   },
+  badge_week2: {
+    id: 'badge_week2',
+    type: 'PLAYER_BADGE',
+    name: 'Печать 6',
+    description: 'Знак второй недели. Низина.',
+    price: 0,
+    currency: 'COINS',
+    availability: 'ACHIEVEMENT',
+    slot: 'badge',
+  },
   badge_pvp: {
     id: 'badge_pvp',
     type: 'PLAYER_BADGE',
@@ -230,6 +240,18 @@ export const ACHIEVEMENTS: Record<string, AchievementDef> = {
     description: 'Закрыть первую неделю.',
     rewardProductIds: ['title_node_warden', 'badge_week1', 'camp_ember'],
   },
+  FIRST_BOW: {
+    id: 'FIRST_BOW',
+    name: 'Первый дальний бой',
+    description: 'Собрать лук из нити низины.',
+    rewardProductIds: [],
+  },
+  WEEK_TWO_COMPLETE: {
+    id: 'WEEK_TWO_COMPLETE',
+    name: 'Низина молчит',
+    description: 'Закрыть вторую неделю. Осталось: 5.',
+    rewardProductIds: ['badge_week2'],
+  },
   FIRST_PVP_WIN: {
     id: 'FIRST_PVP_WIN',
     name: 'Первый след',
@@ -256,7 +278,7 @@ export const ACHIEVEMENTS: Record<string, AchievementDef> = {
   },
 };
 
-export const BOSS_IDS = ['stumpfang', 'wenzel_warden'] as const;
+export const BOSS_IDS = ['stumpfang', 'wenzel_warden', 'smolnik', 'mist_warden'] as const;
 
 export function isoWeekKey(now: Date): string {
   const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));

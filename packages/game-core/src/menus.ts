@@ -12,7 +12,7 @@ import type {
 } from '@kubolesie/shared';
 import { BACK_LABEL } from '@kubolesie/shared';
 
-export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'cosmetics' | 'achievements';
+export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'cosmetics' | 'achievements' | 'farm' | 'quarry' | 'mist' | 'lowland' | 'seal2';
 
 export const ACTION_MENUS: readonly ActionMenuId[] = [
   'hub',
@@ -42,11 +42,25 @@ export const ACTION_MENUS: readonly ActionMenuId[] = [
   'clan_members',
   'cosmetics',
   'achievements',
+  'farm',
+  'quarry',
+  'mist',
+  'lowland',
+  'seal2',
 ];
 
 export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly string[]> = {
-  tools: ['wooden_pickaxe', 'wooden_axe', 'stone_pickaxe', 'stone_axe', 'iron_pickaxe', 'iron_axe'],
-  weapons: ['wooden_sword', 'stone_sword', 'iron_sword'],
+  tools: [
+    'wooden_pickaxe',
+    'wooden_axe',
+    'stone_pickaxe',
+    'stone_axe',
+    'iron_pickaxe',
+    'iron_axe',
+    'stone_hoe',
+    'iron_hoe',
+  ],
+  weapons: ['wooden_sword', 'stone_sword', 'iron_sword', 'bow'],
   items: [
     'planks',
     'sticks',
@@ -57,6 +71,9 @@ export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly s
     'torch',
     'hide_tunic',
     'furnace',
+    'bucket',
+    'shield',
+    'bread',
   ],
 };
 
@@ -80,6 +97,12 @@ const RECIPE_LABELS: Record<string, string> = {
   iron_pickaxe: '⛏ Железная кирка',
   iron_axe: '🪓 Железный топор',
   iron_sword: '⚔ Железный меч',
+  stone_hoe: '🌾 Каменная мотыга',
+  iron_hoe: '🌾 Железная мотыга',
+  bow: '🏹 Лук',
+  shield: '🛡 Щит',
+  bucket: '🪣 Ведро',
+  bread: '🍞 Хлеб',
 };
 
 const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
@@ -110,6 +133,11 @@ const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
   clan_members: 'clan',
   cosmetics: 'profile',
   achievements: 'profile',
+  farm: 'hub',
+  quarry: 'hub',
+  mist: 'hub',
+  lowland: 'hub',
+  seal2: 'hub',
 };
 
 export interface MenuSnapshot {
@@ -229,6 +257,11 @@ export function visibleRecipeButtons(group: 'tools' | 'weapons' | 'items', ctx: 
       continue;
     }
     if (recipeId === 'furnace' && !ctx.flags.day_3_complete) continue;
+    if ((recipeId === 'stone_hoe' || recipeId === 'iron_hoe') && !ctx.flags.farming_unlocked) continue;
+    if (recipeId === 'bow' && !ctx.flags.first_string && !(ctx.resources.STRING ?? 0)) continue;
+    if (recipeId === 'bucket' && !ctx.flags.day_10_complete) continue;
+    if (recipeId === 'shield' && !ctx.flags.day_12_complete && !ctx.flags.quarry_chamber) continue;
+    if (recipeId === 'bread' && !ctx.flags.first_harvest && !(ctx.resources.WHEAT ?? 0)) continue;
     if (!canAffordRecipe(recipe, ctx)) continue;
     const button = recipeButton(recipeId);
     if (button) buttons.push(button);
@@ -313,6 +346,9 @@ export function campButtons(ctx: MenuSnapshot): GameButton[] {
   }
   if (ctx.flags.met_vel && buttons.length < 3) {
     buttons.push({ label: '⚖ Вел', action: 'TALK_NPC', payload: { npcId: 'vel' } });
+  }
+  if (ctx.flags.farming_unlocked && buttons.length < 4) {
+    buttons.push({ label: '🌾 Грядка', action: 'FARM_ACT', payload: { act: 'open' } });
   }
   if (buttons.length < 4) {
     buttons.push({ label: '👤 Герой', action: 'OPEN_MENU', payload: { menu: 'hero' } });

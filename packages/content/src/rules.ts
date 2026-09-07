@@ -61,6 +61,12 @@ export const COMBAT_XP = {
   stumpfang: 40,
   soot_mite: 8,
   wenzel_warden: 80,
+  threadling: 16,
+  reed_stalker: 22,
+  bog_gnawer: 18,
+  pitch_carapace: 28,
+  smolnik: 50,
+  mist_warden: 90,
 } as const;
 
 export interface CommandRequirement {
@@ -74,7 +80,7 @@ export interface CommandRequirement {
 }
 
 export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequirement>> = {
-  GATHER_WOOD: { locations: ['forest_clearing', 'rem_camp', 'player_camp', 'ashen_wedge'] },
+  GATHER_WOOD: { locations: ['forest_clearing', 'rem_camp', 'player_camp', 'ashen_wedge', 'mist_border'] },
   GATHER_STONE: {
     locations: ['stone_scree'],
     itemsAny: ['wooden_pickaxe', 'stone_pickaxe', 'iron_pickaxe'],
@@ -112,6 +118,22 @@ export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequir
   COMPLETE_DAY_5: { flagsAll: ['met_vel'] },
   COMPLETE_DAY_6: { flagsAll: ['yara_claim_seen'] },
   COMPLETE_DAY_7: { flagsAll: ['wenzel_defeated'] },
+  BEGIN_DAY_8: { flagsAll: ['week_1_complete'] },
+  BEGIN_DAY_9: { flagsAll: ['day_8_complete'] },
+  BEGIN_DAY_10: { flagsAll: ['day_9_complete'] },
+  BEGIN_DAY_11: { flagsAll: ['day_10_complete'] },
+  BEGIN_DAY_12: { flagsAll: ['day_11_complete'] },
+  BEGIN_DAY_13: { flagsAll: ['day_12_complete'] },
+  BEGIN_DAY_14: { flagsAll: ['day_13_complete'] },
+  COMPLETE_DAY_8: { flagsAll: ['visited_mist_border'] },
+  COMPLETE_DAY_9: { flagsAny: ['crop_planted', 'first_harvest'] },
+  COMPLETE_DAY_10: { flagsAll: ['first_string'] },
+  COMPLETE_DAY_11: { flagsAll: ['met_mira'] },
+  COMPLETE_DAY_12: { flagsAll: ['quarry_chamber'] },
+  COMPLETE_DAY_13: { flagsAll: ['defeated_smolnik'] },
+  COMPLETE_DAY_14: { flagsAll: ['mist_warden_defeated'] },
+  FARM_ACT: { flagsAny: ['farming_unlocked', 'week_1_complete'] },
+  WEEK2_ACT: { flagsAll: ['week_1_complete'] },
   FURNACE_ACT: { flagsAny: ['furnace_placed', 'furnace_built'] },
   TRADE_ACT: { flagsAll: ['met_vel'] },
   PAY_TRIBUTE: { flagsAll: ['yara_claim_seen'] },
@@ -139,5 +161,15 @@ export const COMBAT_REQUIREMENTS: Record<string, CommandRequirement> = {
   wenzel_warden: {
     locations: ['seal_forecourt', 'node_7'],
     flagsAny: ['day_6_complete', 'gate_failing', 'wenzel_seen'],
+  },
+  threadling: { flagsAll: ['week_1_complete'] },
+  reed_stalker: { flagsAny: ['day_8_complete', 'visited_mist_lowland'] },
+  bog_gnawer: { flagsAny: ['visited_drowned_quarry', 'day_11_complete'] },
+  pitch_carapace: { flagsAny: ['quarry_drained', 'quarry_workings', 'day_11_complete'] },
+  smolnik: {
+    flagsAny: ['day_12_complete', 'smolnik_failed', 'defeated_smolnik'],
+  },
+  mist_warden: {
+    flagsAny: ['day_13_complete', 'mist_warden_seen', 'mist_warden_failed', 'mist_warden_defeated'],
   },
 };

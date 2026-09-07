@@ -26,6 +26,16 @@ enum ResourceType {
   STICK
   COBBLESTONE
   IRON_INGOT
+  SEED
+  WHEAT
+  STRING
+  REED
+  CLAY
+  RAW_FISH
+  COOKED_FISH
+  MIST_RESIN
+  BOG_CORE
+  SEAL_SHARD_6
 }
 
 enum Rarity {

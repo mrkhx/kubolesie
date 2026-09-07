@@ -103,6 +103,17 @@ import {
   wenzelModifiers,
   type WeekHost,
 } from './week';
+import {
+  applyWeek2Victory,
+  dispatchWeek2,
+  isWeek2Enemy,
+  isWeek2Location,
+  isWeek2Menu,
+  openWeek2Menu,
+  talkMira,
+  WEEK2_COMMANDS,
+  week2Modifiers,
+} from './week2';
 import { dispatchMeta, grantMetaAchievement, isMetaMenu, META_COMMANDS, noteActivity, openMetaMenu } from './meta';
 
 const NAV: GameButton[] = [
@@ -325,6 +336,9 @@ export class GameRuntime {
         if ((WEEK_COMMANDS as readonly string[]).includes(command.type)) {
           return dispatchWeek(this.weekHost(), ctx, command, eventId);
         }
+        if ((WEEK2_COMMANDS as readonly string[]).includes(command.type)) {
+          return dispatchWeek2(this.weekHost(), ctx, command, eventId);
+        }
         throw new UnknownCommandError((command as GameCommand).type);
     }
   }
@@ -357,6 +371,13 @@ export class GameRuntime {
       'BEGIN_DAY_5',
       'BEGIN_DAY_6',
       'BEGIN_DAY_7',
+      'BEGIN_DAY_8',
+      'BEGIN_DAY_9',
+      'BEGIN_DAY_10',
+      'BEGIN_DAY_11',
+      'BEGIN_DAY_12',
+      'BEGIN_DAY_13',
+      'BEGIN_DAY_14',
       'EQUIP_ITEM',
       'USE_ITEM',
       'OPEN_PROFILE',
@@ -454,9 +475,17 @@ export class GameRuntime {
     }
     if (loc === 'ashen_wedge') return openWeekMenu(this.weekHost(), ctx, 'wedge');
     if (loc === 'seal_forecourt') return openWeekMenu(this.weekHost(), ctx, 'prep');
+    if (loc === 'mist_border') return openWeek2Menu(this.weekHost(), ctx, 'mist');
+    if (loc === 'mist_lowland') return openWeek2Menu(this.weekHost(), ctx, 'lowland');
+    if (loc === 'drowned_quarry') return openWeek2Menu(this.weekHost(), ctx, 'quarry');
+    if (loc === 'second_seal') return openWeek2Menu(this.weekHost(), ctx, 'seal2');
     if (loc === 'rival_camp_edge') return this.renderNode(ctx.player, 'yara_edge');
     if (loc === 'rem_camp' && ctx.flags.met_rem) {
-      if (ctx.flags.week_1_complete) return this.renderNode(ctx.player, 'week1_complete');
+      if (ctx.flags.week_2_complete) return this.renderNode(ctx.player, 'week2_complete');
+      if (ctx.flags.week_1_complete && !ctx.flags.day_8_complete) {
+        return this.renderNode(ctx.player, 'week1_complete');
+      }
+      if (ctx.flags.week_1_complete) return openWeek2Menu(this.weekHost(), ctx, 'mist');
       if (ctx.flags.day_1_complete && !ctx.flags.day_2_complete) {
         return this.renderNode(ctx.player, 'rem_day2');
       }
@@ -473,7 +502,11 @@ export class GameRuntime {
     if (loc === 'node_7' && !ctx.flags.node7_gate_closed && ctx.flags.activated_node7_token) {
       return this.renderNode(ctx.player, 'rem_gate');
     }
-    if (ctx.flags.week_1_complete) return this.renderNode(ctx.player, 'week1_complete');
+    if (ctx.flags.week_2_complete) return this.renderNode(ctx.player, 'week2_complete');
+    if (ctx.flags.week_1_complete && !ctx.flags.day_8_complete) {
+      return this.renderNode(ctx.player, 'week1_complete');
+    }
+    if (ctx.flags.week_1_complete) return openWeek2Menu(this.weekHost(), ctx, 'mist');
     if (ctx.flags.day_2_complete) return this.renderNode(ctx.player, 'day2_complete');
     if (ctx.flags.player_camp_founded) {
       ctx.player.currentLocation = 'player_camp';
@@ -549,6 +582,13 @@ export class GameRuntime {
     if (buttons.length < 5 && ctx.flags.day_2_complete && !ctx.flags.week_1_complete) {
       buttons.push({ label: '🌲 Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
     }
+    if (buttons.length < 5 && ctx.flags.week_1_complete && !ctx.flags.week_2_complete) {
+      if (ctx.flags.farming_unlocked) {
+        buttons.push({ label: '🌾 Грядка', action: 'FARM_ACT', payload: { act: 'open' } });
+      } else {
+        buttons.push({ label: '🌫 Кромка', action: 'WEEK2_ACT', payload: { act: 'border' } });
+      }
+    }
     if (buttons.length < 5) {
       buttons.push({ label: '🏕 Стан', action: 'OPEN_MENU', payload: { menu: 'camp' } });
     }
@@ -563,6 +603,7 @@ export class GameRuntime {
 
   private async openMenu(ctx: Ctx, menu: ActionMenuId, extraText?: string): Promise<GameResponse> {
     if (isMetaMenu(menu)) return openMetaMenu(this.store, ctx.player, menu, this.now());
+    if (isWeek2Menu(menu)) return openWeek2Menu(this.weekHost(), ctx, menu);
     if (isWeekMenu(menu)) return openWeekMenu(this.weekHost(), ctx, menu);
     const built = buildActionMenu(menu, this.snapshot(ctx));
     const text = extraText ?? (menu === 'hub' ? this.hubCampText(ctx) : built.text);
@@ -780,6 +821,21 @@ export class GameRuntime {
     ) {
       throw new ActionRejectedError('Сначала выплави слиток в печи.');
     }
+    if ((recipe.id === 'stone_hoe' || recipe.id === 'iron_hoe') && !ctx.flags.farming_unlocked) {
+      throw new ActionRejectedError('Грядка ещё не открыта.');
+    }
+    if (recipe.id === 'bow' && !ctx.flags.first_string && !(ctx.resources.STRING ?? 0)) {
+      throw new ActionRejectedError('Сначала добудь нить в низине.');
+    }
+    if (recipe.id === 'bucket' && !ctx.flags.day_10_complete) {
+      throw new ActionRejectedError('Ведро — когда вода станет дорогой.');
+    }
+    if (recipe.id === 'shield' && !ctx.flags.day_12_complete && !ctx.flags.quarry_chamber) {
+      throw new ActionRejectedError('Щит — к Смольнику.');
+    }
+    if (recipe.id === 'bread' && !ctx.flags.first_harvest && !(ctx.resources.WHEAT ?? 0)) {
+      throw new ActionRejectedError('Сначала урожай.');
+    }
     const cost = effectiveRecipeCost(recipe, this.snapshot(ctx));
     for (const [resource, need] of Object.entries(cost)) {
       const have = ctx.resources[resource as ResourceType] ?? 0;
@@ -844,6 +900,9 @@ export class GameRuntime {
     for (const flag of afterCraftFlags(recipe.id, ctx.flags)) {
       await this.store.setFlag(ctx.player.id, flag, '1');
       ctx.flags[flag] = '1';
+    }
+    if (recipe.id === 'bow') {
+      await grantMetaAchievement(this.store, ctx.player.id, 'FIRST_BOW');
     }
     const dailyNotes = await noteDailyCraft(this.weekHost(), ctx, recipe.id);
     await noteActivity(this.store, ctx.player, { type: 'craft', count: amount });
@@ -923,11 +982,19 @@ export class GameRuntime {
       });
       return this.renderNode(ctx.player, 'yara_edge');
     }
+    if (npcId === 'mira') {
+      if (!ctx.flags.week_1_complete) throw new ActionRejectedError('Миры ещё нет.');
+      return talkMira(this.weekHost(), ctx);
+    }
     if (npcId !== 'rem') return this.respond(ctx.player, 'Здесь никого нет.', NAV);
     if (ctx.flags.day_1_complete) {
       ctx.player.currentLocation = 'rem_camp';
       await this.store.savePlayer(ctx.player);
-      if (ctx.flags.week_1_complete) return this.renderNode(ctx.player, 'week1_complete');
+      if (ctx.flags.week_2_complete) return this.renderNode(ctx.player, 'week2_complete');
+      if (ctx.flags.week_1_complete && !ctx.flags.day_8_complete) {
+        return this.renderNode(ctx.player, 'week1_complete');
+      }
+      if (ctx.flags.week_1_complete) return openWeek2Menu(this.weekHost(), ctx, 'mist');
       if (ctx.flags.day_6_complete) return this.renderNode(ctx.player, 'day7_start');
       if (!ctx.flags.day_2_complete) return this.renderNode(ctx.player, 'rem_day2');
       return this.renderNode(ctx.player, 'rem_day2');
@@ -1219,8 +1286,24 @@ export class GameRuntime {
         ctx.flags[flag] = '1';
       }
     }
+    if (isWeek2Enemy(enemyId)) {
+      if (enemyId === 'mist_warden') ctx.player.currentLocation = 'second_seal';
+      else if (enemyId === 'smolnik' || enemyId === 'bog_gnawer' || enemyId === 'pitch_carapace') {
+        ctx.player.currentLocation = 'drowned_quarry';
+      } else if (enemyId === 'reed_stalker') {
+        if (!isWeek2Location(ctx.player.currentLocation)) ctx.player.currentLocation = 'mist_lowland';
+      } else if (!isWeek2Location(ctx.player.currentLocation)) {
+        ctx.player.currentLocation = 'mist_border';
+      }
+      await this.store.savePlayer(ctx.player);
+      if (enemyId === 'mist_warden' && String(payload.move ?? '') === 'drain') {
+        await this.store.setFlag(ctx.player.id, 'used_bucket_on_warden', '1');
+        ctx.flags.used_bucket_on_warden = '1';
+      }
+    }
     const stats = await this.effectiveStats(ctx);
-    const mods = enemyId === 'wenzel_warden' ? wenzelModifiers(ctx, String(payload.move ?? 'hinge')) : null;
+    const weekMods = isWeek2Enemy(enemyId) ? week2Modifiers(ctx, enemyId, payload) : null;
+    const mods = enemyId === 'wenzel_warden' ? wenzelModifiers(ctx, String(payload.move ?? 'hinge')) : weekMods;
     const playerSnap: CombatantSnapshot = {
       id: ctx.player.id,
       name: ctx.player.name,
@@ -1228,7 +1311,7 @@ export class GameRuntime {
       maxHp: ctx.player.maxHp,
       attack: stats.attack,
       defense: stats.defense + (mods?.player.defense ?? 0),
-      speed: stats.speed + (enemyId === 'mine_crawler' && ctx.flags.heard_mine_crawler ? 5 : 0),
+      speed: stats.speed + (mods?.player.speed ?? 0) + (enemyId === 'mine_crawler' && ctx.flags.heard_mine_crawler ? 5 : 0),
       critChance: stats.critChance + (mods?.player.critChance ?? 0),
       critDamage: stats.critDamage,
       dodge: stats.dodge + (mods?.player.dodge ?? 0) + (enemyId === 'mine_crawler' && ctx.flags.heard_mine_crawler ? 10 : 0),
@@ -1270,6 +1353,7 @@ export class GameRuntime {
       enemy: enemySnap,
       seed: eventId,
       balanceVersion: BALANCE_VERSION,
+      playerOpeningHits: weekMods?.playerOpeningHits ?? 0,
     });
     const match = await this.store.createCombatMatch({
       playerId: ctx.player.id,
@@ -1312,6 +1396,19 @@ export class GameRuntime {
         extra += `\n${winNotes.join(' ')}`;
         buttons.unshift({ label: 'К двери', action: 'COMPLETE_DAY_7' });
       }
+      if (isWeek2Enemy(enemyId)) {
+        const winNotes = await applyWeek2Victory(this.weekHost(), ctx, enemyId);
+        if (winNotes.length) extra += `\n${winNotes.join(' ')}`;
+        if (enemyId === 'smolnik') {
+          buttons.unshift({ label: 'Завершить День 13', action: 'COMPLETE_DAY_13' });
+        } else if (enemyId === 'mist_warden') {
+          buttons.unshift({ label: 'К карте', action: 'COMPLETE_DAY_14' });
+        } else if (enemyId === 'threadling' || enemyId === 'reed_stalker') {
+          buttons.unshift({ label: 'Низина', action: 'WEEK2_ACT', payload: { act: 'lowland' } });
+        } else {
+          buttons.unshift({ label: 'Карьер', action: 'WEEK2_ACT', payload: { act: 'quarry' } });
+        }
+      }
       if (enemyId === 'stumpfang' || enemyId === 'moss_boar' || enemyId === 'resin_brute') {
         buttons.unshift({ label: 'Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
       }
@@ -1325,6 +1422,14 @@ export class GameRuntime {
       if (enemyId === 'wenzel_warden') {
         await this.store.setFlag(ctx.player.id, 'wenzel_failed_attempt', '1');
         buttons.unshift({ label: 'Подготовиться', action: 'OPEN_MENU', payload: { menu: 'prep' } });
+      }
+      if (enemyId === 'smolnik') {
+        await this.store.setFlag(ctx.player.id, 'smolnik_failed', '1');
+        buttons.unshift({ label: 'Ещё раз', action: 'WEEK2_ACT', payload: { act: 'smolnik' } });
+      }
+      if (enemyId === 'mist_warden') {
+        await this.store.setFlag(ctx.player.id, 'mist_warden_failed', '1');
+        buttons.unshift({ label: 'Подготовиться', action: 'WEEK2_ACT', payload: { act: 'prep' } });
       }
     }
     return this.respond(ctx.player, `${log}${extra}`, buttons);
@@ -1379,6 +1484,16 @@ export class GameRuntime {
       const first = await this.store.tryClaimReward(ctx.player.id, 'combat_loot', `${enemyId}:first`);
       const weekNotes = await applyWeekLoot(this.weekHost(), ctx, enemyId, eventId, first);
       notes.push(...weekNotes);
+    }
+    if (isWeek2Enemy(enemyId)) {
+      const first = await this.store.tryClaimReward(ctx.player.id, 'combat_loot', `${enemyId}:first`);
+      const weekNotes = await applyWeekLoot(this.weekHost(), ctx, enemyId, eventId, first);
+      notes.push(...weekNotes);
+      const fresh = await this.store.getResources(ctx.player.id);
+      if ((fresh.STRING ?? 0) > 0 && !ctx.flags.first_string) {
+        await this.store.setFlag(ctx.player.id, 'first_string', '1');
+        ctx.flags.first_string = '1';
+      }
     }
     return notes.length ? `\n${notes.filter(Boolean).join(' ')}` : '';
   }

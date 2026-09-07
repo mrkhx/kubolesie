@@ -12,6 +12,7 @@ const EXPECTED = [
   '20260906210000_meta_progression',
   '20260907120000_hardening',
   '20260907130000_products_premium_default',
+  '20260907180000_week_two',
 ] as const;
 
 function sql(name: string): string {
@@ -66,5 +67,9 @@ describe('prisma migrations (static)', () => {
     }
     expect(sql('20260906210000_meta_progression')).toMatch(/ADD VALUE 'PREMIUM'/);
     expect(sql('20260907130000_products_premium_default')).toMatch(/SET DEFAULT 'PREMIUM'/);
+    expect(sql('20260907180000_week_two')).toMatch(/ADD VALUE 'SEED'/);
+    expect(sql('20260907180000_week_two')).toMatch(/ADD VALUE 'BOG_CORE'/);
+    expect(sql('20260907180000_week_two')).toMatch(/ADD VALUE 'SEAL_SHARD_6'/);
+    expect(sql('20260907180000_week_two')).not.toMatch(/INSERT/i);
   });
 });

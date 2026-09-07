@@ -56,4 +56,13 @@ describe('combat-engine', () => {
       expect(event.actor).toBeTruthy();
     }
   });
+
+  it('applies optional playerOpeningHits before the turn loop without changing default battles', () => {
+    const baseline = simulateBattle({ player, enemy: shrew, seed: 42 });
+    const same = simulateBattle({ player, enemy: shrew, seed: 42, playerOpeningHits: 0 });
+    expect(same).toEqual(baseline);
+    const opened = simulateBattle({ player, enemy: shrew, seed: 42, playerOpeningHits: 1 });
+    expect(opened.events[0]?.actor).toBe(player.id);
+    expect(opened.enemyHp).toBeLessThanOrEqual(baseline.enemyHp);
+  });
 });

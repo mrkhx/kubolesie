@@ -368,7 +368,7 @@ describe('monetization foundation', () => {
       expect(ITEM_TEMPLATES[product.id]).toBeUndefined();
       expect(JSON.stringify(product).toLowerCase()).not.toMatch(/"attack"|"defense"|"hp"|"damage"/);
     }
-    expect(Object.keys(ACHIEVEMENTS)).toHaveLength(8);
+    expect(Object.keys(ACHIEVEMENTS)).toHaveLength(10);
   });
 
   it('keeps entitlements unique and blocks unequipped cosmetics', async () => {
@@ -389,7 +389,7 @@ describe('monetization foundation', () => {
     expect(GAME_COMMANDS).not.toContain('GRANT_PREMIUM');
     expect(GAME_COMMANDS).not.toContain('SET_RATING');
     expect(GAME_COMMANDS).not.toContain('SET_STATS');
-    expect(GAME_COMMANDS).not.toContain('BEGIN_DAY_8');
+    expect(GAME_COMMANDS).not.toContain('BEGIN_DAY_15');
     const { store, runtime, player, vkUserId } = await boot();
     const before = await reload(store, player.id);
     await act(runtime, vkUserId, 'START_PVE', { enemyId: 'wild_shrew' });
@@ -429,7 +429,7 @@ describe('hub and playthrough', () => {
     const b = (await store.findPlayerByVkUserId('vk-b'))!;
     const profile = await act(runtimeA, 'vk-a', 'OPEN_PROFILE');
     expect(profile.text).toContain(a.name);
-    expect(profile.text).toContain('Score');
+    expect(profile.text).toContain('Очки');
     await act(runtimeA, 'vk-a', 'OPEN_MENU', { menu: 'stats' });
     await act(runtimeA, 'vk-a', 'OPEN_MENU', { menu: 'ratings' });
     await act(runtimeA, 'vk-a', 'CLAN_ACT', { act: 'create', name: 'Печать', tag: 'ПЧТ' });

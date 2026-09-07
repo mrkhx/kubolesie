@@ -29,6 +29,8 @@ export interface BattleInput {
   enemy: CombatantSnapshot;
   seed: number | string;
   balanceVersion?: string;
+  /** Bow first-strike: extra player hits before the turn loop. Default 0 — Week 1 unchanged. */
+  playerOpeningHits?: number;
 }
 
 export interface BattleResult {
@@ -118,6 +120,15 @@ export function simulateBattle(input: BattleInput): BattleResult {
 
   let turn = 0;
   const maxTurns = 64;
+  const openingHits = Math.max(0, Math.min(4, Math.floor(input.playerOpeningHits ?? 0)));
+  for (let i = 0; i < openingHits && player.hp > 0 && enemy.hp > 0; i += 1) {
+    turn += 1;
+    const hit = resolveHit(player, enemy, rng);
+    events.push({ turn, actor: player.id, type: hit.type, value: hit.value });
+    if (hit.type !== 'DODGE') {
+      enemy.hp = Math.max(0, enemy.hp - hit.value);
+    }
+  }
 
   while (player.hp > 0 && enemy.hp > 0 && turn < maxTurns) {
     turn += 1;

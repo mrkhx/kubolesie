@@ -342,6 +342,14 @@ describe('vk command flow', () => {
     expect(commandFromText('дань').type).toBe('PAY_TRIBUTE');
   });
 
+  it('maps week 2 russian aliases for farm, mist and mira', () => {
+    expect(commandFromText('мира')).toEqual({ type: 'TALK_NPC', payload: { npcId: 'mira' } });
+    expect(commandFromText('грядка')).toEqual({ type: 'OPEN_MENU', payload: { menu: 'farm' } });
+    expect(commandFromText('низина')).toEqual({ type: 'OPEN_MENU', payload: { menu: 'lowland' } });
+    expect(commandFromText('карьер')).toEqual({ type: 'OPEN_MENU', payload: { menu: 'quarry' } });
+    expect(commandFromText('кромка')).toEqual({ type: 'OPEN_MENU', payload: { menu: 'mist' } });
+  });
+
   it('opens the hero meta menu from a "герой" message', async () => {
     const { adapter, client } = boot();
     await adapter.handleCallback(messageNew({ text: 'начать', eventId: 's1' }));
