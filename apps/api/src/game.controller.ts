@@ -12,9 +12,8 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { GameRuntime, type GameStore } from '@kubolesie/game-core';
-import { VkAdapter, type MockVkEvent } from '@kubolesie/vk-bot';
+import { VkAdapter, type EphemeralStore, type MockVkEvent } from '@kubolesie/vk-bot';
 import { MOCK_CONSOLE_HTML } from './mock-console';
-import type { RedisLock } from './redis';
 import type { AppConfig } from './app-config';
 
 @Controller()
@@ -24,7 +23,7 @@ export class GameController {
     @Inject(VkAdapter) private readonly adapter: VkAdapter,
     @Inject('GAME_STORE') private readonly store: GameStore,
     @Inject('STORE_KIND') private readonly storeKind: 'prisma' | 'memory',
-    @Inject('REDIS_LOCK') private readonly redis: RedisLock,
+    @Inject('EPHEMERAL_STORE') private readonly ephemeral: EphemeralStore,
     @Inject('APP_CONFIG') private readonly appConfig: AppConfig,
   ) {}
 
@@ -41,23 +40,21 @@ export class GameController {
     if (!body?.event_id || body.vk_user_id == null) {
       throw new BadRequestException('event_id and vk_user_id are required');
     }
-    const rateKey = `${req.ip}:${body.vk_user_id}`;
-    const hits = await this.redis.incr(rateKey, 10_000);
-    if (hits > 40) {
+    const ip = String(req.ip ?? 'unknown').replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 64);
+    const user = String(body.vk_user_id).replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 64);
+    const allowed = await this.ephemeral.consume([
+      { key: `kubolesie:rl:mock:${ip}:${user}:m`, limit: 40, ttlMs: 10_000 },
+    ]);
+    if (!allowed) {
       throw new BadRequestException('rate limit');
     }
-    const locked = await this.redis.tryLock(`event:${body.event_id}`, 15_000);
-    try {
-      const result = await this.adapter.handleMockEvent(body);
-      return {
-        ok: true,
-        store: this.storeKind,
-        game: result.game,
-        vkKeyboard: result.vkKeyboard,
-      };
-    } finally {
-      if (locked) await this.redis.unlock(`event:${body.event_id}`);
-    }
+    const result = await this.adapter.handleMockEvent(body);
+    return {
+      ok: true,
+      store: this.storeKind,
+      game: result.game,
+      vkKeyboard: result.vkKeyboard,
+    };
   }
 
   @Get('/v1/players/:vkUserId')

@@ -159,6 +159,13 @@ export class GameRuntime {
     });
   }
 
+  /** Adapter-only: replay check before command rate-limit. Does not mutate. */
+  async peekProcessed(eventId: string): Promise<GameResponse | null> {
+    const existing = await this.store.findProcessedEvent(eventId);
+    if (existing?.response?.text) return existing.response;
+    return null;
+  }
+
   private serialize<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const prev = this.chains.get(key) ?? Promise.resolve();
     const next = prev.then(fn, fn);

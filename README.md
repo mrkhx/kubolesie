@@ -26,7 +26,7 @@ PostgreSQL          packages/database (Prisma)
 
 Дополнительно:
 
-- Redis — lock, rate limit, временный cache. **Не** хранилище прогресса.
+- Redis — distributed rate limits и короткие locks. **Не** хранилище прогресса. Production без `REDIS_URL` при включённом лимитере не стартует.
 - BullMQ worker — фоновые задачи. Энергия регенерируется **лениво**, без cron по всем игрокам.
 - `processed_events` — идемпотентность внешних событий.
 - `reward_claims` — одноразовые награды (ящик, жетон, сундук, квест, ночь, survivor pack).
@@ -158,13 +158,14 @@ npm run prisma:seed
 ## Tests
 
 ```bash
-npm test                 # unit tests (без PostgreSQL)
+npm test                 # unit tests (без PostgreSQL и без Redis)
 npm run typecheck
 npm run db:migrate:deploy   # production: prisma migrate deploy
 npm run test:db:migrations  # TEST-ONLY, disposable Postgres
+npm run test:redis          # TEST-ONLY, localhost Redis
 ```
 
-Деплой: [docs/deployment.md](docs/deployment.md). PostgreSQL: [docs/production-database.md](docs/production-database.md).
+Деплой: [docs/deployment.md](docs/deployment.md). PostgreSQL: [docs/production-database.md](docs/production-database.md). Anti-abuse: [docs/rate-limiting.md](docs/rate-limiting.md).
 
 Сохранены тесты 0.0.1/0.0.2 и добавлены проверки цепочки: ящик без камня, отказ WOOD+STONE→кирка, булыжник только с деревянной киркой, деревянная кирка не берёт железо, полный путь до каменной кирки.
 

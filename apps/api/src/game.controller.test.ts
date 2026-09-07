@@ -19,7 +19,7 @@ function controller(env: NodeJS.Dict<string>) {
     { handleMockEvent: vi.fn() } as never,
     { findPlayerByVkUserId: vi.fn() } as never,
     'prisma',
-    { incr: vi.fn(), tryLock: vi.fn(), unlock: vi.fn(), close: vi.fn() } as never,
+    { consume: vi.fn(), tryLock: vi.fn(), unlock: vi.fn(), ping: vi.fn(), close: vi.fn() } as never,
     loadAppConfig(env),
   );
 }

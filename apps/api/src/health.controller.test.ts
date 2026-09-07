@@ -4,6 +4,7 @@ import { HealthController } from './health.controller';
 import { loadAppConfig } from './app-config';
 import { StoreLifecycle } from './lifecycle';
 import type { StoreBundle } from '@kubolesie/database';
+import type { EphemeralStore } from '@kubolesie/vk-bot';
 
 const PROD = {
   NODE_ENV: 'production',
@@ -12,12 +13,30 @@ const PROD = {
   VK_GROUP_TOKEN: 'test-token',
   VK_CALLBACK_SECRET: 'test-secret',
   VK_CONFIRMATION_CODE: 'confirm-code',
+  RATE_LIMIT_ENABLED: 'false',
+};
+
+const PROD_REDIS = {
+  ...PROD,
+  RATE_LIMIT_ENABLED: 'true',
+  REDIS_URL: 'redis://localhost:6379',
 };
 
 function bundle(over: Partial<StoreBundle> = {}): StoreBundle {
   return {
     store: {} as StoreBundle['store'],
     kind: 'memory',
+    ...over,
+  };
+}
+
+function redisStore(over: Partial<EphemeralStore> = {}): EphemeralStore {
+  return {
+    consume: vi.fn(async () => true),
+    tryLock: vi.fn(async () => true),
+    unlock: vi.fn(async () => undefined),
+    ping: vi.fn(async () => true),
+    close: vi.fn(async () => undefined),
     ...over,
   };
 }
@@ -33,11 +52,22 @@ describe('health and readiness', () => {
     expect(body.vkConfigured).toBe(true);
     expect(body.database.configured).toBe(true);
     expect(body.database.provider).toBe('postgresql');
+    expect(body.redisConfigured).toBe(false);
+    expect(body.rateLimitEnabled).toBe(false);
     const dumped = JSON.stringify(body);
     expect(dumped).not.toContain('test-token');
     expect(dumped).not.toContain('test-secret');
     expect(dumped).not.toContain('confirm-code');
     expect(dumped).not.toContain('s3cret');
+    expect(dumped).not.toContain('redis://');
+  });
+
+  it('reports redisConfigured without echoing REDIS_URL', () => {
+    const controller = new HealthController(loadAppConfig(PROD_REDIS), bundle(), redisStore());
+    const body = controller.health();
+    expect(body.redisConfigured).toBe(true);
+    expect(body.rateLimitEnabled).toBe(true);
+    expect(JSON.stringify(body)).not.toContain('redis://localhost:6379');
   });
 
   it('reports ready when Prisma ping succeeds', async () => {
@@ -47,7 +77,7 @@ describe('health and readiness', () => {
       bundle({ kind: 'prisma', prisma: prisma as never }),
     );
     const ready = await controller.ready();
-    expect(ready).toMatchObject({ ready: true, database: 'ok', store: 'prisma' });
+    expect(ready).toMatchObject({ ready: true, database: 'ok', store: 'prisma', redis: 'disabled' });
     expect(prisma.$queryRaw).toHaveBeenCalledOnce();
   });
 
@@ -65,6 +95,33 @@ describe('health and readiness', () => {
     expect(controller.health().ok).toBe(true);
   });
 
+  it('returns 503 readiness when Redis is down and rate limiting is enabled', async () => {
+    const prisma = { $queryRaw: vi.fn(async () => [{ '?column?': 1 }]) };
+    const ephemeral = redisStore({ ping: vi.fn(async () => false) });
+    const controller = new HealthController(
+      loadAppConfig(PROD_REDIS),
+      bundle({ kind: 'prisma', prisma: prisma as never }),
+      ephemeral,
+    );
+    await expect(controller.ready()).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(controller.health().ok).toBe(true);
+    expect(controller.health().redisConfigured).toBe(true);
+  });
+
+  it('is ready when Redis pings and PostgreSQL is up', async () => {
+    const prisma = { $queryRaw: vi.fn(async () => [{ '?column?': 1 }]) };
+    const controller = new HealthController(
+      loadAppConfig(PROD_REDIS),
+      bundle({ kind: 'prisma', prisma: prisma as never }),
+      redisStore(),
+    );
+    await expect(controller.ready()).resolves.toMatchObject({
+      ready: true,
+      database: 'ok',
+      redis: 'ok',
+    });
+  });
+
   it('is not ready in production without a Prisma client', async () => {
     const controller = new HealthController(loadAppConfig(PROD), bundle({ kind: 'memory' }));
     await expect(controller.ready()).rejects.toBeInstanceOf(ServiceUnavailableException);
@@ -75,7 +132,11 @@ describe('health and readiness', () => {
       loadAppConfig({ NODE_ENV: 'test' }),
       bundle({ kind: 'memory' }),
     );
-    await expect(controller.ready()).resolves.toMatchObject({ ready: true, database: 'memory' });
+    await expect(controller.ready()).resolves.toMatchObject({
+      ready: true,
+      database: 'memory',
+      redis: 'disabled',
+    });
   });
 
   it('does not leak VK secrets from /v1/health/vk', () => {
@@ -93,6 +154,13 @@ describe('graceful shutdown', () => {
     const life = new StoreLifecycle(bundle({ kind: 'prisma', prisma: prisma as never }));
     await life.onModuleDestroy();
     expect(prisma.$disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('closes the ephemeral store on module destroy', async () => {
+    const ephemeral = redisStore();
+    const life = new StoreLifecycle(bundle(), ephemeral);
+    await life.onModuleDestroy();
+    expect(ephemeral.close).toHaveBeenCalledOnce();
   });
 
   it('is a no-op when the process used MemoryStore', async () => {

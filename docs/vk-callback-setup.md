@@ -18,6 +18,8 @@ VK_API_VERSION=5.199
 
 Production без полного набора — fail-closed: callback отвечает 503, Game Core не вызывается.
 
+Валидный callback при превышении rate limit всё равно ACK `200 ok`; игрок получает «Слишком быстро 🙂 Подожди пару секунд.» VK не получает HTTP 429. Confirmation не режется узким лимитом. См. [rate-limiting.md](rate-limiting.md).
+
 ## 2. Endpoint
 
 ```

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { GameRuntime } from '@kubolesie/game-core';
 import type { GameResponse } from '@kubolesie/shared';
 import { parseMockVkEvent, toVkKeyboard, type MockVkEvent, type VkKeyboard } from './commands';
@@ -9,10 +10,16 @@ import {
 } from './callback';
 import { randomIdFromEvent, VkApiError, type VkMessenger } from './client';
 import { isVkCallbackReady, loadVkConfig, type VkConfig } from './config';
+import type { AbuseGuard } from './abuse-guard';
+import { THROTTLE_TEXT } from './abuse-policy';
 
 export interface CallbackHttpResult {
   status: number;
   body: string;
+}
+
+export interface CallbackContext {
+  ip?: string;
 }
 
 export interface VkLogEntry {
@@ -25,12 +32,15 @@ export interface VkLogEntry {
   method?: string;
   errorCode?: string | number;
   reason?: string;
+  category?: string;
+  durationMs?: number;
 }
 
 export interface VkAdapterDeps {
   client?: VkMessenger;
   config?: VkConfig;
   log?: (entry: VkLogEntry) => void;
+  abuse?: AbuseGuard;
 }
 
 function defaultLog(entry: VkLogEntry): void {
@@ -57,9 +67,11 @@ export class VkAdapter {
     };
   }
 
-  async handleCallback(raw: unknown): Promise<CallbackHttpResult> {
+  async handleCallback(raw: unknown, ctx: CallbackContext = {}): Promise<CallbackHttpResult> {
     const config = this.deps.config ?? loadVkConfig();
     const log = this.deps.log ?? defaultLog;
+    const abuse = this.deps.abuse;
+    const started = Date.now();
     try {
       if (!isPlainCallbackBody(raw)) {
         log({ msg: 'vk.callback', type: 'malformed', status: 'rejected' });
@@ -106,6 +118,41 @@ export class VkAdapter {
         });
         return { status: 200, body: 'ok' };
       }
+
+      if (abuse?.enabled) {
+        if (ctx.ip) {
+          const ipDecision = await abuse.allowIp(ctx.ip);
+          if (!ipDecision.allowed) {
+            log({
+              msg: 'vk.callback',
+              type,
+              status: 'rate_limited',
+              reason: ipDecision.reason === 'store_error' ? 'store_error' : 'ip',
+              eventId: parsed.eventId,
+              category: 'ip',
+              durationMs: Date.now() - started,
+            });
+            return { status: 200, body: 'ok' };
+          }
+        }
+        const ingress = await abuse.allowCallbackUser(parsed.userId);
+        if (!ingress.allowed) {
+          log({
+            msg: 'vk.callback',
+            type,
+            status: 'rate_limited',
+            reason: ingress.reason === 'store_error' ? 'store_error' : 'callback',
+            eventId: parsed.eventId,
+            peerId: parsed.peerId,
+            category: 'callback',
+            durationMs: Date.now() - started,
+          });
+          const text = ingress.reason === 'store_error' ? SAFE_TEXT : THROTTLE_TEXT;
+          await this.replyLimited(type, parsed.peerId, parsed.eventId, parsed.userId, parsed.callbackEventId, text);
+          return { status: 200, body: 'ok' };
+        }
+      }
+
       if (parsed.kind === 'tampered') {
         log({
           msg: 'vk.callback',
@@ -121,6 +168,60 @@ export class VkAdapter {
         return { status: 200, body: 'ok' };
       }
 
+      if (abuse?.enabled) {
+        const replay = await this.runtime.peekProcessed(parsed.eventId);
+        if (replay) {
+          abuse.noteDuplicate();
+          log({
+            msg: 'vk.callback',
+            type,
+            status: 'duplicate',
+            eventId: parsed.eventId,
+            peerId: parsed.peerId,
+            durationMs: Date.now() - started,
+          });
+          try {
+            await this.sendGame(parsed.peerId, parsed.eventId, replay);
+            if (type === 'message_event' && parsed.callbackEventId) {
+              await this.deps.client?.answerEvent({
+                eventId: parsed.callbackEventId,
+                userId: Number(parsed.userId),
+                peerId: parsed.peerId,
+              });
+            }
+          } catch (error) {
+            log({
+              msg: 'vk.callback',
+              type,
+              status: 'send_failed',
+              eventId: parsed.eventId,
+              peerId: parsed.peerId,
+              method: 'messages.send',
+              errorCode: error instanceof VkApiError ? error.code : 'send',
+            });
+            return { status: 503, body: 'retry' };
+          }
+          return { status: 200, body: 'ok' };
+        }
+
+        const commandDecision = await abuse.allowCommand(parsed.userId, parsed.command);
+        if (!commandDecision.allowed) {
+          log({
+            msg: 'vk.callback',
+            type,
+            status: 'rate_limited',
+            reason: commandDecision.reason === 'store_error' ? 'store_error' : 'command',
+            eventId: parsed.eventId,
+            peerId: parsed.peerId,
+            category: abuse.classify(parsed.command),
+            durationMs: Date.now() - started,
+          });
+          const text = commandDecision.reason === 'store_error' ? SAFE_TEXT : THROTTLE_TEXT;
+          await this.replyLimited(type, parsed.peerId, parsed.eventId, parsed.userId, parsed.callbackEventId, text);
+          return { status: 200, body: 'ok' };
+        }
+      }
+
       log({
         msg: 'vk.callback',
         type,
@@ -128,62 +229,91 @@ export class VkAdapter {
         eventId: parsed.eventId,
         peerId: parsed.peerId,
       });
+
+      let lockToken: string | null = null;
+      if (abuse?.enabled && abuse.needsLock(parsed.command)) {
+        lockToken = randomUUID();
+        const lock = await abuse.tryPlayerLock(parsed.userId, lockToken);
+        if (!lock.allowed) {
+          log({
+            msg: 'vk.callback',
+            type,
+            status: 'rate_limited',
+            reason: lock.reason === 'store_error' ? 'store_error' : 'lock_busy',
+            eventId: parsed.eventId,
+            peerId: parsed.peerId,
+            category: abuse.classify(parsed.command),
+            durationMs: Date.now() - started,
+          });
+          const text = lock.reason === 'store_error' ? SAFE_TEXT : THROTTLE_TEXT;
+          await this.replyLimited(type, parsed.peerId, parsed.eventId, parsed.userId, parsed.callbackEventId, text);
+          return { status: 200, body: 'ok' };
+        }
+      }
+
       let game: GameResponse;
       try {
-        game = await this.runtime.handle({
-          eventId: parsed.eventId,
-          identity: {
-            provider: 'vk',
-            providerUserId: parsed.userId,
-            displayName: 'Путник',
-          },
-          command: parsed.command,
-          text: parsed.text,
-        });
-      } catch {
-        log({
-          msg: 'vk.callback',
-          type,
-          status: 'core_error',
-          eventId: parsed.eventId,
-          peerId: parsed.peerId,
-          errorCode: 'internal',
-        });
-        game = { text: SAFE_TEXT, buttons: [] };
-      }
-      const playerId = game.state?.playerId;
-      try {
-        await this.sendGame(parsed.peerId, parsed.eventId, game);
-        if (type === 'message_event' && parsed.callbackEventId) {
-          await this.deps.client?.answerEvent({
-            eventId: parsed.callbackEventId,
-            userId: Number(parsed.userId),
-            peerId: parsed.peerId,
+        try {
+          game = await this.runtime.handle({
+            eventId: parsed.eventId,
+            identity: {
+              provider: 'vk',
+              providerUserId: parsed.userId,
+              displayName: 'Путник',
+            },
+            command: parsed.command,
+            text: parsed.text,
           });
+        } catch {
+          log({
+            msg: 'vk.callback',
+            type,
+            status: 'core_error',
+            eventId: parsed.eventId,
+            peerId: parsed.peerId,
+            errorCode: 'internal',
+          });
+          game = { text: SAFE_TEXT, buttons: [] };
         }
-      } catch (error) {
+        const playerId = game.state?.playerId;
+        try {
+          await this.sendGame(parsed.peerId, parsed.eventId, game);
+          if (type === 'message_event' && parsed.callbackEventId) {
+            await this.deps.client?.answerEvent({
+              eventId: parsed.callbackEventId,
+              userId: Number(parsed.userId),
+              peerId: parsed.peerId,
+            });
+          }
+        } catch (error) {
+          log({
+            msg: 'vk.callback',
+            type,
+            status: 'send_failed',
+            eventId: parsed.eventId,
+            playerId,
+            peerId: parsed.peerId,
+            method: 'messages.send',
+            errorCode: error instanceof VkApiError ? error.code : 'send',
+          });
+          return { status: 503, body: 'retry' };
+        }
         log({
           msg: 'vk.callback',
           type,
-          status: 'send_failed',
+          status: 'ok',
           eventId: parsed.eventId,
           playerId,
           peerId: parsed.peerId,
           method: 'messages.send',
-          errorCode: error instanceof VkApiError ? error.code : 'send',
+          durationMs: Date.now() - started,
         });
-        return { status: 503, body: 'retry' };
+        return { status: 200, body: 'ok' };
+      } finally {
+        if (lockToken && abuse) {
+          await abuse.releasePlayerLock(parsed.userId, lockToken);
+        }
       }
-      log({
-        msg: 'vk.callback',
-        type,
-        status: 'ok',
-        eventId: parsed.eventId,
-        playerId,
-        peerId: parsed.peerId,
-        method: 'messages.send',
-      });
-      return { status: 200, body: 'ok' };
     } catch {
       log({ msg: 'vk.callback', type: 'error', status: 'crash' });
       return { status: 200, body: 'ok' };
@@ -211,6 +341,30 @@ export class VkAdapter {
       });
     } catch {
       return;
+    }
+  }
+
+  private async replyLimited(
+    type: string,
+    peerId: number,
+    eventId: string,
+    userId: string,
+    callbackEventId: string | undefined,
+    text: string,
+  ): Promise<void> {
+    try {
+      if (this.deps.client) {
+        await this.deps.client.sendMessage({
+          peerId,
+          text,
+          randomId: randomIdFromEvent(`${eventId}:throttle`),
+        });
+      }
+    } catch {
+      // ACK anyway — never 429 VK.
+    }
+    if (type === 'message_event' && callbackEventId) {
+      await this.answerSafe(callbackEventId, Number(userId), peerId);
     }
   }
 

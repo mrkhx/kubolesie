@@ -1,13 +1,20 @@
 import { Module } from '@nestjs/common';
 import { GameRuntime } from '@kubolesie/game-core';
 import { createGameStore, type StoreBundle } from '@kubolesie/database';
-import { loadVkConfig, VkAdapter, VkApiClient } from '@kubolesie/vk-bot';
-import { loadAppConfig } from './app-config';
+import {
+  AbuseGuard,
+  loadAbusePolicy,
+  loadVkConfig,
+  VkAdapter,
+  VkApiClient,
+  type EphemeralStore,
+} from '@kubolesie/vk-bot';
+import { loadAppConfig, type AppConfig } from './app-config';
 import { GameController } from './game.controller';
 import { HealthController } from './health.controller';
 import { StoreLifecycle } from './lifecycle';
 import { VkController } from './vk.controller';
-import { createRedisLock } from './redis';
+import { createEphemeralStore } from './redis';
 
 @Module({
   controllers: [HealthController, GameController, VkController],
@@ -47,17 +54,25 @@ import { createRedisLock } from './redis';
       useFactory: (config: ReturnType<typeof loadVkConfig>) => new VkApiClient(config),
     },
     {
+      provide: 'EPHEMERAL_STORE',
+      inject: ['APP_CONFIG'],
+      useFactory: (config: AppConfig) => createEphemeralStore(config.rateLimit),
+    },
+    {
+      provide: AbuseGuard,
+      inject: ['EPHEMERAL_STORE', 'APP_CONFIG'],
+      useFactory: (store: EphemeralStore, config: AppConfig) =>
+        new AbuseGuard(store, loadAbusePolicy(process.env), config.rateLimit.enabled),
+    },
+    {
       provide: VkAdapter,
-      inject: [GameRuntime, 'VK_CLIENT', 'VK_CONFIG'],
+      inject: [GameRuntime, 'VK_CLIENT', 'VK_CONFIG', AbuseGuard],
       useFactory: (
         runtime: GameRuntime,
         client: VkApiClient,
         config: ReturnType<typeof loadVkConfig>,
-      ) => new VkAdapter(runtime, { client, config }),
-    },
-    {
-      provide: 'REDIS_LOCK',
-      useFactory: () => createRedisLock(),
+        abuse: AbuseGuard,
+      ) => new VkAdapter(runtime, { client, config, abuse }),
     },
   ],
 })

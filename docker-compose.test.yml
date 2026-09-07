@@ -1,0 +1,31 @@
+# Disposable Postgres 16 + Redis for integration tests. No secrets, no volumes.
+#   docker compose -f docker-compose.test.yml up -d
+#   TEST_DATABASE_URL=postgresql://kubolesie:kubolesie@127.0.0.1:55432/kubolesie_test npm run test:db
+#   TEST_REDIS_URL=redis://127.0.0.1:56379 npm run test:redis
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: kubolesie
+      POSTGRES_PASSWORD: kubolesie
+      POSTGRES_DB: kubolesie_test
+    ports:
+      - "55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kubolesie -d kubolesie_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "56379:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10

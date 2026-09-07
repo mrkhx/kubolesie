@@ -21,6 +21,7 @@
     "test:watch": "vitest",
     "test:db": "vitest run --config vitest.integration.config.ts",
     "test:db:migrations": "tsx scripts/test-db-migrations.ts",
+    "test:redis": "tsx scripts/test-redis.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build": "tsc -p tsconfig.json --noEmit",
     "docker:up": "docker compose up -d",

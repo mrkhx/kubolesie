@@ -44,7 +44,35 @@ export {
 export {
   VkAdapter,
   type CallbackHttpResult,
+  type CallbackContext,
   type VkAdapterDeps,
   type VkLogEntry,
   type GameResponse,
 } from './adapter';
+export type { ConsumeWindow, EphemeralStore } from './ephemeral';
+export { MemoryEphemeralStore, createMemoryBacking } from './memory-ephemeral';
+export {
+  AbuseGuard,
+  type AbuseDecision,
+  type AbuseMetrics,
+  type AbuseReason,
+} from './abuse-guard';
+export {
+  DEFAULT_ABUSE_POLICY,
+  DEFAULT_LIMITS,
+  PLAYER_LOCK_TTL_MS,
+  RATE_LIMIT_KEY_PREFIX,
+  RATE_LIMIT_LOCK_PREFIX,
+  THROTTLE_TEXT,
+  classKind,
+  classifyCommand,
+  commandNeedsLock,
+  loadAbusePolicy,
+  lockKey,
+  rlKey,
+  sanitizeId,
+  windowsFor,
+  type AbusePolicy,
+  type CommandClass,
+  type LimitSpec,
+} from './abuse-policy';

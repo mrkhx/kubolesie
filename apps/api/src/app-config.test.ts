@@ -13,6 +13,7 @@ const COMPLETE = {
   VK_GROUP_TOKEN: 'test-token',
   VK_CALLBACK_SECRET: 'test-secret',
   VK_CONFIRMATION_CODE: 'confirm-code',
+  REDIS_URL: 'redis://localhost:6379',
   VK_API_VERSION: '5.199',
   PORT: '8080',
   HOST: '0.0.0.0',
@@ -50,6 +51,33 @@ describe('production app config', () => {
     );
   });
 
+  it('fails production rate limiting without REDIS_URL', () => {
+    const config = loadAppConfig({ ...COMPLETE, REDIS_URL: '' });
+    expect(config.rateLimit.enabled).toBe(true);
+    expect(config.rateLimit.redisConfigured).toBe(false);
+    expect(() => assertProductionReady(config)).toThrow(ProductionConfigError);
+    expect(() => assertProductionReady(config)).toThrow(/REDIS_URL/);
+  });
+
+  it('allows production without Redis only when rate limiting is explicitly disabled', () => {
+    const config = loadAppConfig({ ...COMPLETE, REDIS_URL: '', RATE_LIMIT_ENABLED: 'false' });
+    expect(config.rateLimit.enabled).toBe(false);
+    expect(() => assertProductionReady(config)).not.toThrow();
+  });
+
+  it('enables rate limiting in production by default', () => {
+    const config = loadAppConfig(COMPLETE);
+    expect(config.rateLimit.enabled).toBe(true);
+    expect(config.rateLimit.backend).toBe('redis');
+    expect(config.rateLimit.redisConfigured).toBe(true);
+  });
+
+  it('keeps rate limiting off in tests unless RATE_LIMIT_ENABLED=true', () => {
+    const config = loadAppConfig({ NODE_ENV: 'test', REDIS_URL: 'redis://localhost:6379' });
+    expect(config.rateLimit.enabled).toBe(false);
+    expect(config.rateLimit.redisConfigured).toBe(true);
+  });
+
   it('passes production when the required set is present', () => {
     const config = loadAppConfig(COMPLETE);
     expect(() => assertProductionReady(config)).not.toThrow();
@@ -79,14 +107,17 @@ describe('production app config', () => {
     expect(config.mockApiEnabled).toBe(false);
   });
 
-  it('does not leak secrets, tokens or DATABASE_URL in describeAppConfig', () => {
+  it('does not leak secrets, tokens, DATABASE_URL or REDIS_URL in describeAppConfig', () => {
     const dumped = JSON.stringify(describeAppConfig(loadAppConfig(COMPLETE)));
     expect(dumped).not.toContain('test-token');
     expect(dumped).not.toContain('test-secret');
     expect(dumped).not.toContain('confirm-code');
     expect(dumped).not.toContain('s3cret');
     expect(dumped).not.toContain('postgresql://');
+    expect(dumped).not.toContain('redis://');
     expect(dumped).toContain('"vkConfigured":true');
     expect(dumped).toContain('"dbConfigured":true');
+    expect(dumped).toContain('"redisConfigured":true');
+    expect(dumped).toContain('"rateLimitEnabled":true');
   });
 });
