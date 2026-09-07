@@ -20,6 +20,9 @@ Production:
 npm run db:migrate:deploy
 ```
 
+В Docker/Render Free этот же script вызывается из `scripts/start-container.sh` до `npm run start:api`.
+
+
 `prisma migrate deploy` идемпотентен. Не запускать несколько `migrate dev` параллельно.
 
 `prisma generate` выполняется на install/build. Не рассчитывать на локальный generated client в image.

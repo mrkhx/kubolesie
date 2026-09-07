@@ -54,17 +54,22 @@ Worker **не** обязателен для текущего gameplay.
 
 Секреты в git не класть. Image не копирует `.env`. Redis в production image не встраивается.
 
-## 4. Migrate (release step)
+## 4. Migrate
 
-Один раз на релиз, не из каждого инстанса:
+Только `prisma migrate deploy`:
 
 ```bash
 npm run db:migrate:deploy
 ```
 
-Это `prisma migrate deploy`. Не `prisma migrate dev`, не `db push`, не `migrate reset`.
+Не `prisma migrate dev`, не `db push`, не `migrate reset`.
 
-При нескольких инстансах migrate выполняется **до** масштабирования API. Redis-схема не нужна — только TTL keys.
+`DATABASE_URL` только из environment, в логи не писать. Redis в migrations не участвует.
+
+На хостинге без Pre-Deploy (в том числе Render Free) migrate deploy выполняется **внутри контейнера до старта API** (`scripts/start-container.sh`). Если migrate падает — API не слушает, процесс выходит с ненулевым кодом. `prisma migrate deploy` идемпотентен (advisory lock).
+
+Локально / отдельным release step по-прежнему можно вызвать `npm run db:migrate:deploy` до API.
+
 
 ## 5. Build / start
 
@@ -73,26 +78,27 @@ npm run db:migrate:deploy
 1. PostgreSQL доступен
 2. Redis доступен
 3. env заполнен
-4. `npm run db:migrate:deploy`
-5. start API
-6. `GET /health`
-7. `GET /ready`
-8. VK callback
+4. container: `npm run db:migrate:deploy` → при успехе `npm run start:api`
+5. `GET /health`
+6. `GET /ready`
+7. VK callback
 
 ```bash
 npm ci
 npm run prisma:generate
+npm run db:migrate:deploy
 npm run start:api
 ```
 
-Или Docker:
+Docker (build context — корень репозитория, `Dockerfile`):
 
 ```bash
 docker build -t kubolesie-api .
 docker run --rm -p 8080:3000 --env-file .env kubolesie-api
 ```
 
-`.env` монтируется снаружи. В image его нет. Redis — отдельный сервис, не слой image.
+Image: `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT` из env, user `kubolesie`, health `GET /health`. `.env` монтируется снаружи. Redis — отдельный сервис, не слой image.
+
 
 ## 6. Health
 
