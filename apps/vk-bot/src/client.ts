@@ -18,6 +18,13 @@ export class VkApiError extends Error {
   }
 }
 
+const DM_UNAVAILABLE_CODES = new Set<number | string>([7, 9, 901, 902, 936, 101]);
+
+export function isDmUnavailableError(error: unknown): boolean {
+  if (!(error instanceof VkApiError)) return true;
+  return DM_UNAVAILABLE_CODES.has(error.code);
+}
+
 export interface SendMessageInput {
   peerId: number;
   text: string;
@@ -56,9 +63,13 @@ export class RecordingVkApi implements VkMessenger {
   readonly answers: AnswerEventInput[] = [];
   failSend = false;
   failAnswer = false;
+  /** Per-destination send failures (e.g. DM privacy 901 while group peer still works). */
+  readonly failPeerCodes = new Map<number, number | string>();
 
   async sendMessage(input: SendMessageInput): Promise<void> {
     if (this.failSend) throw new VkApiError('messages.send', 10);
+    const code = this.failPeerCodes.get(input.peerId);
+    if (code !== undefined) throw new VkApiError('messages.send', code);
     this.sent.push(input);
   }
 

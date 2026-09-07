@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseMockVkEvent, toVkKeyboard } from './index';
+import { callbackPayload, parseMockVkEvent, toVkKeyboard } from './index';
 
 describe('vk adapter', () => {
   it('extracts vk_user_id, event_id and command from a mock event', () => {
@@ -22,7 +22,7 @@ describe('vk adapter', () => {
     ]);
     expect(keyboard.inline).toBe(true);
     expect(keyboard.buttons[0][0].action.type).toBe('callback');
-    expect(JSON.parse(keyboard.buttons[0][0].action.payload).action).toBe('OPEN_CRATE');
+    expect(JSON.parse(callbackPayload(keyboard.buttons[0][0])).action).toBe('OPEN_CRATE');
   });
 
   it('maps nested menu buttons including payload.menu', () => {
@@ -30,11 +30,11 @@ describe('vk adapter', () => {
       { label: '⛏ Добыча', action: 'OPEN_MENU', payload: { menu: 'gather' } },
       { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'craft' } },
     ]);
-    expect(JSON.parse(keyboard.buttons[0][0].action.payload)).toMatchObject({
+    expect(JSON.parse(callbackPayload(keyboard.buttons[0][0]))).toMatchObject({
       action: 'OPEN_MENU',
       menu: 'gather',
     });
-    expect(JSON.parse(keyboard.buttons[1][0].action.payload).menu).toBe('craft');
+    expect(JSON.parse(callbackPayload(keyboard.buttons[1][0])).menu).toBe('craft');
     expect(keyboard.buttons[0][0].color).toBe('primary');
     expect(keyboard.buttons[1][0].color).toBe('secondary');
     expect(keyboard.buttons[1][0].action.label).toBe('⬅ Назад');

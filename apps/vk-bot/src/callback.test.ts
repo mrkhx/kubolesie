@@ -9,7 +9,7 @@ import {
   verifyConfirmation,
 } from './callback';
 import { RecordingVkApi } from './client';
-import { commandFromText } from './commands';
+import { callbackPayload, commandFromText } from './commands';
 import { loadVkConfig, type VkConfig } from './config';
 import { decodeButtonPayload } from './payload';
 
@@ -571,7 +571,7 @@ describe('vk domain errors', () => {
     const dumped = JSON.stringify(client.sent);
     expect(dumped).not.toContain('test-token');
     expect(client.sent[0]!.text).not.toContain('access_token');
-    expect(client.sent[0]!.keyboard?.buttons[0]?.[0]?.action.payload).not.toContain('test-token');
+    expect(callbackPayload(client.sent[0]!.keyboard!.buttons[0]![0]!)).not.toContain('test-token');
   });
 
   it('treats VK community Начать payload as START_GAME', async () => {

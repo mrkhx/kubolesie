@@ -18,19 +18,28 @@ export interface MockVkEvent {
   name?: string;
 }
 
-export interface VkKeyboard {
-  one_time: boolean;
-  inline: boolean;
-  buttons: Array<
-    Array<{
+export type VkKeyboardButton =
+  | {
       action: {
         type: 'callback' | 'text';
         label: string;
         payload: string;
       };
-      color: 'secondary' | 'primary' | 'positive' | 'negative';
-    }>
-  >;
+      color?: 'secondary' | 'primary' | 'positive' | 'negative';
+    }
+  | {
+      action: {
+        type: 'open_link';
+        label: string;
+        link: string;
+      };
+      color?: 'secondary' | 'primary' | 'positive' | 'negative';
+    };
+
+export interface VkKeyboard {
+  one_time: boolean;
+  inline: boolean;
+  buttons: Array<Array<VkKeyboardButton>>;
 }
 
 const TEXT_ALIASES: Record<string, GameCommandType> = {
@@ -160,6 +169,10 @@ export function parseMockVkEvent(input: MockVkEvent): NormalizedIncomingEvent {
   };
 }
 
+export function callbackPayload(button: VkKeyboardButton): string {
+  return button.action.type === 'open_link' ? '' : button.action.payload;
+}
+
 export function toVkKeyboard(buttons: GameButton[]): VkKeyboard {
   const styled = buttons.map(presentButton).filter((button) => button.label.trim().length > 0);
   const usable = styled.slice(0, 10);
@@ -188,7 +201,7 @@ export function toVkKeyboard(buttons: GameButton[]): VkKeyboard {
   return { one_time: false, inline: true, buttons: rows };
 }
 
-function toVkButton(button: GameButton): VkKeyboard['buttons'][number][number] {
+function toVkButton(button: GameButton): VkKeyboardButton {
   const styled = presentButton(button);
   return {
     action: {

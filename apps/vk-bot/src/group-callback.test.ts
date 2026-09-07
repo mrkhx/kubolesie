@@ -6,7 +6,12 @@ import { VkAdapter, type VkLogEntry } from './adapter';
 import { parseGameplayEvent } from './callback';
 import { RecordingVkApi } from './client';
 import type { VkConfig } from './config';
-import { GROUP_HELP_TEXT } from './group-chat';
+import {
+  GROUP_CONTINUE_IN_DM,
+  GROUP_HELP_TEXT,
+  GROUP_PROFILE_SENT,
+  GROUP_PROFILE_UNAVAILABLE,
+} from './group-chat';
 import { MemoryEphemeralStore } from './memory-ephemeral';
 
 const CONFIG: VkConfig = {
@@ -105,6 +110,14 @@ function boot(input: { abuse?: AbuseGuard } = {}) {
   return { store, runtime, client, adapter, logs };
 }
 
+function groupSent(client: RecordingVkApi) {
+  return client.sent.filter((row) => row.peerId === GROUP_PEER);
+}
+
+function dmSent(client: RecordingVkApi, userId: number) {
+  return client.sent.filter((row) => row.peerId === userId);
+}
+
 describe('group chat parsing', () => {
   it('does not treat peer_id as the player identity', () => {
     const parsed = parseGameplayEvent(
@@ -133,14 +146,14 @@ describe('group chat parsing', () => {
   });
 });
 
-describe('A. DM regression', () => {
+describe('DM regression', () => {
   it('still starts, names and profiles a player in a direct message', async () => {
     const { adapter, store, client } = boot();
     const started = await adapter.handleCallback(messageNew({ text: 'Старт', eventId: 'dm-start' }));
     expect(started).toEqual({ status: 200, body: 'ok' });
     expect(client.sent[0]!.peerId).toBe(9001);
     expect(client.sent[0]!.text).toContain('приходишь в себя');
-    expect(client.sent[0]!.text).not.toContain('[id9001|игрок]');
+    expect(client.sent[0]!.text).not.toContain('отправляется в Куболесье');
 
     client.sent.length = 0;
     await adapter.handleCallback(messageNew({ text: 'Начать', eventId: 'dm-nachat' }));
@@ -164,21 +177,8 @@ describe('A. DM regression', () => {
   });
 });
 
-describe('B–D. group message policy and personal progress', () => {
-  it('stays silent on ordinary group chatter', async () => {
-    const { adapter, runtime, client } = boot();
-    const handle = vi.spyOn(runtime, 'handle');
-    const result = await adapter.handleCallback(groupMessage({ text: 'привет всем', eventId: 'g-hi' }));
-    expect(result).toEqual({ status: 200, body: 'ok' });
-    expect(handle).not.toHaveBeenCalled();
-    expect(client.sent).toHaveLength(0);
-    expect(await adapter.handleCallback(groupMessage({ text: 'кто сегодня играет?', eventId: 'g-who' }))).toEqual(
-      { status: 200, body: 'ok' },
-    );
-    expect(handle).not.toHaveBeenCalled();
-  });
-
-  it('starts a player from an addressed group command and replies to the chat peer', async () => {
+describe('group start routes gameplay to DM', () => {
+  it('posts one compact group notice and sends the game screen to DM', async () => {
     const { adapter, store, client, runtime } = boot();
     const handle = vi.spyOn(runtime, 'handle');
     const result = await adapter.handleCallback(
@@ -191,14 +191,26 @@ describe('B–D. group message policy and personal progress', () => {
         command: expect.objectContaining({ type: 'START_GAME' }),
       }),
     );
-    const player = await store.findPlayerByVkUserId('4242');
-    expect(player).not.toBeNull();
+    expect(await store.findPlayerByVkUserId('4242')).not.toBeNull();
     expect(await store.findPlayerByVkUserId(String(GROUP_PEER))).toBeNull();
-    expect(client.sent).toHaveLength(1);
-    expect(client.sent[0]!.peerId).toBe(GROUP_PEER);
-    expect(client.sent[0]!.text).toContain('[id4242|игрок]');
-    expect(client.sent[0]!.text).toContain('приходишь в себя');
-    expect(client.sent[0]!.text).not.toMatch(/❤️ HP/);
+
+    const notice = groupSent(client);
+    expect(notice).toHaveLength(1);
+    expect(notice[0]!.text).toContain('отправляется в Куболесье');
+    expect(notice[0]!.text).toContain('личных сообщениях');
+    expect(notice[0]!.text).not.toContain('приходишь в себя');
+    expect(notice[0]!.text).not.toMatch(/❤️ HP/);
+    expect(notice[0]!.keyboard?.buttons[0]?.[0]?.action).toMatchObject({
+      type: 'open_link',
+      label: '✉ Продолжить в личке',
+      link: 'https://vk.me/club111',
+    });
+
+    const dm = dmSent(client, 4242);
+    expect(dm).toHaveLength(1);
+    expect(dm[0]!.text).toContain('приходишь в себя');
+    expect(dm[0]!.keyboard?.buttons.length).toBeGreaterThan(0);
+    expect(JSON.stringify(dm[0]!.keyboard)).toMatch(/OPEN_CRATE|📦/);
   });
 
   it('keeps two players in the same chat on separate progress', async () => {
@@ -218,21 +230,16 @@ describe('B–D. group message policy and personal progress', () => {
         payload: { action: 'GATHER_WOOD' },
       }),
     );
-    const aWood = (await store.getResources(a.id)).LOG ?? 0;
-    const bWood = (await store.getResources(b.id)).LOG ?? 0;
-    expect(aWood).toBeGreaterThan(0);
-    expect(bWood).toBe(0);
-
-    client.sent.length = 0;
-    await adapter.handleCallback(groupMessage({ text: 'Куболесье, профиль', eventId: 'gb-p', userId: 22 }));
-    expect(client.sent[0]!.peerId).toBe(GROUP_PEER);
-    expect(client.sent[0]!.text).toContain(b.name);
-    expect(client.sent[0]!.text).not.toContain(a.id);
+    expect((await store.getResources(a.id)).LOG ?? 0).toBeGreaterThan(0);
+    expect((await store.getResources(b.id)).LOG ?? 0).toBe(0);
+    expect(groupSent(client)).toHaveLength(0);
+    expect(dmSent(client, 11)[0]!.peerId).toBe(11);
+    expect(dmSent(client, 11)[0]!.text.length).toBeGreaterThan(0);
   });
 });
 
-describe('E–F. group buttons and spoof protection', () => {
-  it('applies a group button click only to the clicking user', async () => {
+describe('group buttons route to DM', () => {
+  it('mutates only the clicking player and never posts gameplay in the group', async () => {
     const { adapter, store, client } = boot();
     await adapter.handleCallback(groupMessage({ text: 'начать', eventId: 'ea', userId: 31 }));
     await adapter.handleCallback(groupMessage({ text: 'начать', eventId: 'eb', userId: 32 }));
@@ -249,8 +256,26 @@ describe('E–F. group buttons and spoof protection', () => {
     );
     expect((await store.getResources(a.id)).LOG ?? 0).toBeGreaterThan(0);
     expect((await store.getResources(b.id)).LOG ?? 0).toBe(0);
-    expect(client.sent[0]!.peerId).toBe(GROUP_PEER);
+    expect(groupSent(client)).toHaveLength(0);
+    expect(dmSent(client, 31)).toHaveLength(1);
     expect(client.answers[0]).toMatchObject({ userId: 31, peerId: GROUP_PEER });
+  });
+
+  it('routes an old group gameplay button to DM', async () => {
+    const { adapter, client } = boot();
+    await adapter.handleCallback(groupMessage({ text: 'начать', eventId: 'old-s', userId: 44 }));
+    client.sent.length = 0;
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'old-btn',
+        userId: 44,
+        peerId: GROUP_PEER,
+        payload: { action: 'OPEN_CRATE' },
+      }),
+    );
+    expect(groupSent(client)).toHaveLength(0);
+    expect(dmSent(client, 44)[0]!.text.length).toBeGreaterThan(0);
+    expect(dmSent(client, 44)[0]!.keyboard?.buttons.length).toBeGreaterThan(0);
   });
 
   it('does not send a callback destined at another user DM', async () => {
@@ -270,20 +295,47 @@ describe('E–F. group buttons and spoof protection', () => {
   });
 });
 
-describe('G. duplicate group events', () => {
-  it('replays a duplicate group start without a second player', async () => {
+describe('group profile and help', () => {
+  it('sends the profile to DM and a short notice to the group', async () => {
+    const { adapter, client } = boot();
+    await adapter.handleCallback(groupMessage({ text: 'начать', eventId: 'p-s', userId: 55 }));
+    client.sent.length = 0;
+    await adapter.handleCallback(groupMessage({ text: 'Куболесье, профиль', eventId: 'p-1', userId: 55 }));
+    expect(dmSent(client, 55)[0]!.text).toMatch(/Путник|Уровень/);
+    expect(groupSent(client)).toHaveLength(1);
+    expect(groupSent(client)[0]!.text).toBe(GROUP_PROFILE_SENT);
+    expect(groupSent(client)[0]!.text).not.toMatch(/PvP|инвентар/i);
+  });
+
+  it('answers Помощь in a group chat without calling Game Core', async () => {
+    const { adapter, runtime, client, store } = boot();
+    const handle = vi.spyOn(runtime, 'handle');
+    const result = await adapter.handleCallback(groupMessage({ text: 'Помощь', eventId: 'help-1' }));
+    expect(result).toEqual({ status: 200, body: 'ok' });
+    expect(handle).not.toHaveBeenCalled();
+    expect(await store.findPlayerByVkUserId('9001')).toBeNull();
+    expect(groupSent(client)[0]!.text).toBe(GROUP_HELP_TEXT);
+    expect(groupSent(client)[0]!.text).toContain('чат-RPG');
+    expect(dmSent(client, 9001)).toHaveLength(0);
+  });
+});
+
+describe('duplicate group events', () => {
+  it('replays a duplicate group start without a second mutation or extra DM', async () => {
     const { adapter, store, client } = boot();
     const body = groupMessage({ text: 'Куболесье, начать', eventId: 'dup-g', userId: 77 });
     const first = await adapter.handleCallback(body);
     const player = (await store.findPlayerByVkUserId('77'))!;
     const energy = player.energy;
+    const groupRandom = groupSent(client)[0]!.randomId;
+    const dmRandom = dmSent(client, 77)[0]!.randomId;
     const second = await adapter.handleCallback(body);
     expect(first.body).toBe('ok');
     expect(second.body).toBe('ok');
-    expect(client.sent).toHaveLength(2);
-    expect(client.sent[0]!.randomId).toBe(client.sent[1]!.randomId);
-    expect(client.sent[0]!.peerId).toBe(GROUP_PEER);
-    expect(client.sent[1]!.peerId).toBe(GROUP_PEER);
+    expect(groupSent(client)).toHaveLength(2);
+    expect(dmSent(client, 77)).toHaveLength(2);
+    expect(groupSent(client)[1]!.randomId).toBe(groupRandom);
+    expect(dmSent(client, 77)[1]!.randomId).toBe(dmRandom);
     const again = (await store.findPlayerByVkUserId('77'))!;
     expect(again.id).toBe(player.id);
     expect(again.energy).toBe(energy);
@@ -291,29 +343,24 @@ describe('G. duplicate group events', () => {
   });
 });
 
-describe('H–J. self, service and malformed group events', () => {
-  it('ignores community/self messages in a group chat', async () => {
+describe('self, service, chatter and malformed', () => {
+  it('stays silent on ordinary group chatter', async () => {
     const { adapter, runtime, client } = boot();
     const handle = vi.spyOn(runtime, 'handle');
-    const bot = await adapter.handleCallback(
-      groupMessage({ text: 'Куболесье, начать', userId: -111, eventId: 'self' }),
-    );
-    const outgoing = await adapter.handleCallback(
-      groupMessage({ text: 'Куболесье, начать', out: 1, eventId: 'out' }),
-    );
-    expect(bot.body).toBe('ok');
-    expect(outgoing.body).toBe('ok');
+    const result = await adapter.handleCallback(groupMessage({ text: 'привет всем', eventId: 'g-hi' }));
+    expect(result).toEqual({ status: 200, body: 'ok' });
     expect(handle).not.toHaveBeenCalled();
     expect(client.sent).toHaveLength(0);
   });
 
-  it('ignores service/system messages in a group chat', async () => {
+  it('ignores community/self and service messages in a group chat', async () => {
     const { adapter, runtime, client } = boot();
     const handle = vi.spyOn(runtime, 'handle');
-    const result = await adapter.handleCallback(
+    await adapter.handleCallback(groupMessage({ text: 'Куболесье, начать', userId: -111, eventId: 'self' }));
+    await adapter.handleCallback(groupMessage({ text: 'Куболесье, начать', out: 1, eventId: 'out' }));
+    await adapter.handleCallback(
       groupMessage({ text: '', action: { type: 'chat_invite_user' }, eventId: 'svc' }),
     );
-    expect(result.body).toBe('ok');
     expect(handle).not.toHaveBeenCalled();
     expect(client.sent).toHaveLength(0);
   });
@@ -323,34 +370,84 @@ describe('H–J. self, service and malformed group events', () => {
     const handle = vi.spyOn(runtime, 'handle');
     const badPeer = groupMessage({ text: 'Куболесье, начать', eventId: 'bad-peer' });
     (badPeer.object as { message: Record<string, unknown> }).message.peer_id = 'nope';
-    const missing = {
-      type: 'message_new',
-      event_id: 'no-obj',
-      group_id: 111,
-      secret: 'test-secret',
-      object: {},
-    };
     await expect(adapter.handleCallback(badPeer)).resolves.toEqual({ status: 200, body: 'ok' });
-    await expect(adapter.handleCallback(missing)).resolves.toEqual({ status: 200, body: 'ok' });
+    await expect(
+      adapter.handleCallback({
+        type: 'message_new',
+        event_id: 'no-obj',
+        group_id: 111,
+        secret: 'test-secret',
+        object: {},
+      }),
+    ).resolves.toEqual({ status: 200, body: 'ok' });
     expect(handle).not.toHaveBeenCalled();
     expect(client.sent).toHaveLength(0);
   });
 });
 
-describe('K. group rate limit is per player, not per chat', () => {
-  it('does not block an unrelated player in the same conversation', async () => {
-    const abuse = new AbuseGuard(
-      new MemoryEphemeralStore(),
-      {
-        ...DEFAULT_ABUSE_POLICY,
-        limits: {
-          ...DEFAULT_ABUSE_POLICY.limits,
-          SYSTEM: { perMinute: 2, minuteTtlMs: 60_000, burst: 2, burstTtlMs: 5_000 },
-        },
-        callback: { perMinute: 80, minuteTtlMs: 60_000, burst: 80, burstTtlMs: 5_000 },
-        ip: { perMinute: 1_000, minuteTtlMs: 60_000, burst: 1_000, burstTtlMs: 5_000 },
-      } satisfies AbusePolicy,
+describe('DM unavailable fallback', () => {
+  it('keeps a compact group fallback when the community cannot DM the player', async () => {
+    const { adapter, store, client } = boot();
+    client.failPeerCodes.set(88, 901);
+    const result = await adapter.handleCallback(
+      groupMessage({ text: 'Начать', eventId: 'no-dm', userId: 88 }),
     );
+    expect(result).toEqual({ status: 200, body: 'ok' });
+    expect(await store.findPlayerByVkUserId('88')).not.toBeNull();
+    expect(dmSent(client, 88)).toHaveLength(0);
+    const group = groupSent(client);
+    expect(group.some((row) => row.text.includes('отправляется в Куболесье'))).toBe(true);
+    const fallback = group.find((row) => row.text.includes('открой личные сообщения'));
+    expect(fallback).toBeDefined();
+    expect(fallback!.keyboard?.buttons[0]?.[0]?.action).toMatchObject({
+      type: 'open_link',
+      label: '✉ Открыть Куболесье',
+      link: 'https://vk.me/club111',
+    });
+  });
+
+  it('falls back compactly when a group gameplay button cannot DM', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(groupMessage({ text: 'начать', eventId: 'fb-s', userId: 99 }));
+    const player = (await store.findPlayerByVkUserId('99'))!;
+    client.sent.length = 0;
+    client.failPeerCodes.set(99, 901);
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'fb-wood',
+        userId: 99,
+        peerId: GROUP_PEER,
+        payload: { action: 'GATHER_WOOD' },
+      }),
+    );
+    expect((await store.getResources(player.id)).LOG ?? 0).toBeGreaterThan(0);
+    expect(dmSent(client, 99)).toHaveLength(0);
+    expect(groupSent(client)).toHaveLength(1);
+    expect(groupSent(client)[0]!.text).toBe(GROUP_CONTINUE_IN_DM);
+  });
+
+  it('tells the player to open DMs when profile cannot be delivered', async () => {
+    const { adapter, client } = boot();
+    await adapter.handleCallback(groupMessage({ text: 'начать', eventId: 'pu-s', userId: 70 }));
+    client.sent.length = 0;
+    client.failPeerCodes.set(70, 901);
+    await adapter.handleCallback(groupMessage({ text: 'профиль', eventId: 'pu-1', userId: 70 }));
+    expect(groupSent(client)[0]!.text).toBe(GROUP_PROFILE_UNAVAILABLE);
+    expect(dmSent(client, 70)).toHaveLength(0);
+  });
+});
+
+describe('rate limit is per player, not per chat', () => {
+  it('does not block an unrelated player in the same conversation', async () => {
+    const abuse = new AbuseGuard(new MemoryEphemeralStore(), {
+      ...DEFAULT_ABUSE_POLICY,
+      limits: {
+        ...DEFAULT_ABUSE_POLICY.limits,
+        SYSTEM: { perMinute: 2, minuteTtlMs: 60_000, burst: 2, burstTtlMs: 5_000 },
+      },
+      callback: { perMinute: 80, minuteTtlMs: 60_000, burst: 80, burstTtlMs: 5_000 },
+      ip: { perMinute: 1_000, minuteTtlMs: 60_000, burst: 1_000, burstTtlMs: 5_000 },
+    } satisfies AbusePolicy);
     const { adapter, client, store } = boot({ abuse });
     for (let i = 0; i < 8; i += 1) {
       await adapter.handleCallback(
@@ -365,52 +462,15 @@ describe('K. group rate limit is per player, not per chat', () => {
     );
     expect(other).toEqual({ status: 200, body: 'ok' });
     expect(await store.findPlayerByVkUserId('502')).not.toBeNull();
-    expect(client.sent[0]!.text).not.toBe(THROTTLE_TEXT);
-    expect(client.sent[0]!.peerId).toBe(GROUP_PEER);
+    expect(dmSent(client, 502)[0]!.text).toContain('приходишь в себя');
+    expect(groupSent(client).some((row) => row.text.includes('отправляется'))).toBe(true);
   });
 });
 
-describe('L. response destination', () => {
-  it('sends DM replies to the user and group replies to the conversation peer', async () => {
+describe('response destination', () => {
+  it('sends DM-originated replies only to the user', async () => {
     const { adapter, client } = boot();
     await adapter.handleCallback(messageNew({ text: 'начать', eventId: 'dest-dm', userId: 9001 }));
-    expect(client.sent[0]!.peerId).toBe(9001);
-    client.sent.length = 0;
-    await adapter.handleCallback(
-      groupMessage({ text: 'Куболесье, начать', eventId: 'dest-g', userId: 9002 }),
-    );
-    expect(client.sent[0]!.peerId).toBe(GROUP_PEER);
-  });
-});
-
-describe('group help and mentions', () => {
-  it('answers Помощь in a group chat without calling Game Core', async () => {
-    const { adapter, runtime, client, store } = boot();
-    const handle = vi.spyOn(runtime, 'handle');
-    const result = await adapter.handleCallback(groupMessage({ text: 'Помощь', eventId: 'help-1' }));
-    expect(result).toEqual({ status: 200, body: 'ok' });
-    expect(handle).not.toHaveBeenCalled();
-    expect(await store.findPlayerByVkUserId('9001')).toBeNull();
-    expect(client.sent[0]!.peerId).toBe(GROUP_PEER);
-    expect(client.sent[0]!.text).toBe(GROUP_HELP_TEXT);
-    expect(client.sent[0]!.text).toContain('Куболесье, начать');
-  });
-
-  it('accepts @kubolesie and club mention prefixes', async () => {
-    const { adapter, store, client } = boot();
-    await adapter.handleCallback(
-      groupMessage({ text: '@kubolesie начать', eventId: 'at-1', userId: 81 }),
-    );
-    expect(await store.findPlayerByVkUserId('81')).not.toBeNull();
-    expect(client.sent[0]!.peerId).toBe(GROUP_PEER);
-    client.sent.length = 0;
-    await adapter.handleCallback(
-      groupMessage({
-        text: '[club111|Куболесье] профиль',
-        eventId: 'club-1',
-        userId: 81,
-      }),
-    );
-    expect(client.sent[0]!.text).toMatch(/Путник|игрок/i);
+    expect(client.sent.every((row) => row.peerId === 9001)).toBe(true);
   });
 });

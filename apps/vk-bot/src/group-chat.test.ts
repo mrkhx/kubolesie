@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { VK_CHAT_PEER_OFFSET } from './config';
 import {
   classifyChat,
+  communityDmKeyboard,
+  communityWriteUrl,
   compactGroupText,
   extractAddress,
+  formatDmUnavailableNotice,
+  formatGroupSocialEvent,
+  formatPlayerStartNotice,
   isGroupPeer,
-  presentGroupChatResponse,
   resolveGroupText,
 } from './group-chat';
 import { tryCommandFromText } from './commands';
@@ -67,7 +71,7 @@ describe('extractAddress', () => {
 });
 
 describe('resolveGroupText', () => {
-  it('accepts bare invocation commands without a prefix', () => {
+  it('accepts only the public group commands', () => {
     expect(resolveGroupText('Начать', 111)).toMatchObject({
       kind: 'command',
       command: { type: 'START_GAME' },
@@ -84,25 +88,24 @@ describe('resolveGroupText', () => {
       kind: 'command',
       command: { type: 'OPEN_PROFILE' },
     });
-    expect(resolveGroupText('меню', 111)).toMatchObject({
-      kind: 'command',
-      command: { type: 'OPEN_CAMP' },
-    });
     expect(resolveGroupText('Помощь', 111)?.kind).toBe('help');
+    expect(resolveGroupText('меню', 111)).toBeNull();
+    expect(resolveGroupText('рубить', 111)).toBeNull();
   });
 
-  it('accepts addressed aliases and ignores ordinary chatter', () => {
+  it('accepts addressed public commands and ignores gameplay aliases', () => {
     expect(resolveGroupText('Куболесье, начать', 111)).toMatchObject({
       kind: 'command',
       command: { type: 'START_GAME' },
     });
-    expect(resolveGroupText('Куболесье, рубить', 111)).toMatchObject({
+    expect(resolveGroupText('Куболесье, профиль', 111)).toMatchObject({
       kind: 'command',
-      command: { type: 'GATHER_WOOD' },
+      command: { type: 'OPEN_PROFILE' },
     });
+    expect(resolveGroupText('Куболесье, рубить', 111)).toBeNull();
+    expect(resolveGroupText('Куболесье, меню', 111)).toBeNull();
     expect(resolveGroupText('кто сегодня играет?', 111)).toBeNull();
     expect(resolveGroupText('привет всем', 111)).toBeNull();
-    expect(resolveGroupText('рубить', 111)).toBeNull();
   });
 
   it('shows help when the bot is addressed with no command', () => {
@@ -119,18 +122,22 @@ describe('tryCommandFromText', () => {
   });
 });
 
-describe('compactGroupText', () => {
-  it('strips the HUD header and prefixes a player mention', () => {
-    const presented = presentGroupChatResponse(
-      {
-        text: '❤️ HP 100/100 · ⚡ Энергия 20/20 · 🪙 Монеты 0\n🎒 Инвентарь: пусто\n\nприходишь в себя',
-        buttons: [{ label: '📦 Ящик', action: 'OPEN_CRATE' }],
-      },
-      '9001',
+describe('group social helpers', () => {
+  it('formats a compact player-start notice and DM link keyboard', () => {
+    expect(formatPlayerStartNotice()).toContain('Путник отправляется в Куболесье');
+    expect(formatPlayerStartNotice('Виктор')).toContain('Виктор отправляется в Куболесье');
+    expect(formatPlayerStartNotice()).toContain('личных сообщениях');
+    expect(communityWriteUrl(111)).toBe('https://vk.me/club111');
+    const keyboard = communityDmKeyboard(111, '✉ Продолжить в личке');
+    expect(keyboard.buttons[0]![0]!.action).toMatchObject({
+      type: 'open_link',
+      label: '✉ Продолжить в личке',
+      link: 'https://vk.me/club111',
+    });
+    expect(formatDmUnavailableNotice()).toMatch(/Начать/);
+    expect(formatGroupSocialEvent({ kind: 'player_start', peerId: 1, userId: '1' }).text).toContain(
+      'отправляется в Куболесье',
     );
-    expect(presented.text).toBe('[id9001|игрок]\nприходишь в себя');
-    expect(presented.text).not.toMatch(/❤️ HP/);
-    expect(presented.buttons).toHaveLength(1);
     expect(compactGroupText('просто текст')).toBe('просто текст');
   });
 });

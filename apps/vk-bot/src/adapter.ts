@@ -1,21 +1,32 @@
 import { randomUUID } from 'node:crypto';
 import type { GameRuntime } from '@kubolesie/game-core';
-import type { GameResponse } from '@kubolesie/shared';
+import type { GameCommand, GameResponse } from '@kubolesie/shared';
 import { parseMockVkEvent, toVkKeyboard, type MockVkEvent, type VkKeyboard } from './commands';
 import {
   isPlainCallbackBody,
   parseGameplayEvent,
   verifyCallbackAuth,
   verifyConfirmation,
+  type ParsedGameplay,
 } from './callback';
 import { randomIdFromEvent, VkApiError, type VkMessenger } from './client';
 import { isVkCallbackReady, loadVkConfig, type VkConfig } from './config';
 import type { AbuseGuard } from './abuse-guard';
 import { THROTTLE_TEXT } from './abuse-policy';
 import {
+  GROUP_CONTINUE_IN_DM,
   GROUP_HELP_TEXT,
-  presentGroupChatResponse,
+  GROUP_PROFILE_SENT,
+  GROUP_PROFILE_UNAVAILABLE,
+  communityDmKeyboard,
+  dmPeerId,
+  formatDmUnavailableNotice,
+  formatGroupSocialEvent,
+  isGroupPeer,
+  isGroupProfileCommand,
+  isGroupStartCommand,
   type ChatContext,
+  type GroupSocialEvent,
 } from './group-chat';
 
 export interface CallbackHttpResult {
@@ -54,6 +65,8 @@ function defaultLog(entry: VkLogEntry): void {
 
 const SAFE_TEXT = 'Сейчас это сделать нельзя.';
 
+type Deliverable = Extract<ParsedGameplay, { kind: 'command' | 'tampered' | 'help' }>;
+
 export class VkAdapter {
   constructor(
     private readonly runtime: GameRuntime,
@@ -70,6 +83,21 @@ export class VkAdapter {
       game,
       vkKeyboard: toVkKeyboard(game.buttons),
     };
+  }
+
+  /**
+   * Future public events (level, rare loot, boss, PvP, clan) go through here.
+   * Today only `player_start` is auto-published from group START.
+   */
+  async sendGroupSocialEvent(event: GroupSocialEvent, eventId: string): Promise<void> {
+    const formatted = formatGroupSocialEvent(event);
+    if (!formatted.text.trim()) return;
+    const config = this.deps.config ?? loadVkConfig();
+    const keyboard =
+      event.kind === 'player_start' && config.groupId
+        ? communityDmKeyboard(config.groupId, '✉ Продолжить в личке')
+        : undefined;
+    await this.sendRaw(event.peerId, `${eventId}:social:${event.kind}`, formatted.text, keyboard);
   }
 
   async handleCallback(raw: unknown, ctx: CallbackContext = {}): Promise<CallbackHttpResult> {
@@ -167,7 +195,10 @@ export class VkAdapter {
           peerId: parsed.peerId,
           durationMs: Date.now() - started,
         });
-        await this.notifySafe(parsed.peerId, parsed.eventId, GROUP_HELP_TEXT);
+        const keyboard = config.groupId
+          ? communityDmKeyboard(config.groupId, '✉ Открыть Куболесье')
+          : undefined;
+        await this.notifySafe(parsed.peerId, parsed.eventId, GROUP_HELP_TEXT, keyboard);
         return { status: 200, body: 'ok' };
       }
 
@@ -179,7 +210,7 @@ export class VkAdapter {
           eventId: parsed.eventId,
           peerId: parsed.peerId,
         });
-        await this.notifySafe(parsed.peerId, parsed.eventId, SAFE_TEXT);
+        await this.deliverSafeReject(parsed);
         if (type === 'message_event' && parsed.callbackEventId) {
           await this.answerSafe(parsed.callbackEventId, Number(parsed.userId), parsed.peerId);
         }
@@ -199,7 +230,7 @@ export class VkAdapter {
             durationMs: Date.now() - started,
           });
           try {
-            await this.sendGame(parsed.peerId, parsed.eventId, replay, parsed.chat, parsed.userId);
+            await this.deliverGame(parsed, replay, config);
             if (type === 'message_event' && parsed.callbackEventId) {
               await this.deps.client?.answerEvent({
                 eventId: parsed.callbackEventId,
@@ -217,7 +248,7 @@ export class VkAdapter {
               method: 'messages.send',
               errorCode: error instanceof VkApiError ? error.code : 'send',
             });
-            return { status: 503, body: 'retry' };
+            if (parsed.chat === 'direct_message') return { status: 503, body: 'retry' };
           }
           return { status: 200, body: 'ok' };
         }
@@ -295,7 +326,7 @@ export class VkAdapter {
         }
         const playerId = game.state?.playerId;
         try {
-          await this.sendGame(parsed.peerId, parsed.eventId, game, parsed.chat, parsed.userId);
+          await this.deliverGame(parsed, game, config);
           if (type === 'message_event' && parsed.callbackEventId) {
             await this.deps.client?.answerEvent({
               eventId: parsed.callbackEventId,
@@ -314,7 +345,8 @@ export class VkAdapter {
             method: 'messages.send',
             errorCode: error instanceof VkApiError ? error.code : 'send',
           });
-          return { status: 503, body: 'retry' };
+          if (parsed.chat === 'direct_message') return { status: 503, body: 'retry' };
+          return { status: 200, body: 'ok' };
         }
         log({
           msg: 'vk.callback',
@@ -338,30 +370,114 @@ export class VkAdapter {
     }
   }
 
-  private async sendGame(
-    peerId: number,
-    eventId: string,
+  private async deliverGame(
+    parsed: Extract<ParsedGameplay, { kind: 'command' }>,
     game: GameResponse,
-    chat: ChatContext,
-    userId: string,
+    config: VkConfig,
   ): Promise<void> {
+    if (parsed.chat !== 'group_chat') {
+      await this.sendGame(parsed.peerId, parsed.eventId, game);
+      return;
+    }
+    const userDm = dmPeerId(parsed.userId);
+    if (isGroupStartCommand(parsed.command)) {
+      await this.sendGroupSocialEvent(
+        {
+          kind: 'player_start',
+          peerId: parsed.peerId,
+          userId: parsed.userId,
+        },
+        parsed.eventId,
+      );
+      const dmOk = await this.trySendDm(userDm, parsed.eventId, game);
+      if (!dmOk) {
+        const keyboard = config.groupId
+          ? communityDmKeyboard(config.groupId, '✉ Открыть Куболесье')
+          : undefined;
+        await this.notifySafe(
+          parsed.peerId,
+          `${parsed.eventId}:dm-fallback`,
+          formatDmUnavailableNotice(),
+          keyboard,
+        );
+      }
+      return;
+    }
+    if (isGroupProfileCommand(parsed.command)) {
+      const dmOk = await this.trySendDm(userDm, parsed.eventId, game);
+      await this.notifySafe(
+        parsed.peerId,
+        `${parsed.eventId}:group-profile`,
+        dmOk ? GROUP_PROFILE_SENT : GROUP_PROFILE_UNAVAILABLE,
+      );
+      return;
+    }
+    const dmOk = await this.trySendDm(userDm, parsed.eventId, game);
+    if (!dmOk) {
+      await this.notifySafe(parsed.peerId, `${parsed.eventId}:dm-fallback`, GROUP_CONTINUE_IN_DM);
+    }
+  }
+
+  private async deliverSafeReject(parsed: Deliverable): Promise<void> {
+    if (parsed.chat === 'group_chat') {
+      await this.trySendDm(dmPeerId(parsed.userId), `${parsed.eventId}:reject`, {
+        text: SAFE_TEXT,
+        buttons: [],
+      });
+      return;
+    }
+    await this.notifySafe(parsed.peerId, parsed.eventId, SAFE_TEXT);
+  }
+
+  private async sendGame(peerId: number, eventId: string, game: GameResponse): Promise<void> {
     const client = this.deps.client;
     if (!client) throw new VkApiError('messages.send', 'no_client');
-    const presented = chat === 'group_chat' ? presentGroupChatResponse(game, userId) : game;
     await client.sendMessage({
       peerId,
-      text: presented.text,
-      keyboard: toVkKeyboard(presented.buttons),
+      text: game.text,
+      keyboard: toVkKeyboard(game.buttons),
       randomId: randomIdFromEvent(eventId),
     });
   }
 
-  private async notifySafe(peerId: number, eventId: string, text: string): Promise<void> {
+  private async trySendDm(peerId: number, eventId: string, game: GameResponse): Promise<boolean> {
+    if (!Number.isFinite(peerId) || peerId <= 0 || isGroupPeer(peerId)) return false;
+    try {
+      await this.sendGame(peerId, eventId, game);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private async sendRaw(
+    peerId: number,
+    eventId: string,
+    text: string,
+    keyboard?: VkKeyboard,
+  ): Promise<void> {
+    const client = this.deps.client;
+    if (!client) throw new VkApiError('messages.send', 'no_client');
+    await client.sendMessage({
+      peerId,
+      text,
+      keyboard,
+      randomId: randomIdFromEvent(eventId),
+    });
+  }
+
+  private async notifySafe(
+    peerId: number,
+    eventId: string,
+    text: string,
+    keyboard?: VkKeyboard,
+  ): Promise<void> {
     try {
       if (!this.deps.client) return;
       await this.deps.client.sendMessage({
         peerId,
         text,
+        keyboard,
         randomId: randomIdFromEvent(`${eventId}:reject`),
       });
     } catch {
@@ -402,4 +518,4 @@ export class VkAdapter {
   }
 }
 
-export type { GameResponse };
+export type { GameResponse, GameCommand, ChatContext };

@@ -114,8 +114,7 @@ Image: `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT` из env, user `kubolesie`,
 3. Secret = `VK_CALLBACK_SECRET`
 4. Confirmation: VK пришлёт `{ type: "confirmation", group_id }` **без** `secret`. Проверяется `group_id`. Ответ — plain text `VK_CONFIRMATION_CODE`. Secret — для `message_new` / `message_event` после подтверждения. Confirmation **не** режется узким rate limit.
 5. Flood: ACK `200 ok` + сообщение игроку «Слишком быстро 🙂 Подожди пару секунд.» VK **не** получает 429.
-6. Проверка одним личным аккаунтом: «начать». В беседе — «Куболесье, начать» (сообщество должно быть добавлено в чат в VK UI).
-7. В беседе обычный текст игнорируется; identity игрока = `from_id`, ответ = `peer_id` чата.
+6. Проверка одним личным аккаунтом: «начать». В беседе — «Куболесье, начать»: в чат уходит короткое приглашение, игровой экран — в личку.
 
 Подробности: [vk-callback-setup.md](vk-callback-setup.md), [rate-limiting.md](rate-limiting.md).
 

@@ -7,7 +7,7 @@ import {
   VkApiClient,
   VkApiError,
 } from './client';
-import { toVkKeyboard } from './commands';
+import { callbackPayload, toVkKeyboard } from './commands';
 import { DEFAULT_VK_API_VERSION, VK_BUTTON_PAYLOAD_MAX, type VkConfig } from './config';
 
 const CONFIG: VkConfig = {
@@ -107,8 +107,9 @@ describe('random_id and keyboard', () => {
     expect(keyboard.buttons[0]![0]!.action.label).toContain('Назад');
     for (const row of keyboard.buttons) {
       for (const button of row) {
-        expect(Buffer.byteLength(button.action.payload, 'utf8')).toBeLessThanOrEqual(VK_BUTTON_PAYLOAD_MAX);
-        expect(button.action.payload).not.toMatch(/player_|cuid|sql/i);
+        const payload = callbackPayload(button);
+        expect(Buffer.byteLength(payload, 'utf8')).toBeLessThanOrEqual(VK_BUTTON_PAYLOAD_MAX);
+        expect(payload).not.toMatch(/player_|cuid|sql/i);
       }
     }
   });
