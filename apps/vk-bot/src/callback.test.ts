@@ -95,14 +95,45 @@ function boot() {
 }
 
 describe('vk confirmation and auth', () => {
-  it('returns the confirmation code for a matching group', async () => {
+  it('returns the confirmation code for a matching group without secret', async () => {
     const { adapter } = boot();
     const result = await adapter.handleCallback({
       type: 'confirmation',
       group_id: 111,
-      secret: 'test-secret',
     });
     expect(result).toEqual({ status: 200, body: 'confirm-code' });
+  });
+
+  it('confirms a production callback URL from the real VK payload without secret', async () => {
+    const runtime = new GameRuntime(new MemoryGameStore());
+    const handle = vi.spyOn(runtime, 'handle');
+    const adapter = new VkAdapter(runtime, {
+      config: { ...CONFIG, production: true, groupId: 235505485 },
+      client: new RecordingVkApi(),
+      log: () => undefined,
+    });
+    const result = await adapter.handleCallback({ type: 'confirmation', group_id: 235505485 });
+    expect(result).toEqual({ status: 200, body: 'confirm-code' });
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  it('rejects confirmation with a wrong group_id', async () => {
+    const { adapter, runtime } = boot();
+    const handle = vi.spyOn(runtime, 'handle');
+    const result = await adapter.handleCallback({ type: 'confirmation', group_id: 999 });
+    expect(result.status).toBe(403);
+    expect(result.body).toBe('forbidden');
+    expect(handle).not.toHaveBeenCalled();
+  });
+
+  it('ignores a present secret on confirmation', async () => {
+    const { adapter } = boot();
+    const withSecret = await adapter.handleCallback({
+      type: 'confirmation',
+      group_id: 111,
+      secret: 'nope',
+    });
+    expect(withSecret).toEqual({ status: 200, body: 'confirm-code' });
   });
 
   it('fails closed when confirmation code is missing', async () => {
@@ -128,7 +159,7 @@ describe('vk confirmation and auth', () => {
     expect(client.sent).toHaveLength(0);
   });
 
-  it('rejects a missing secret without calling core', async () => {
+  it('rejects a missing secret on message_new without calling core', async () => {
     const { adapter, runtime } = boot();
     const handle = vi.spyOn(runtime, 'handle');
     const body = messageNew({ text: 'начать' });
@@ -136,6 +167,26 @@ describe('vk confirmation and auth', () => {
     const result = await adapter.handleCallback(body);
     expect(result.status).toBe(403);
     expect(handle).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing secret on message_event without calling core', async () => {
+    const { adapter, runtime, client } = boot();
+    const handle = vi.spyOn(runtime, 'handle');
+    const body = messageEvent({ payload: { action: 'START_GAME' } });
+    delete body.secret;
+    const result = await adapter.handleCallback(body);
+    expect(result.status).toBe(403);
+    expect(handle).not.toHaveBeenCalled();
+    expect(client.sent).toHaveLength(0);
+  });
+
+  it('accepts a gameplay callback with the correct secret', async () => {
+    const { adapter, runtime, client } = boot();
+    const handle = vi.spyOn(runtime, 'handle');
+    const result = await adapter.handleCallback(messageNew({ text: 'начать', eventId: 'auth-ok' }));
+    expect(result).toEqual({ status: 200, body: 'ok' });
+    expect(handle).toHaveBeenCalled();
+    expect(client.sent).toHaveLength(1);
   });
 
   it('rejects a wrong group_id without calling core', async () => {
@@ -435,22 +486,25 @@ describe('vk logging and config', () => {
     expect(secretsEqual('test-secret', 'test-secret')).toBe(true);
     expect(secretsEqual('test-secret', 'test-secr3t')).toBe(false);
     expect(verifyCallbackAuth(messageNew({ text: 'x' }), CONFIG)).toBe('ok');
-    expect(verifyConfirmation({ type: 'confirmation', group_id: 111, secret: 'test-secret' }, CONFIG)).toBe(
+    expect(verifyConfirmation({ type: 'confirmation', group_id: 111 }, CONFIG)).toBe('ok');
+    expect(verifyConfirmation({ type: 'confirmation', group_id: 111, secret: 'nope' }, CONFIG)).toBe(
       'ok',
     );
+    expect(verifyConfirmation({ type: 'confirmation', group_id: 999 }, CONFIG)).toBe('group');
+    const missingSecret = messageNew({ text: 'x' });
+    delete missingSecret.secret;
+    expect(verifyCallbackAuth(missingSecret, CONFIG)).toBe('secret');
+    const missingEventSecret = messageEvent({});
+    delete missingEventSecret.secret;
+    expect(verifyCallbackAuth(missingEventSecret, CONFIG)).toBe('secret');
   });
 
-  it('requires the callback secret on confirmation when a secret is configured', async () => {
+  it('does not require secret on confirmation when VK_CALLBACK_SECRET is configured', async () => {
+    expect(CONFIG.callbackSecret).toBe('test-secret');
     const { adapter, runtime } = boot();
     const handle = vi.spyOn(runtime, 'handle');
-    const missing = await adapter.handleCallback({ type: 'confirmation', group_id: 111 });
-    const wrong = await adapter.handleCallback({
-      type: 'confirmation',
-      group_id: 111,
-      secret: 'nope',
-    });
-    expect(missing.status).toBe(403);
-    expect(wrong.status).toBe(403);
+    const result = await adapter.handleCallback({ type: 'confirmation', group_id: 111 });
+    expect(result).toEqual({ status: 200, body: 'confirm-code' });
     expect(handle).not.toHaveBeenCalled();
   });
 });

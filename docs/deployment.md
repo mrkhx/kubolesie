@@ -112,7 +112,7 @@ Image: `NODE_ENV=production`, `HOST=0.0.0.0`, `PORT` из env, user `kubolesie`,
 1. URL: `https://<domain>/vk/callback`
 2. События: `message_new`, `message_event`
 3. Secret = `VK_CALLBACK_SECRET`
-4. Confirmation: VK пришлёт `{ type: "confirmation", group_id, secret }`. Ответ — plain text `VK_CONFIRMATION_CODE`. Confirmation **не** режется узким rate limit.
+4. Confirmation: VK пришлёт `{ type: "confirmation", group_id }` **без** `secret`. Проверяется `group_id`. Ответ — plain text `VK_CONFIRMATION_CODE`. Secret — для `message_new` / `message_event` после подтверждения. Confirmation **не** режется узким rate limit.
 5. Flood: ACK `200 ok` + сообщение игроку «Слишком быстро 🙂 Подожди пару секунд.» VK **не** получает 429.
 6. Проверка одним личным аккаунтом: «начать».
 

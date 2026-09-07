@@ -320,7 +320,6 @@ describe('callback anti-abuse', () => {
       const result = await adapter.handleCallback({
         type: 'confirmation',
         group_id: 111,
-        secret: 'test-secret',
       });
       expect(result).toEqual({ status: 200, body: 'confirm-code' });
     }

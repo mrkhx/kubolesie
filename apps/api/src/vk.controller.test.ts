@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { requestIp, VkController } from './vk.controller';
 import { VkAdapter } from '@kubolesie/vk-bot';
 import type { CallbackHttpResult } from '@kubolesie/vk-bot';
+import { GameRuntime, MemoryGameStore } from '@kubolesie/game-core';
 
 function mockRes() {
   const res = {
@@ -81,12 +82,48 @@ describe('vk http callback', () => {
       const response = await fetch(`http://127.0.0.1:${port}/vk/callback`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ type: 'confirmation', group_id: 111, secret: 'test-secret' }),
+        body: JSON.stringify({ type: 'confirmation', group_id: 111 }),
       });
       const text = await response.text();
       expect(response.status).toBe(200);
       expect(text).toBe('confirm-code');
       expect(handleCallback).toHaveBeenCalledOnce();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('confirms the real VK payload without secret over HTTP', async () => {
+    const adapter = new VkAdapter(new GameRuntime(new MemoryGameStore()), {
+      config: {
+        groupId: 235505485,
+        groupToken: 'test-token',
+        callbackSecret: 'test-secret',
+        confirmationCode: 'confirm-code',
+        apiVersion: '5.199',
+        production: true,
+      },
+      log: () => undefined,
+    });
+    @Module({
+      controllers: [VkController],
+      providers: [{ provide: VkAdapter, useValue: adapter }],
+    })
+    class VkRealConfirmModule {}
+    const app = await NestFactory.create(VkRealConfirmModule, { logger: false });
+    await app.listen(0, '127.0.0.1');
+    try {
+      const address = app.getHttpServer().address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      const response = await fetch(`http://127.0.0.1:${port}/vk/callback`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ type: 'confirmation', group_id: 235505485 }),
+      });
+      const text = await response.text();
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain('text/plain');
+      expect(text).toBe('confirm-code');
     } finally {
       await app.close();
     }

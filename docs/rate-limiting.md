@@ -12,7 +12,7 @@ Game Core не знает про Redis. Лимиты живут в adapter/API (
 ## Порядок на callback
 
 1. JSON 32 КБ / malformed → ACK `ok` (дешёвый отказ).
-2. `confirmation` — **не** режется узким лимитом. Secret обязателен, если `VK_CALLBACK_SECRET` задан.
+2. `confirmation` — **не** режется узким лимитом. Secret **не** требуется (реальный VK его не шлёт). Проверяется `group_id`.
 3. Secret + `group_id`. Невалидный секрет **не** пишет player keys.
 4. Parse. Tampered → безопасный текст, без Game Core.
 5. Coarse IP (emergency, высокий порог — VK шарит egress).

@@ -52,19 +52,20 @@ JSON `GameResponse` в HTTP-теле callback **не** возвращается.
 ## 4. Confirmation
 
 1. Canonical URL: `https://<host>/vk/callback` (alias `/v1/vk/callback`).
-2. VK пришлёт `{ "type": "confirmation", "group_id": ..., "secret": "..." }`.
-3. Если в сообществе задан секретный ключ (обязателен в production), поле `secret` **проверяется до** возврата кода. Запрос только с `group_id` confirmation code не получит.
-4. Сервер вернёт `VK_CONFIRMATION_CODE` (plain text).
-5. Код меняется при пересоздании сервера — обнови env.
+2. Реальный VK при подтверждении шлёт `{ "type": "confirmation", "group_id": ... }` **без** поля `secret`.
+3. Сервер проверяет `group_id == VK_GROUP_ID`. Чужая группа → HTTP 403. Secret на confirmation **не** требуется и **не** проверяется.
+4. Если `VK_CONFIRMATION_CODE` не задан → non-2xx (503), код не выдаётся.
+5. Если `group_id` совпал и код задан → HTTP 200 `text/plain` и **ровно** `VK_CONFIRMATION_CODE`.
+6. Код меняется при пересоздании сервера — обнови env.
 
-Фактическое поведение VK Callback API: при настроенном секретном ключе **все** уведомления, включая `confirmation`, содержат `secret`. Без ключа в кабинете VK historically шлёт только `{ type, group_id }`. Production всегда требует секрет — confirmation без него → HTTP 403.
+Secret проверяется для обычных событий (`message_new`, `message_event`) **после** подтверждения URL. В production `VK_CALLBACK_SECRET` по-прежнему обязателен при старте процесса.
 
 ## 5. Secret и group_id
 
-- В настройках Callback задай секретный ключ = `VK_CALLBACK_SECRET`.
+- Confirmation: только `group_id`. Поле `secret` может отсутствовать — так шлёт реальный VK.
+- `message_new` / `message_event`: секретный ключ = `VK_CALLBACK_SECRET`. Нет secret / неверный secret → HTTP 403, Game Core не вызывается.
 - `group_id` в payload должен совпасть с `VK_GROUP_ID`.
-- Неверный secret / чужая группа → HTTP 403, Game Core не вызывается.
-- В production нет fallback «принять без секрета».
+- В production нет fallback «принять gameplay без секрета». `VK_CALLBACK_SECRET` обязателен при старте.
 
 ## 6. Event id (идемпотентность)
 
@@ -85,10 +86,10 @@ Mock-консоль (`GET /`, `POST /v1/mock/event`) работает отдел
 Callback без реальной VK сети:
 
 ```bash
-# confirmation (secret required when VK_CALLBACK_SECRET is set)
+# confirmation: реальный VK не шлёт secret
 curl -s localhost:3000/vk/callback \
   -H 'content-type: application/json' \
-  -d '{"type":"confirmation","group_id":111,"secret":"<VK_CALLBACK_SECRET>"}'
+  -d '{"type":"confirmation","group_id":111}'
 ```
 
 Для `message_new` нужны заполненные env. Фикстуры в тестах используют только fake-значения (`test-token`, `test-secret`).

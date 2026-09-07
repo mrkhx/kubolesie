@@ -46,14 +46,8 @@ export function verifyConfirmation(payload: Record<string, unknown>, config: VkC
   if (!config.confirmationCode || config.groupId == null) return 'misconfigured';
   const gid = Number(payload.group_id);
   if (!Number.isFinite(gid) || gid !== config.groupId) return 'group';
-  // VK sends `secret` on confirmation when the community Callback secret is set.
-  // If we have a secret configured (always in production), require it — do not
-  // hand out VK_CONFIRMATION_CODE to anyone who only knows group_id.
-  if (config.callbackSecret) {
-    if (typeof payload.secret !== 'string' || !secretsEqual(payload.secret, config.callbackSecret)) {
-      return 'secret';
-    }
-  }
+  // Real VK confirmation is `{ type: "confirmation", group_id }` with no `secret`.
+  // Gameplay events (`message_new`, `message_event`) still require VK_CALLBACK_SECRET.
   return 'ok';
 }
 
