@@ -1,4 +1,5 @@
 import { BALANCE_VERSION, PROTOTYPE_VERSION } from '@kubolesie/shared';
+import { isoWeekKey, utcDayKey } from '@kubolesie/content';
 import { pingPrisma, type StoreBundle } from '@kubolesie/database';
 import type { GameStore } from '@kubolesie/game-core';
 import { describeVkConfig, isVkCallbackReady } from '@kubolesie/vk-bot';
@@ -130,6 +131,9 @@ export class AnalyticsService {
       pvpBattlesToday: pvpToday,
       week1Completed: week1[0]?.count ?? 0,
       week2Completed: week2[0]?.count ?? 0,
+      totalClans: await this.store.countClans(),
+      clanMembers: await this.store.countClanMembers(),
+      activeClans7d: await this.store.countActiveClans(d7),
     };
   }
 
@@ -170,6 +174,8 @@ export class AnalyticsService {
       distributionByLevel: levels,
       week1Complete: week1.find((row) => row.flag === 'week_1_complete')?.count ?? 0,
       week2Complete: week1.find((row) => row.flag === 'week_2_complete')?.count ?? 0,
+      playersInClan: await this.store.countClanMembers(),
+      clanParticipationRate: pct(await this.store.countClanMembers(), total),
     };
   }
 
@@ -200,6 +206,61 @@ export class AnalyticsService {
       petAcquired: step(pet),
       wenzelWins: step(flagMap.wenzel_defeated ?? 0),
       mistWardenWins: step(flagMap.mist_warden_defeated ?? 0),
+      clansCreatedToday: await this.store.countClans({ createdSince: utcDayStart(new Date()) }),
+      clansCreated7d: await this.store.countClans({ createdSince: ago(new Date(), 7 * DAY_MS) }),
+    };
+  }
+
+  async clans(now = new Date()) {
+    const today = utcDayStart(now);
+    const d7 = ago(now, 7 * DAY_MS);
+    const dayKey = `d:${utcDayKey(now)}`;
+    const weekKey = isoWeekKey(now);
+    const dayKeys = [];
+    for (let i = 0; i < 7; i += 1) {
+      dayKeys.push(`d:${utcDayKey(new Date(now.getTime() - i * DAY_MS))}`);
+    }
+    const [
+      totalClans,
+      activeClans7d,
+      memberStats,
+      contribToday,
+      taskToday,
+      task7d,
+      top,
+      createdToday,
+      created7d,
+    ] = await Promise.all([
+      this.store.countClans(),
+      this.store.countActiveClans(d7),
+      this.store.clanMemberStats(),
+      this.store.sumContribution(dayKey),
+      this.store.countClanTaskCompletions(today),
+      this.store.countClanTaskCompletions(d7),
+      this.store.listTopClansWeekly(weekKey, 10),
+      this.store.countClans({ createdSince: today }),
+      this.store.countClans({ createdSince: d7 }),
+    ]);
+    let totalContribution7d = 0;
+    for (const key of dayKeys) totalContribution7d += await this.store.sumContribution(key);
+    return {
+      totalClans,
+      activeClans7d,
+      averageMembers: memberStats.averageMembers,
+      medianMembers: memberStats.medianMembers,
+      totalContributionToday: contribToday,
+      totalContribution7d,
+      clanTaskCompletionsToday: taskToday,
+      clanTaskCompletions7d: task7d,
+      clansCreatedToday: createdToday,
+      clansCreated7d: created7d,
+      topWeekly: top.map((row) => ({
+        name: row.name,
+        tag: row.tag,
+        level: row.level,
+        weeklyScore: row.weeklyScore,
+        members: row.members,
+      })),
     };
   }
 

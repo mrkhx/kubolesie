@@ -189,6 +189,7 @@ export interface ClanRecord {
   level: number;
   xp: number;
   createdAt: Date;
+  disbandedAt: Date | null;
 }
 
 export interface ClanMemberRecord {
@@ -222,6 +223,38 @@ export interface ClanContributionRecord {
   playerId: string;
   periodKey: string;
   score: number;
+}
+
+export interface ClanTaskProgressRecord {
+  clanId: string;
+  periodKey: string;
+  taskId: string;
+  progress: number;
+  target: number;
+  completedAt: Date | null;
+  completedNow?: boolean;
+}
+
+export interface ClanRosterRow {
+  member: ClanMemberRecord;
+  name: string;
+  level: number;
+  lastActiveAt: Date;
+  weeklyContribution: number;
+}
+
+export interface ClanMemberStats {
+  averageMembers: number;
+  medianMembers: number | null;
+}
+
+export interface ClanAnalyticsTopRow {
+  id: string;
+  name: string;
+  tag: string;
+  level: number;
+  weeklyScore: number;
+  members: number;
 }
 
 export interface EntitlementRecord {
@@ -364,6 +397,7 @@ export interface GameStore {
     tag: string;
     description: string;
     leaderPlayerId: string;
+    cost?: number;
   }): Promise<ClanRecord>;
   getClan(clanId: string): Promise<ClanRecord | null>;
   findClanByNameKey(nameKey: string): Promise<ClanRecord | null>;
@@ -372,11 +406,37 @@ export interface GameStore {
   listClans(query: string, limit: number, offset: number): Promise<ClanRecord[]>;
   addClanXp(clanId: string, amount: number): Promise<ClanRecord>;
   listClanMembers(clanId: string): Promise<ClanMemberRecord[]>;
-  addClanMember(input: { clanId: string; playerId: string; role: ClanRole }): Promise<ClanMemberRecord>;
+  addClanMember(input: {
+    clanId: string;
+    playerId: string;
+    role: ClanRole;
+    maxMembers?: number;
+  }): Promise<ClanMemberRecord>;
   removeClanMember(clanId: string, playerId: string): Promise<void>;
   setClanMemberRole(clanId: string, playerId: string, role: ClanRole): Promise<void>;
   setClanLeader(clanId: string, playerId: string): Promise<void>;
   deleteClan(clanId: string): Promise<void>;
+  disbandClan(clanId: string): Promise<void>;
+  setClanDescription(clanId: string, description: string): Promise<ClanRecord>;
+  listClanRoster(clanId: string, periodKey: string): Promise<ClanRosterRow[]>;
+  incrementClanTask(
+    clanId: string,
+    periodKey: string,
+    taskId: string,
+    target: number,
+    amount: number,
+  ): Promise<ClanTaskProgressRecord>;
+  getClanTask(clanId: string, periodKey: string, taskId: string): Promise<ClanTaskProgressRecord | null>;
+  listClanTasks(clanId: string, periodKeys: string[]): Promise<ClanTaskProgressRecord[]>;
+  donateToClan(input: {
+    clanId: string;
+    playerId: string;
+    resource: ResourceType;
+    amount: number;
+    score: number;
+    weekKey: string;
+    dayKey: string;
+  }): Promise<{ remaining: number; contribution: number; clan: ClanRecord }>;
 
   createApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord>;
   getApplication(id: string): Promise<ClanApplicationRecord | null>;
@@ -391,6 +451,13 @@ export interface GameStore {
   clanSeasonContribution(clanId: string, periodKey: string): Promise<number>;
   listClanLeaderboard(periodKey: string, limit: number, offset: number): Promise<LeaderboardEntry[]>;
   getClanLeaderboardRank(clanId: string, periodKey: string): Promise<number>;
+  countClans(filter?: { createdSince?: Date; createdUntil?: Date; excludeDisbanded?: boolean }): Promise<number>;
+  countClanMembers(): Promise<number>;
+  countActiveClans(since: Date): Promise<number>;
+  clanMemberStats(): Promise<ClanMemberStats>;
+  sumContribution(periodKey: string): Promise<number>;
+  countClanTaskCompletions(since?: Date, until?: Date): Promise<number>;
+  listTopClansWeekly(periodKey: string, limit: number): Promise<ClanAnalyticsTopRow[]>;
 
   tryGrantEntitlement(
     playerId: string,

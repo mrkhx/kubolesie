@@ -54,7 +54,7 @@ export const MOCK_CONSOLE_HTML = `<!DOCTYPE html>
       <div class="avatar">К</div>
       <div>
         <div>Куболесье</div>
-        <div class="sub">Mock VK Adapter · Prototype 0.0.5 · чат-RPG, не Mini App</div>
+        <div class="sub">Mock VK Adapter · Prototype 0.0.6 · чат-RPG, не Mini App</div>
       </div>
     </header>
     <div class="log" id="log"></div>
@@ -144,7 +144,7 @@ export const MOCK_CONSOLE_HTML = `<!DOCTYPE html>
     document.querySelectorAll('[data-cmd]').forEach((el) => {
       el.addEventListener('click', () => send(el.dataset.cmd));
     });
-    add('VK — только интерфейс. Игровая логика живёт в Game Core.\\nНажми START_GAME или напиши /start.\\nPrototype 0.0.5: PvP 1.0 и admin analytics.');
+    add('VK — только интерфейс. Игровая логика живёт в Game Core.\\nНажми START_GAME или напиши /start.\\nPrototype 0.0.6: Clans 1.0.');
   </script>
 </body>
 </html>

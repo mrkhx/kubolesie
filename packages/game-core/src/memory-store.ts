@@ -38,13 +38,16 @@ import type {
   AnalyticsEnemyRow,
   AnalyticsFlagCount,
   AnalyticsLevelBucket,
+  ClanAnalyticsTopRow,
+  ClanMemberStats,
+  ClanRosterRow,
+  ClanTaskProgressRecord,
 } from './store';
 import { EMPTY_STATISTICS } from './store';
 import {
   applyPvpRating,
   clampLimit,
   clampOffset,
-  clanLeaderboardScore,
   clanLevelForXp,
   PVP_RATING,
   QUEST_TEMPLATES,
@@ -80,6 +83,7 @@ interface MemoryState {
   clanMembers: ClanMemberRecord[];
   clanApplications: ClanApplicationRecord[];
   contributions: ClanContributionRecord[];
+  clanTasks: ClanTaskProgressRecord[];
   entitlements: EntitlementRecord[];
   cosmetics: PlayerCosmeticRecord[];
   achievements: PlayerAchievementRecord[];
@@ -128,6 +132,11 @@ export class MemoryGameStore implements GameStore {
       parsed.clanMembers = parsed.clanMembers ?? [];
       parsed.clanApplications = parsed.clanApplications ?? [];
       parsed.contributions = parsed.contributions ?? [];
+      parsed.clanTasks = parsed.clanTasks ?? [];
+      parsed.clans = parsed.clans.map((clan) => ({
+        ...clan,
+        disbandedAt: clan.disbandedAt ? new Date(clan.disbandedAt) : null,
+      }));
       parsed.entitlements = parsed.entitlements ?? [];
       parsed.cosmetics = parsed.cosmetics ?? [];
       parsed.achievements = parsed.achievements ?? [];
@@ -701,6 +710,7 @@ export class MemoryGameStore implements GameStore {
     tag: string;
     description: string;
     leaderPlayerId: string;
+    cost?: number;
   }): Promise<ClanRecord> {
     return this.withClanLock(async () => {
       if (this.state.clanMembers.some((row) => row.playerId === input.leaderPlayerId)) {
@@ -710,6 +720,21 @@ export class MemoryGameStore implements GameStore {
       const tagKey = input.tag.toLowerCase();
       if (this.state.clans.some((clan) => clan.nameKey === nameKey)) throw new Error('name_taken');
       if (this.state.clans.some((clan) => clan.tagKey === tagKey)) throw new Error('tag_taken');
+      const cost = Number.isFinite(input.cost) ? Math.max(0, Math.floor(input.cost ?? 0)) : 0;
+      const leader = this.state.players.find((row) => row.id === input.leaderPlayerId);
+      if (!leader) throw new Error('player_missing');
+      if (leader.coins < cost) throw new Error('insufficient_coins');
+      if (cost) {
+        this.state.currencyTx.push({
+          playerId: leader.id,
+          currency: 'COINS',
+          amount: -cost,
+          balanceBefore: leader.coins,
+          balanceAfter: leader.coins - cost,
+          reason: 'clan_create',
+        });
+        leader.coins -= cost;
+      }
       const clan: ClanRecord = {
         id: randomUUID(),
         name: input.name,
@@ -721,6 +746,7 @@ export class MemoryGameStore implements GameStore {
         level: 1,
         xp: 0,
         createdAt: new Date(),
+        disbandedAt: null,
       };
       this.state.clans.push(clan);
       this.state.clanMembers.push({
@@ -751,18 +777,17 @@ export class MemoryGameStore implements GameStore {
     const member = this.state.clanMembers.find((row) => row.playerId === playerId);
     if (!member) return null;
     const clan = this.state.clans.find((row) => row.id === member.clanId);
-    if (!clan) return null;
+    if (!clan || clan.disbandedAt) return null;
     return { clan, member };
   }
 
   async listClans(query: string, limit: number, offset: number): Promise<ClanRecord[]> {
     const needle = query.trim().toLowerCase().slice(0, 24);
+    const active = this.state.clans.filter((clan) => !clan.disbandedAt);
     const rows = needle
-      ? this.state.clans.filter(
-          (clan) => clan.nameKey.includes(needle) || clan.tagKey.includes(needle),
-        )
-      : [...this.state.clans];
-    rows.sort((a, b) => b.xp - a.xp);
+      ? active.filter((clan) => clan.nameKey.includes(needle) || clan.tagKey.includes(needle))
+      : [...active];
+    rows.sort((a, b) => b.xp - a.xp || a.createdAt.getTime() - b.createdAt.getTime());
     const take = clampLimit(limit, 5);
     const skip = clampOffset(offset);
     return rows.slice(skip, skip + take);
@@ -786,10 +811,15 @@ export class MemoryGameStore implements GameStore {
     clanId: string;
     playerId: string;
     role: ClanRole;
+    maxMembers?: number;
   }): Promise<ClanMemberRecord> {
     return this.withClanLock(async () => {
       if (this.state.clanMembers.some((row) => row.playerId === input.playerId)) {
         throw new Error('already_in_clan');
+      }
+      if (input.maxMembers) {
+        const count = this.state.clanMembers.filter((row) => row.clanId === input.clanId).length;
+        if (count >= input.maxMembers) throw new Error('clan_full');
       }
       const member: ClanMemberRecord = {
         id: randomUUID(),
@@ -837,11 +867,18 @@ export class MemoryGameStore implements GameStore {
   }
 
   async deleteClan(clanId: string): Promise<void> {
+    return this.disbandClan(clanId);
+  }
+
+  async disbandClan(clanId: string): Promise<void> {
     return this.withClanLock(async () => {
-      this.state.clans = this.state.clans.filter((row) => row.id !== clanId);
+      const clan = this.state.clans.find((row) => row.id === clanId);
+      if (!clan) return;
+      clan.disbandedAt = new Date();
       this.state.clanMembers = this.state.clanMembers.filter((row) => row.clanId !== clanId);
-      this.state.clanApplications = this.state.clanApplications.filter((row) => row.clanId !== clanId);
-      this.state.contributions = this.state.contributions.filter((row) => row.clanId !== clanId);
+      for (const row of this.state.clanApplications) {
+        if (row.clanId === clanId && row.status === 'PENDING') row.status = 'CANCELLED';
+      }
       await this.persist();
     });
   }
@@ -849,7 +886,7 @@ export class MemoryGameStore implements GameStore {
   async createApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord> {
     return this.withClanLock(async () => {
       const existing = this.state.clanApplications.find(
-        (row) => row.clanId === clanId && row.playerId === playerId && row.status === 'PENDING',
+        (row) => row.playerId === playerId && row.status === 'PENDING',
       );
       if (existing) throw new Error('duplicate_application');
       const record: ClanApplicationRecord = {
@@ -1085,18 +1122,183 @@ export class MemoryGameStore implements GameStore {
       .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
   }
 
-  private async clanBoardRows(periodKey: string): Promise<LeaderboardEntry[]> {
-    const rows: LeaderboardEntry[] = [];
-    for (const clan of this.state.clans) {
-      const season = await this.clanSeasonContribution(clan.id, periodKey);
+  async setClanDescription(clanId: string, description: string): Promise<ClanRecord> {
+    const clan = this.state.clans.find((row) => row.id === clanId);
+    if (!clan || clan.disbandedAt) throw new Error('clan_missing');
+    clan.description = description;
+    await this.persist();
+    return clan;
+  }
+
+  async listClanRoster(clanId: string, periodKey: string): Promise<ClanRosterRow[]> {
+    const members = this.state.clanMembers.filter((row) => row.clanId === clanId);
+    const rows: ClanRosterRow[] = [];
+    for (const member of members) {
+      const player = this.state.players.find((row) => row.id === member.playerId);
+      const weekly = await this.getContribution(clanId, member.playerId, periodKey);
       rows.push({
-        id: clan.id,
-        name: `${clan.name} [${clan.tag}]`,
-        value: clanLeaderboardScore(clan.xp, season),
+        member,
+        name: player?.name ?? 'Путник',
+        level: player?.level ?? 1,
+        lastActiveAt: player?.lastActiveAt ?? player?.updatedAt ?? new Date(0),
+        weeklyContribution: weekly,
       });
     }
-    rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+    rows.sort((a, b) => b.weeklyContribution - a.weeklyContribution || a.name.localeCompare(b.name, 'ru'));
     return rows;
+  }
+
+  async incrementClanTask(
+    clanId: string,
+    periodKey: string,
+    taskId: string,
+    target: number,
+    amount: number,
+  ): Promise<ClanTaskProgressRecord> {
+    const add = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
+    let row = this.state.clanTasks.find(
+      (entry) => entry.clanId === clanId && entry.periodKey === periodKey && entry.taskId === taskId,
+    );
+    if (!row) {
+      row = { clanId, periodKey, taskId, progress: 0, target, completedAt: null };
+      this.state.clanTasks.push(row);
+    }
+    row.target = target;
+    let completedNow = false;
+    if (!row.completedAt) {
+      row.progress += add;
+      if (row.progress >= target) {
+        row.completedAt = new Date();
+        completedNow = true;
+      }
+    }
+    await this.persist();
+    return { ...row, completedNow };
+  }
+
+  async getClanTask(clanId: string, periodKey: string, taskId: string): Promise<ClanTaskProgressRecord | null> {
+    return (
+      this.state.clanTasks.find(
+        (row) => row.clanId === clanId && row.periodKey === periodKey && row.taskId === taskId,
+      ) ?? null
+    );
+  }
+
+  async listClanTasks(clanId: string, periodKeys: string[]): Promise<ClanTaskProgressRecord[]> {
+    const wanted = new Set(periodKeys);
+    return this.state.clanTasks.filter((row) => row.clanId === clanId && wanted.has(row.periodKey));
+  }
+
+  async donateToClan(input: {
+    clanId: string;
+    playerId: string;
+    resource: ResourceType;
+    amount: number;
+    score: number;
+    weekKey: string;
+    dayKey: string;
+  }): Promise<{ remaining: number; contribution: number; clan: ClanRecord }> {
+    return this.withClanLock(async () => {
+      const remaining = await this.addResource(input.playerId, input.resource, -input.amount);
+      const contribution = await this.addContribution(input.clanId, input.playerId, input.weekKey, input.score);
+      await this.addContribution(input.clanId, input.playerId, `d:${input.dayKey}`, input.score);
+      const clan = await this.addClanXp(input.clanId, input.score);
+      return { remaining, contribution, clan };
+    });
+  }
+
+  async countClans(filter?: { createdSince?: Date; createdUntil?: Date; excludeDisbanded?: boolean }): Promise<number> {
+    return this.state.clans.filter((clan) => {
+      if (filter?.excludeDisbanded !== false && clan.disbandedAt) return false;
+      if (filter?.createdSince && clan.createdAt < filter.createdSince) return false;
+      if (filter?.createdUntil && clan.createdAt >= filter.createdUntil) return false;
+      return true;
+    }).length;
+  }
+
+  async countClanMembers(): Promise<number> {
+    return this.state.clanMembers.length;
+  }
+
+  async countActiveClans(since: Date): Promise<number> {
+    const ids = new Set<string>();
+    for (const member of this.state.clanMembers) {
+      const clan = this.state.clans.find((row) => row.id === member.clanId);
+      if (!clan || clan.disbandedAt) continue;
+      const player = this.state.players.find((row) => row.id === member.playerId);
+      if (player && (player.lastActiveAt ?? player.updatedAt) >= since) ids.add(member.clanId);
+    }
+    return ids.size;
+  }
+
+  async clanMemberStats(): Promise<ClanMemberStats> {
+    const counts = new Map<string, number>();
+    for (const clan of this.state.clans) {
+      if (!clan.disbandedAt) counts.set(clan.id, 0);
+    }
+    for (const member of this.state.clanMembers) {
+      if (counts.has(member.clanId)) counts.set(member.clanId, (counts.get(member.clanId) ?? 0) + 1);
+    }
+    const values = [...counts.values()].sort((a, b) => a - b);
+    if (!values.length) return { averageMembers: 0, medianMembers: null };
+    const averageMembers = Math.round((values.reduce((sum, n) => sum + n, 0) / values.length) * 10) / 10;
+    const mid = Math.floor(values.length / 2);
+    const medianMembers = values.length % 2 ? values[mid]! : (values[mid - 1]! + values[mid]!) / 2;
+    return { averageMembers, medianMembers };
+  }
+
+  async sumContribution(periodKey: string): Promise<number> {
+    return this.state.contributions
+      .filter((row) => row.periodKey === periodKey)
+      .reduce((sum, row) => sum + row.score, 0);
+  }
+
+  async countClanTaskCompletions(since?: Date, until?: Date): Promise<number> {
+    return this.state.clanTasks.filter((row) => {
+      if (!row.completedAt) return false;
+      if (since && row.completedAt < since) return false;
+      if (until && row.completedAt >= until) return false;
+      return true;
+    }).length;
+  }
+
+  async listTopClansWeekly(periodKey: string, limit: number): Promise<ClanAnalyticsTopRow[]> {
+    const rows = await this.clanBoardRows(periodKey);
+    return rows.slice(0, clampLimit(limit)).map((row) => {
+      const clan = this.state.clans.find((entry) => entry.id === row.id)!;
+      const members = this.state.clanMembers.filter((entry) => entry.clanId === clan.id).length;
+      return {
+        id: clan.id,
+        name: clan.name,
+        tag: clan.tag,
+        level: clan.level,
+        weeklyScore: row.value,
+        members,
+      };
+    });
+  }
+
+  private async clanBoardRows(periodKey: string): Promise<LeaderboardEntry[]> {
+    const active = this.state.clans.filter((clan) => !clan.disbandedAt);
+    const decorated = [];
+    for (const clan of active) {
+      const weekly = await this.clanSeasonContribution(clan.id, periodKey);
+      decorated.push({
+        id: clan.id,
+        name: `${clan.name} [${clan.tag}] · ур.${clan.level}`,
+        value: weekly,
+        level: clan.level,
+        createdAt: clan.createdAt,
+      });
+    }
+    decorated.sort(
+      (a, b) =>
+        b.value - a.value ||
+        b.level - a.level ||
+        a.createdAt.getTime() - b.createdAt.getTime() ||
+        a.id.localeCompare(b.id),
+    );
+    return decorated.map(({ id, name, value }) => ({ id, name, value }));
   }
 }
 
@@ -1141,6 +1343,7 @@ function emptyState(): MemoryState {
     clanMembers: [],
     clanApplications: [],
     contributions: [],
+    clanTasks: [],
     entitlements: [],
     cosmetics: [],
     achievements: [],

@@ -115,6 +115,7 @@ import {
   week2Modifiers,
 } from './week2';
 import { dispatchMeta, grantMetaAchievement, isMetaMenu, META_COMMANDS, noteActivity, openMetaMenu } from './meta';
+import { AWAITING_CLAN_FLAG, handleClanTextInput } from './clans';
 import { dispatchPvp, isPvpMenu, openPvpMenu, PVP_COMMANDS } from './pvp';
 
 const NAV: GameButton[] = [
@@ -255,6 +256,10 @@ export class GameRuntime {
     const ctx = await this.load(player);
     if (!ignoreNameMode && ctx.flags[AWAITING_NAME_FLAG] === '1') {
       return this.handleNameInput(ctx, command, eventId, text);
+    }
+    const clanAwait = ctx.flags[AWAITING_CLAN_FLAG];
+    if (!ignoreNameMode && clanAwait && clanAwait !== '0') {
+      return this.handleClanInput(ctx, command, eventId, text);
     }
     this.assertAllowed(command, ctx);
     switch (command.type) {
@@ -693,7 +698,7 @@ export class GameRuntime {
     void eventId;
     const daily = await noteDailyGather(this.weekHost(), ctx);
     const dailyNote = daily.length ? ` ${daily.join(' ')}` : '';
-    await noteActivity(this.store, ctx.player, { type: 'gather', amount });
+    await noteActivity(this.store, ctx.player, { type: 'gather', amount, resource: 'LOG' });
     const fresh = await this.load(ctx.player);
     const menu = buildActionMenu('gather', this.snapshot(fresh));
     return this.respond(
@@ -1844,6 +1849,21 @@ export class GameRuntime {
       .filter(Boolean)
       .join('\n');
     return this.respond(player, summary, [{ label: '▶ День 2', action: 'BEGIN_DAY_2' }]);
+  }
+
+  private async handleClanInput(
+    ctx: Ctx,
+    command: GameCommand,
+    eventId: string,
+    text?: string,
+  ): Promise<GameResponse> {
+    const raw = (text ?? '').trim();
+    if (command.type === 'START_GAME' && raw && !isStartAlias(raw)) {
+      return handleClanTextInput(this.store, ctx.player, raw, this.now());
+    }
+    await this.store.setFlag(ctx.player.id, AWAITING_CLAN_FLAG, '0');
+    const fresh = (await this.store.findPlayerById(ctx.player.id)) ?? ctx.player;
+    return this.dispatch(fresh, command, eventId, text, true);
   }
 
   private async handleNameInput(

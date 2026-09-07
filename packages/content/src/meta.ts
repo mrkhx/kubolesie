@@ -43,18 +43,38 @@ export const WEEKLY_SCORE = {
   weekComplete: 40,
 } as const;
 
-export const CLAN_XP = {
-  quest: 8,
-  dailyQuest: 3,
-  boss: 25,
-  pvpWin: 6,
-  weekComplete: 40,
-} as const;
-
-export const CLAN_LEVEL_XP = [0, 80, 200, 400, 700, 1100, 1600] as const;
-
-export const CLAN_NAME = { min: 2, max: 24 } as const;
-export const CLAN_TAG = { min: 2, max: 5 } as const;
+export {
+  CLAN_CREATE_COST,
+  CLAN_DAILY_TASK_POOL,
+  CLAN_DESC_MAX,
+  CLAN_DONATION_RESOURCES,
+  CLAN_DONATION_VALUES,
+  CLAN_LEVEL_SCORE,
+  CLAN_LEVEL_XP,
+  CLAN_NAME,
+  CLAN_TAG,
+  CLAN_TASK_CLAN_SCORE,
+  CLAN_TASK_PLAYER_REWARD,
+  CLAN_WEEKLY_TASK_POOL,
+  CLAN_XP,
+  clanLeaderboardScore,
+  clanLevelForXp,
+  clanMemberCap,
+  clanTasksFor,
+  dailyClanTasks,
+  dailyContributionKey,
+  donationValue,
+  isWeeklyPeriodKey,
+  normalizeClanName,
+  parseClanCreateLine,
+  taskParticipationKey,
+  taskPeriodKey,
+  validateClanDescription,
+  validateClanName,
+  validateClanTag,
+  weeklyClanTask,
+} from './clans';
+export type { ClanTaskDef, ClanTaskMetric } from './clans';
 
 export const LEADERBOARD_PAGE_SIZE = 10;
 export const QUERY_LIMIT_MAX = 50;
@@ -418,46 +438,6 @@ export function applyPvpRating(current: number, delta: number): number {
   const base = finiteNumber(current, PVP_RATING.start);
   const change = finiteNumber(delta);
   return Math.min(PVP_RATING.ceiling, Math.max(PVP_RATING.floor, base + change));
-}
-
-export function clanLevelForXp(xp: number): number {
-  let level = 1;
-  for (let i = 1; i < CLAN_LEVEL_XP.length; i += 1) {
-    if (xp >= CLAN_LEVEL_XP[i]!) level = i + 1;
-  }
-  return level;
-}
-
-export function clanLeaderboardScore(xp: number, seasonContribution: number): number {
-  return xp + Math.floor(seasonContribution * 0.5);
-}
-
-const BANNED_NAME = /^(admin|system|null|undefined|test|vk|id)$/i;
-
-export function normalizeClanName(raw: string): string {
-  return raw.replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').trim();
-}
-
-export function validateClanName(raw: string): string {
-  const name = normalizeClanName(raw);
-  if (name.length < CLAN_NAME.min || name.length > CLAN_NAME.max) {
-    throw new Error(`Имя клана: ${CLAN_NAME.min}–${CLAN_NAME.max} символов.`);
-  }
-  if (BANNED_NAME.test(name) || /https?:|www\./i.test(name)) {
-    throw new Error('Такое имя клана нельзя.');
-  }
-  return name;
-}
-
-export function validateClanTag(raw: string): string {
-  const tag = raw.replace(/[\u0000-\u001f<>\s]/g, '').trim();
-  if (tag.length < CLAN_TAG.min || tag.length > CLAN_TAG.max) {
-    throw new Error(`Тег: ${CLAN_TAG.min}–${CLAN_TAG.max} символов.`);
-  }
-  if (!/^[0-9A-Za-zА-Яа-яЁё]+$/.test(tag)) {
-    throw new Error('Тег: только буквы и цифры.');
-  }
-  return tag.toUpperCase();
 }
 
 export function getProduct(id: string): CosmeticProduct | undefined {

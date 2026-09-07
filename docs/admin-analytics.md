@@ -26,11 +26,12 @@ curl -sS -H "Authorization: Bearer $ADMIN_ANALYTICS_TOKEN" \
 
 | Method | Path | Содержание |
 | --- | --- | --- |
-| GET | `/v1/admin/analytics/overview` | игроки, регистрации, active5/15/60, DAU/WAU/MAU, бои за сутки, Week1/Week2 |
-| GET | `/v1/admin/analytics/players` | активность, proxy retention, уровни |
+| GET | `/v1/admin/analytics/overview` | игроки, регистрации, active5/15/60, DAU/WAU/MAU, бои за сутки, Week1/Week2, кланы |
+| GET | `/v1/admin/analytics/players` | активность, proxy retention, уровни, playersInClan |
 | GET | `/v1/admin/analytics/progression` | воронка по флагам дней/недель, PvP unlock, босс, питомец |
 | GET | `/v1/admin/analytics/combat` | PvE/PvP counts, боссы, Wenzel / Mist Warden |
 | GET | `/v1/admin/analytics/system` | version, uptime, store, db/redis ping, vk configured, process-local counters |
+| GET | `/v1/admin/analytics/clans` | totalClans, activeClans7d, members, contribution, task completions, top 10 weekly |
 
 ## Активность
 

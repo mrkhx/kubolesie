@@ -221,6 +221,14 @@ describe('clans', () => {
     const runtimeB = new GameRuntime(store);
     await runtimeA.handle(event('START_GAME', {}, 's-a', 'vk-a'));
     await runtimeB.handle(event('START_GAME', {}, 's-b', 'vk-b'));
+    const playerA = (await store.findPlayerByVkUserId('vk-a'))!;
+    const playerB = (await store.findPlayerByVkUserId('vk-b'))!;
+    await store.setFlag(playerA.id, 'week_1_complete', '1');
+    await store.setFlag(playerB.id, 'week_1_complete', '1');
+    playerA.coins = 400;
+    playerB.coins = 400;
+    await store.savePlayer(playerA);
+    await store.savePlayer(playerB);
     const created = await act(runtimeA, 'vk-a', 'CLAN_ACT', {
       act: 'create',
       name: 'Сизый Клин',
@@ -257,6 +265,10 @@ describe('clans', () => {
     await runtimeApp.handle(event('START_GAME', {}, 's-app', 'vk-app'));
     const lead = (await store.findPlayerByVkUserId('vk-lead'))!;
     const applicant = (await store.findPlayerByVkUserId('vk-app'))!;
+    await store.setFlag(lead.id, 'week_1_complete', '1');
+    await store.setFlag(applicant.id, 'week_1_complete', '1');
+    lead.coins = 400;
+    await store.savePlayer(lead);
     await act(runtimeLead, 'vk-lead', 'CLAN_ACT', { act: 'create', name: 'Узел', tag: 'узел' });
     const clan = (await store.getPlayerClan(lead.id))!.clan;
     const already = await act(runtimeLead, 'vk-lead', 'CLAN_ACT', {
@@ -292,6 +304,9 @@ describe('clans', () => {
     await runtimeLead.handle(event('START_GAME', {}, 's-l', 'l'));
     await runtimeMem.handle(event('START_GAME', {}, 's-m', 'm'));
     await runtimeOff.handle(event('START_GAME', {}, 's-o', 'o'));
+    await store.setFlag(lead.id, 'week_1_complete', '1');
+    await store.setFlag(mem.id, 'week_1_complete', '1');
+    await store.setFlag(off.id, 'week_1_complete', '1');
     const leaveLead = await act(runtimeLead, 'l', 'CLAN_ACT', { act: 'leave' });
     expect(leaveLead.text).toMatch(/передаёт|распускает/i);
     const kickFail = await act(runtimeMem, 'm', 'CLAN_ACT', { act: 'kick', targetId: off.id });
@@ -407,7 +422,7 @@ describe('hub and playthrough', () => {
     expect(labels(hub)).toContain('👤 Герой');
     const hero = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'hero' });
     expect(hero.buttons.length).toBeLessThanOrEqual(5);
-    expect(labels(hero)).toEqual(['👤 Профиль', '📊 Статистика', '🏆 Рейтинги', '🛡 Клан', '⬅ Назад']);
+    expect(labels(hero)).toEqual(['👤 Профиль', '📊 Статистика', '🏆 Рейтинги', '🏕 Клан', '⬅ Назад']);
     const profile = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'profile' });
     expect(profile.text).toContain(player.name);
     expect(profile.text).not.toContain(player.id);
@@ -427,6 +442,10 @@ describe('hub and playthrough', () => {
     await runtimeB.handle(event('START_GAME', {}, 's-b', 'vk-b'));
     const a = (await store.findPlayerByVkUserId('vk-a'))!;
     const b = (await store.findPlayerByVkUserId('vk-b'))!;
+    await store.setFlag(a.id, 'week_1_complete', '1');
+    await store.setFlag(b.id, 'week_1_complete', '1');
+    a.coins = 400;
+    await store.savePlayer(a);
     const profile = await act(runtimeA, 'vk-a', 'OPEN_PROFILE');
     expect(profile.text).toContain(a.name);
     expect(profile.text).toContain('Очки');

@@ -6,7 +6,7 @@
 
 Игрок взаимодействует через сообщения сообщества: текст, кнопки, callback actions и, при необходимости, карточки.
 
-Текущая версия: **Prototype 0.0.5** — PvP 1.0 и admin analytics поверх Недели 1–2.
+Текущая версия: **Prototype 0.0.6** — Clans 1.0 поверх PvP и Недели 1–2.
 
 ## Архитектура
 
@@ -218,6 +218,14 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 ```
 
 Ядро **не** собирает сырой VK keyboard JSON. Это делает VK Adapter.
+
+## Prototype 0.0.6 содержит
+
+- Clans 1.0: создание/заявки/роли/вклад/уровни/задания/рейтинг
+- unlock: `week_1_complete`; стоимость создания 200 монет
+- member cap 10→30, без боевых бонусов
+- additive migration `20260907210000_clans_1`
+- admin analytics `/v1/admin/analytics/clans`
 
 ## Prototype 0.0.5 содержит
 

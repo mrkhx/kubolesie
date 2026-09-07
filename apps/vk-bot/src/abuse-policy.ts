@@ -42,7 +42,12 @@ const CLAN_MUTATIONS = new Set([
   'demote',
   'transfer',
   'disband',
+  'confirm_disband',
   'leave',
+  'donate',
+  'claim_task',
+  'set_desc',
+  'cancel_app',
 ]);
 
 const CLAN_EXPENSIVE = new Set(['find', 'search', 'list', 'apps']);

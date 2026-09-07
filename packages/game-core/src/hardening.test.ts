@@ -595,12 +595,15 @@ describe('clans', () => {
     const app = await store.createApplication(clan.id, other.id);
     const runtime = new GameRuntime(store);
     await runtime.handle(event('START_GAME', {}, 's-ld', 'ld'));
-    const gone = await act(runtime, 'ld', 'CLAN_ACT', { act: 'disband' });
+    const prompt = await act(runtime, 'ld', 'CLAN_ACT', { act: 'disband' });
+    expect(prompt.text).toMatch(/Подтверди|подтвер/i);
+    const token = String(prompt.buttons.find((button) => button.payload?.act === 'confirm_disband')?.payload?.token ?? '');
+    const gone = await act(runtime, 'ld', 'CLAN_ACT', { act: 'confirm_disband', token });
     expect(gone.text).toMatch(/распущ/i);
     expect(await store.getPlayerClan(lead.id)).toBeNull();
     expect(await store.getPlayerClan(mem.id)).toBeNull();
-    expect(await store.getClan(clan.id)).toBeNull();
-    expect(await store.getApplication(app.id)).toBeNull();
+    expect((await store.getClan(clan.id))?.disbandedAt).toBeTruthy();
+    expect((await store.getApplication(app.id))?.status).toBe('CANCELLED');
     const next = await store.createClan({ name: 'Новая', tag: 'НОВ', description: '', leaderPlayerId: mem.id });
     expect(next.leaderPlayerId).toBe(mem.id);
   });

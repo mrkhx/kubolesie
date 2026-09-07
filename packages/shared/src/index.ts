@@ -1,5 +1,5 @@
-export const BALANCE_VERSION = '0.0.5';
-export const PROTOTYPE_VERSION = '0.0.5';
+export const BALANCE_VERSION = '0.0.6';
+export const PROTOTYPE_VERSION = '0.0.6';
 
 export const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
 export const ENERGY_PER_INTERVAL = 1;

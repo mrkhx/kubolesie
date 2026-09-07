@@ -10,25 +10,22 @@ import {
   WEEKLY_SCORE,
   applyPvpRating,
   computeLifetimeScore,
+  dailyContributionKey,
   eloDelta,
   getProduct,
   isoWeekKey,
-  validateClanName,
-  validateClanTag,
+  utcDayKey,
   type CosmeticSlot,
 } from '@kubolesie/content';
 import type { GameButton, GameCommand, GameResponse } from '@kubolesie/shared';
 import { BACK_LABEL, isDefaultHeroName } from '@kubolesie/shared';
-import {
-  ActionRejectedError,
-  StaleActionError,
-} from './errors';
+import { ActionRejectedError } from './errors';
 import type {
-  ClanRecord,
   GameStore,
   PlayerRecord,
   PlayerStatisticsRecord,
 } from './store';
+import { clanAct as runClanAct, isClanMenu, noteClanTaskProgress, openClanMenu } from './clans';
 
 export const META_MENUS = [
   'hero',
@@ -43,6 +40,9 @@ export const META_MENUS = [
   'clan_find',
   'clan_manage',
   'clan_members',
+  'clan_home',
+  'clan_tasks',
+  'clan_donate',
   'cosmetics',
   'achievements',
 ] as const;
@@ -58,7 +58,7 @@ export function isMetaMenu(menu: string): menu is MetaMenuId {
 export type MetaEvent =
   | { type: 'pve'; result: 'WIN' | 'LOSS' | 'DRAW'; enemyId: string }
   | { type: 'pvp'; result: 'WIN' | 'LOSS' | 'DRAW'; rivalId: string }
-  | { type: 'gather'; amount: number }
+  | { type: 'gather'; amount: number; resource?: string }
   | { type: 'craft'; count: number }
   | { type: 'loot'; count: number; rare?: boolean }
   | { type: 'trade' }
@@ -88,10 +88,12 @@ export async function noteActivity(
         await store.incrementStatistics(player.id, { bossWins: 1 });
         await store.incrementBossStat(player.id, event.enemyId, 'wins');
         const once = await store.tryClaimReward(player.id, 'weekly_boss', event.enemyId);
-        if (once) await addClanProgress(store, player.id, period, CLAN_XP.boss, WEEKLY_SCORE.bossWin);
+        if (once) await addClanProgress(store, player.id, period, CLAN_XP.boss, WEEKLY_SCORE.bossWin, now);
+        await noteClanTaskProgress(store, player.id, 'boss', 1, now);
         await maybeGrant(store, player.id, 'FIRST_BOSS');
       } else {
         await bumpWeekly(store, player.id, WEEKLY_SCORE.pveWin);
+        await noteClanTaskProgress(store, player.id, 'pve', 1, now);
       }
     } else if (event.result === 'LOSS') {
       await store.incrementStatistics(player.id, { pveLosses: 1 });
@@ -103,18 +105,23 @@ export async function noteActivity(
   } else if (event.type === 'pvp') {
     if (event.result === 'WIN') {
       await store.incrementStatistics(player.id, { pvpWins: 1 });
-      await addClanProgress(store, player.id, period, CLAN_XP.pvpWin, WEEKLY_SCORE.pvpWin);
+      await addClanProgress(store, player.id, period, CLAN_XP.pvpWin, WEEKLY_SCORE.pvpWin, now);
       await maybeGrant(store, player.id, 'FIRST_PVP_WIN');
     } else if (event.result === 'LOSS') {
       await store.incrementStatistics(player.id, { pvpLosses: 1 });
     }
     if (event.result === 'WIN' || event.result === 'LOSS') {
       await applyPvpElo(store, player.id, event.rivalId, event.result === 'WIN', period);
+      await noteClanTaskProgress(store, player.id, 'pvp', 1, now);
     }
   } else if (event.type === 'gather') {
     await store.incrementStatistics(player.id, { resourcesGathered: event.amount });
+    if (event.resource === 'LOG') {
+      await noteClanTaskProgress(store, player.id, 'gather_log', event.amount, now);
+    }
   } else if (event.type === 'craft') {
     await store.incrementStatistics(player.id, { craftedItems: event.count });
+    await noteClanTaskProgress(store, player.id, 'craft', event.count, now);
   } else if (event.type === 'loot') {
     await store.incrementStatistics(player.id, {
       itemsLooted: event.count,
@@ -135,6 +142,7 @@ export async function noteActivity(
         period,
         event.daily ? CLAN_XP.dailyQuest : CLAN_XP.quest,
         WEEKLY_SCORE.quest,
+        now,
       );
     }
   } else if (event.type === 'day') {
@@ -147,7 +155,7 @@ export async function noteActivity(
     const week = event.week ?? 1;
     const once = await store.tryClaimReward(player.id, 'meta_week', String(week));
     if (once) {
-      await addClanProgress(store, player.id, period, CLAN_XP.weekComplete, WEEKLY_SCORE.weekComplete);
+      await addClanProgress(store, player.id, period, CLAN_XP.weekComplete, WEEKLY_SCORE.weekComplete, now);
       if (week === 1) await maybeGrant(store, player.id, 'WEEK_ONE_COMPLETE');
       if (week === 2) await maybeGrant(store, player.id, 'WEEK_TWO_COMPLETE');
     }
@@ -192,12 +200,14 @@ async function addClanProgress(
   period: string,
   clanXp: number,
   weekly: number,
+  now: Date = new Date(),
 ): Promise<void> {
   await bumpWeekly(store, playerId, weekly);
   const membership = await store.getPlayerClan(playerId);
-  if (!membership) return;
+  if (!membership || membership.clan.disbandedAt) return;
   await store.addClanXp(membership.clan.id, clanXp);
   await store.addContribution(membership.clan.id, playerId, period, clanXp);
+  await store.addContribution(membership.clan.id, playerId, dailyContributionKey(utcDayKey(now)), clanXp);
 }
 
 async function applyPvpElo(
@@ -307,7 +317,7 @@ export async function dispatchMeta(
         now,
       );
     case 'CLAN_ACT':
-      return clanAct(store, player, command.payload ?? {}, now);
+      return runClanAct(store, player, command.payload ?? {}, now);
     case 'COSMETIC_ACT':
       return cosmeticAct(store, player, command.payload ?? {});
     default:
@@ -330,10 +340,7 @@ export async function openMetaMenu(
   if (menu === 'ratings_pvp') return leaderboard(store, player, 'pvp', 0, now);
   if (menu === 'ratings_weekly') return leaderboard(store, player, 'weekly', 0, now);
   if (menu === 'ratings_clans') return leaderboard(store, player, 'clan', 0, now);
-  if (menu === 'clan') return clanHome(store, player, now);
-  if (menu === 'clan_find') return clanFind(store, '');
-  if (menu === 'clan_manage') return clanManage(store, player);
-  if (menu === 'clan_members') return clanMembers(store, player);
+  if (isClanMenu(menu)) return openClanMenu(store, player, menu, now);
   if (menu === 'cosmetics') return cosmeticsScreen(store, player);
   return achievementsScreen(store, player);
 }
@@ -352,7 +359,7 @@ async function heroMenu(store: GameStore, player: PlayerRecord): Promise<GameRes
   }
   buttons.push(
     { label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } },
-    { label: '🛡 Клан', action: 'OPEN_MENU', payload: { menu: 'clan' } },
+    { label: '🏕 Клан', action: 'OPEN_MENU', payload: { menu: 'clan' } },
     { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
   );
   return respond(
@@ -458,7 +465,7 @@ async function leaderboard(
     score: 'Общий рейтинг',
     pvp: 'PvP рейтинг',
     weekly: `Неделя ${period}`,
-    clan: 'Кланы',
+    clan: 'Кланы за неделю',
   };
   let rows;
   let rank: number;
@@ -497,357 +504,6 @@ async function leaderboard(
   buttons.push({ label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } });
   buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } });
   return respond(player, text, buttons.slice(0, 5));
-}
-
-async function clanHome(store: GameStore, player: PlayerRecord, now: Date): Promise<GameResponse> {
-  const membership = await store.getPlayerClan(player.id);
-  if (!membership) {
-    return respond(player, 'Клана нет. Можно создать или подать заявку.', [
-      { label: '🔎 Найти клан', action: 'OPEN_MENU', payload: { menu: 'clan_find' } },
-      { label: '➕ Создать клан', action: 'CLAN_ACT', payload: { act: 'prompt_create' } },
-      { label: '📨 Мои заявки', action: 'CLAN_ACT', payload: { act: 'my_apps' } },
-      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } },
-    ]);
-  }
-  const period = isoWeekKey(now);
-  const contrib = await store.getContribution(membership.clan.id, player.id, period);
-  const rank = await store.getClanLeaderboardRank(membership.clan.id, period);
-  const text = [
-    `🛡 ${membership.clan.name} [${membership.clan.tag}]`,
-    membership.clan.description || 'Без девиза.',
-    `Ур. ${membership.clan.level} · XP ${membership.clan.xp} · роль ${roleLabel(membership.member.role)}`,
-    `Твой вклад (неделя): ${contrib}`,
-    rank ? `Место клана: #${rank}` : '',
-  ]
-    .filter(Boolean)
-    .join('\n');
-  const buttons: GameButton[] = [
-    { label: '👥 Участники', action: 'OPEN_MENU', payload: { menu: 'clan_members' } },
-    { label: '🏆 Рейтинг', action: 'OPEN_MENU', payload: { menu: 'ratings_clans' } },
-    { label: '📊 Мой вклад', action: 'CLAN_ACT', payload: { act: 'contribution' } },
-  ];
-  if (membership.member.role === 'LEADER' || membership.member.role === 'OFFICER') {
-    buttons.push({ label: '⚙ Управление', action: 'OPEN_MENU', payload: { menu: 'clan_manage' } });
-  } else {
-    buttons.push({ label: '🚪 Покинуть', action: 'CLAN_ACT', payload: { act: 'leave' } });
-  }
-  buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } });
-  return respond(player, text, buttons.slice(0, 5));
-}
-
-async function clanFind(store: GameStore, query: string): Promise<GameResponse> {
-  const clans = await store.listClans(query, 5, 0);
-  const buttons: GameButton[] = clans.map((clan) => ({
-    label: `${clan.name} [${clan.tag}]`,
-    action: 'CLAN_ACT',
-    payload: { act: 'apply', clanId: clan.id },
-  }));
-  buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } });
-  return {
-    text: clans.length ? 'Найденные стаи. Заявка — одна на клан.' : 'Стаи не найдены.',
-    buttons: buttons.slice(0, 5),
-  };
-}
-
-async function clanMembers(store: GameStore, player: PlayerRecord): Promise<GameResponse> {
-  const membership = await store.getPlayerClan(player.id);
-  if (!membership) return clanHome(store, player, new Date());
-  const members = await store.listClanMembers(membership.clan.id);
-  const lines = [];
-  for (const member of members) {
-    const who = await store.findPlayerById(member.playerId);
-    lines.push(`• ${who?.name ?? 'Путник'} — ${roleLabel(member.role)}`);
-  }
-  return respond(player, `Участники ${membership.clan.name}:\n${lines.join('\n')}`, [
-    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } },
-  ]);
-}
-
-async function clanManage(store: GameStore, player: PlayerRecord): Promise<GameResponse> {
-  const membership = await store.getPlayerClan(player.id);
-  if (!membership || (membership.member.role !== 'LEADER' && membership.member.role !== 'OFFICER')) {
-    throw new ActionRejectedError('Нет прав.');
-  }
-  const apps = await store.listPendingApplications(membership.clan.id);
-  const buttons: GameButton[] = [
-    { label: `✅ Заявки (${apps.length})`, action: 'CLAN_ACT', payload: { act: 'apps' } },
-  ];
-  if (membership.member.role === 'LEADER') {
-    buttons.push({ label: '👑 Передать', action: 'CLAN_ACT', payload: { act: 'prompt_transfer' } });
-    buttons.push({ label: '🚪 Распустить', action: 'CLAN_ACT', payload: { act: 'disband' } });
-  } else {
-    buttons.push({ label: '🚪 Покинуть', action: 'CLAN_ACT', payload: { act: 'leave' } });
-  }
-  buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } });
-  return respond(player, 'Управление стаей. Боевых бонусов нет.', buttons.slice(0, 5));
-}
-
-async function clanAct(
-  store: GameStore,
-  player: PlayerRecord,
-  payload: Record<string, unknown>,
-  now: Date,
-): Promise<GameResponse> {
-  const act = String(payload.act ?? '');
-  if (act === 'prompt_create') {
-    return respond(
-      player,
-      'Создать клан: имя 2–24 и тег 2–5. Боевых бонусов клан не даёт.',
-      [
-        { label: 'Создать', action: 'CLAN_ACT', payload: { act: 'create', name: payload.name, tag: payload.tag, description: payload.description } },
-        { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } },
-      ],
-    );
-  }
-  if (act === 'create') {
-    return createClan(store, player, payload);
-  }
-  if (act === 'apply') {
-    return applyClan(store, player, String(payload.clanId ?? ''));
-  }
-  if (act === 'my_apps') {
-    const apps = await store.listPlayerApplications(player.id);
-    const pending = apps.filter((row) => row.status === 'PENDING');
-    const lines = [];
-    for (const app of pending) {
-      const clan = await store.getClan(app.clanId);
-      lines.push(`• ${clan?.name ?? 'стая'} — ждёт`);
-    }
-    return respond(player, lines.length ? lines.join('\n') : 'Заявок нет.', [
-      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } },
-    ]);
-  }
-  if (act === 'apps') return reviewApps(store, player);
-  if (act === 'accept') return acceptApp(store, player, String(payload.appId ?? ''));
-  if (act === 'reject') return rejectApp(store, player, String(payload.appId ?? ''));
-  if (act === 'leave') return leaveClan(store, player);
-  if (act === 'kick') return kickMember(store, player, String(payload.targetId ?? ''));
-  if (act === 'promote') return setRole(store, player, String(payload.targetId ?? ''), 'OFFICER');
-  if (act === 'demote') return setRole(store, player, String(payload.targetId ?? ''), 'MEMBER');
-  if (act === 'transfer') return transferLead(store, player, String(payload.targetId ?? ''));
-  if (act === 'prompt_transfer') return pickMember(store, player, 'transfer', 'Кому передать лидерство?');
-  if (act === 'disband') return disbandClan(store, player);
-  if (act === 'contribution') {
-    const membership = await store.getPlayerClan(player.id);
-    if (!membership) throw new ActionRejectedError('Нет клана.');
-    const score = await store.getContribution(membership.clan.id, player.id, isoWeekKey(now));
-    return respond(player, `Вклад за неделю: ${score}. Не монеты — дела.`, [
-      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } },
-    ]);
-  }
-  if (act === 'search') return clanFind(store, String(payload.query ?? ''));
-  throw new ActionRejectedError('Неизвестное действие клана.');
-}
-
-async function createClan(
-  store: GameStore,
-  player: PlayerRecord,
-  payload: Record<string, unknown>,
-): Promise<GameResponse> {
-  if (await store.getPlayerClan(player.id)) throw new ActionRejectedError('Ты уже в клане.');
-  let name: string;
-  let tag: string;
-  try {
-    name = validateClanName(String(payload.name ?? ''));
-    tag = validateClanTag(String(payload.tag ?? ''));
-  } catch (error) {
-    throw new ActionRejectedError((error as Error).message);
-  }
-  try {
-    const clan = await store.createClan({
-      name,
-      tag,
-      description: String(payload.description ?? '').slice(0, 80),
-      leaderPlayerId: player.id,
-    });
-    await maybeGrant(store, player.id, 'CLAN_MEMBER');
-    return respond(player, `Клан ${clan.name} [${clan.tag}] создан. Ты лидер.`, [
-      { label: '🛡 Клан', action: 'OPEN_MENU', payload: { menu: 'clan' } },
-    ]);
-  } catch (error) {
-    const code = (error as Error).message;
-    if (code === 'name_taken') throw new ActionRejectedError('Имя занято.');
-    if (code === 'tag_taken') throw new ActionRejectedError('Тег занят.');
-    if (code === 'already_in_clan') throw new ActionRejectedError('Ты уже в клане.');
-    throw new ActionRejectedError('Нельзя создать клан.');
-  }
-}
-
-async function applyClan(store: GameStore, player: PlayerRecord, clanId: string): Promise<GameResponse> {
-  if (await store.getPlayerClan(player.id)) throw new ActionRejectedError('Ты уже в клане.');
-  const clan = await store.getClan(clanId);
-  if (!clan) throw new ActionRejectedError('Клан не найден.');
-  try {
-    await store.createApplication(clanId, player.id);
-  } catch (error) {
-    if ((error as Error).message === 'duplicate_application') {
-      throw new ActionRejectedError('Заявка уже висит.');
-    }
-    throw error;
-  }
-  return respond(player, `Заявка в ${clan.name} отправлена.`, [
-    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan' } },
-  ]);
-}
-
-async function reviewApps(store: GameStore, player: PlayerRecord): Promise<GameResponse> {
-  const membership = await requireOfficer(store, player);
-  const apps = await store.listPendingApplications(membership.clan.id);
-  if (!apps.length) {
-    return respond(player, 'Заявок нет.', [
-      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
-    ]);
-  }
-  const app = apps[0]!;
-  const who = await store.findPlayerById(app.playerId);
-  return respond(player, `Заявка: ${who?.name ?? 'Путник'}`, [
-    { label: 'Принять', action: 'CLAN_ACT', payload: { act: 'accept', appId: app.id } },
-    { label: 'Отклонить', action: 'CLAN_ACT', payload: { act: 'reject', appId: app.id } },
-    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
-  ]);
-}
-
-async function acceptApp(store: GameStore, player: PlayerRecord, appId: string): Promise<GameResponse> {
-  const membership = await requireOfficer(store, player);
-  const app = await store.getApplication(appId);
-  if (!app || app.clanId !== membership.clan.id) throw new ActionRejectedError('Заявки нет.');
-  if (app.status !== 'PENDING') throw new StaleActionError('Заявка уже обработана.');
-  const already = await store.getPlayerClan(app.playerId);
-  if (already) {
-    await store.setApplicationStatus(app.id, 'CANCELLED');
-    throw new ActionRejectedError('Игрок уже в другом клане.');
-  }
-  try {
-    await store.addClanMember({ clanId: membership.clan.id, playerId: app.playerId, role: 'MEMBER' });
-  } catch (error) {
-    if ((error as Error).message === 'already_in_clan') {
-      await store.setApplicationStatus(app.id, 'CANCELLED');
-      throw new ActionRejectedError('Игрок уже в клане.');
-    }
-    throw error;
-  }
-  await store.setApplicationStatus(app.id, 'ACCEPTED');
-  await store.cancelPendingApplications(app.playerId);
-  await maybeGrant(store, app.playerId, 'CLAN_MEMBER');
-  return respond(player, 'Принят в стаю.', [
-    { label: 'Ещё заявки', action: 'CLAN_ACT', payload: { act: 'apps' } },
-    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
-  ]);
-}
-
-async function rejectApp(store: GameStore, player: PlayerRecord, appId: string): Promise<GameResponse> {
-  const membership = await requireOfficer(store, player);
-  const app = await store.getApplication(appId);
-  if (!app || app.clanId !== membership.clan.id) throw new ActionRejectedError('Заявки нет.');
-  if (app.status !== 'PENDING') throw new StaleActionError('Заявка уже обработана.');
-  await store.setApplicationStatus(app.id, 'REJECTED');
-  return respond(player, 'Заявка отклонена.', [
-    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
-  ]);
-}
-
-async function leaveClan(store: GameStore, player: PlayerRecord): Promise<GameResponse> {
-  const membership = await store.getPlayerClan(player.id);
-  if (!membership) throw new ActionRejectedError('Нет клана.');
-  if (membership.member.role === 'LEADER') {
-    const members = await store.listClanMembers(membership.clan.id);
-    if (members.length > 1) {
-      throw new ActionRejectedError('Лидер передаёт стаю или распускает.');
-    }
-    await store.deleteClan(membership.clan.id);
-    return respond(player, 'Стая распущена.', NAV);
-  }
-  await store.removeClanMember(membership.clan.id, player.id);
-  return respond(player, 'Ты вышел из клана.', NAV);
-}
-
-async function disbandClan(store: GameStore, player: PlayerRecord): Promise<GameResponse> {
-  const membership = await requireLeader(store, player);
-  await store.deleteClan(membership.clan.id);
-  return respond(player, 'Стая распущена.', NAV);
-}
-
-async function kickMember(store: GameStore, player: PlayerRecord, targetId: string): Promise<GameResponse> {
-  const membership = await requireOfficer(store, player);
-  if (targetId === player.id) throw new ActionRejectedError('Себя не выгнать так.');
-  const members = await store.listClanMembers(membership.clan.id);
-  const target = members.find((row) => row.playerId === targetId);
-  if (!target) throw new ActionRejectedError('Не в клане.');
-  if (target.role === 'LEADER') throw new ActionRejectedError('Лидера не выгнать.');
-  if (membership.member.role !== 'LEADER' && target.role === 'OFFICER') {
-    throw new ActionRejectedError('Офицера исключает только лидер.');
-  }
-  await store.removeClanMember(membership.clan.id, targetId);
-  return respond(player, 'Исключён.', [
-    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
-  ]);
-}
-
-async function setRole(
-  store: GameStore,
-  player: PlayerRecord,
-  targetId: string,
-  role: 'OFFICER' | 'MEMBER',
-): Promise<GameResponse> {
-  const membership = await requireLeader(store, player);
-  if (targetId === player.id) throw new ActionRejectedError('Себе роль так не сменить.');
-  await store.setClanMemberRole(membership.clan.id, targetId, role);
-  return respond(player, role === 'OFFICER' ? 'Повышен.' : 'Понижен.', [
-    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
-  ]);
-}
-
-async function transferLead(store: GameStore, player: PlayerRecord, targetId: string): Promise<GameResponse> {
-  const membership = await requireLeader(store, player);
-  if (targetId === player.id) throw new ActionRejectedError('Уже лидер.');
-  await store.setClanLeader(membership.clan.id, targetId);
-  return respond(player, 'Лидерство передано.', [
-    { label: '🛡 Клан', action: 'OPEN_MENU', payload: { menu: 'clan' } },
-  ]);
-}
-
-async function pickMember(
-  store: GameStore,
-  player: PlayerRecord,
-  act: string,
-  title: string,
-): Promise<GameResponse> {
-  const membership = await requireLeader(store, player);
-  const members = (await store.listClanMembers(membership.clan.id)).filter((row) => row.playerId !== player.id);
-  const buttons: GameButton[] = [];
-  for (const member of members.slice(0, 3)) {
-    const who = await store.findPlayerById(member.playerId);
-    buttons.push({
-      label: who?.name ?? 'Путник',
-      action: 'CLAN_ACT',
-      payload: { act, targetId: member.playerId },
-    });
-  }
-  buttons.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'clan_manage' } });
-  return respond(player, title, buttons.slice(0, 5));
-}
-
-async function requireOfficer(
-  store: GameStore,
-  player: PlayerRecord,
-): Promise<{ clan: ClanRecord; member: { role: string; playerId: string } }> {
-  const membership = await store.getPlayerClan(player.id);
-  if (!membership || (membership.member.role !== 'LEADER' && membership.member.role !== 'OFFICER')) {
-    throw new ActionRejectedError('Нет прав.');
-  }
-  return membership;
-}
-
-async function requireLeader(store: GameStore, player: PlayerRecord) {
-  const membership = await store.getPlayerClan(player.id);
-  if (!membership || membership.member.role !== 'LEADER') throw new ActionRejectedError('Только лидер.');
-  return membership;
-}
-
-function roleLabel(role: string): string {
-  if (role === 'LEADER') return 'лидер';
-  if (role === 'OFFICER') return 'офицер';
-  return 'член';
 }
 
 async function cosmeticsScreen(store: GameStore, player: PlayerRecord): Promise<GameResponse> {

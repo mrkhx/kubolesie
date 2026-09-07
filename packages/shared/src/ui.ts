@@ -143,6 +143,7 @@ const ACTION_STYLE: Partial<Record<string, { emoji?: string; label?: string; col
   START_PVE: { emoji: '⚔', color: 'negative' },
   START_PVP: { emoji: '⚔', color: 'negative' },
   PVP_ACT: { emoji: '⚔', color: 'negative' },
+  CLAN_ACT: { emoji: '🏕', color: 'primary' },
   FEED_SCAVENGER: { emoji: '🍞', color: 'positive' },
   RETURN_IRON: { emoji: '⛓', color: 'positive' },
   OPEN_SECRET_CHEST: { emoji: '📦', color: 'positive' },
@@ -206,7 +207,13 @@ const MENU_STYLE: Record<string, { label: string; color: ButtonColor }> = {
   ratings_pvp: { label: '⚔ PvP', color: 'primary' },
   ratings_weekly: { label: '📅 Недельный', color: 'primary' },
   ratings_clans: { label: '🛡 Кланы', color: 'primary' },
-  clan: { label: '🛡 Клан', color: 'primary' },
+  clan: { label: '🏕 Клан', color: 'primary' },
+  clan_find: { label: '🔎 Найти клан', color: 'primary' },
+  clan_manage: { label: '⚙ Управление', color: 'primary' },
+  clan_members: { label: '👥 Участники', color: 'primary' },
+  clan_home: { label: '🏕 Мой клан', color: 'primary' },
+  clan_tasks: { label: '🎯 Задания', color: 'primary' },
+  clan_donate: { label: '📦 Вклад', color: 'primary' },
   daily: { label: '📋 Ежедневки', color: 'primary' },
   furnace: { label: '🔥 Печь', color: 'primary' },
   trade: { label: '⚖ Торговля', color: 'primary' },
@@ -226,12 +233,12 @@ function inferColor(button: GameButton, label: string): ButtonColor {
   const stripped = stripDecor(label).toLowerCase();
   if (/(уйти|отойти|оставить|отмена|закрыть|замолчать)/.test(stripped)) return 'secondary';
   if (button.action === 'START_PVE' || button.action === 'START_PVP') return 'negative';
-  if (/(атаковать|драться|ударить|сжечь|поджечь|преследовать|вызвать след)/.test(stripped)) {
+  if (/(атаковать|драться|ударить|сжечь|поджечь|преследовать|вызвать след|исключить|распустить|отклонить)/.test(stripped)) {
     return 'negative';
   }
   if (button.action === 'HELP_PET' && String(button.payload?.act ?? '') === 'reject') return 'negative';
   if (
-    /(взять|получить|помочь|приручить|покормить|вытащить|подтвердить|надеть|съесть)/.test(stripped) ||
+    /(взять|получить|помочь|приручить|покормить|вытащить|подтвердить|надеть|съесть|принять|подать заявку)/.test(stripped) ||
     button.action === 'CLAIM_REWARD' ||
     String(button.action).startsWith('BEGIN_DAY') ||
     String(button.action).startsWith('COMPLETE_DAY')
@@ -296,7 +303,7 @@ function maybeEmojiFromText(label: string): string {
   if (/желез|руд/.test(lower)) return withEmoji('⛏', label);
   if (/рему|герой|профил/.test(lower)) return withEmoji('👤', label);
   if (/клад|лагер/.test(lower)) return withEmoji('🏕', label);
-  if (/клан/.test(lower)) return withEmoji('🛡', label);
+  if (/клан/.test(lower)) return withEmoji('🏕', label);
   if (/рейтинг/.test(lower)) return withEmoji('🏆', label);
   if (/крафт/.test(lower)) return withEmoji('🔨', label);
   if (/добыч/.test(lower)) return withEmoji('⛏', label);

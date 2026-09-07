@@ -6,3 +6,4 @@ export * from './runtime';
 export * from './menus';
 export * from './meta';
 export * from './pvp';
+export * from './clans';

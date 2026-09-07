@@ -135,4 +135,38 @@ describe('admin analytics payloads', () => {
     expect(overview.dau).toBe(0);
     expect(snapshotMetrics().adminEndpointRequests).toBeGreaterThanOrEqual(0);
   });
+
+  it('returns clan aggregates without vk ids and still requires auth', async () => {
+    const store = new MemoryGameStore();
+    const now = new Date('2026-09-07T12:00:00Z');
+    const lead = await store.createPlayer({ vkUserId: 'clan-lead', name: 'Вожак' });
+    lead.lastActiveAt = now;
+    lead.coins = 400;
+    await store.savePlayer(lead);
+    await store.setFlag(lead.id, 'week_1_complete', '1');
+    const clan = await store.createClan({
+      name: 'Север',
+      tag: 'СВР',
+      description: '',
+      leaderPlayerId: lead.id,
+    });
+    await store.addContribution(clan.id, lead.id, '2026-W37', 12);
+    const service = new AnalyticsService(store, { store, kind: 'memory' }, configWithToken());
+    const overview = await service.overview(now);
+    expect(overview.totalClans).toBe(1);
+    expect(overview.clanMembers).toBe(1);
+    const players = await service.players(now);
+    expect(players.playersInClan).toBe(1);
+    const clans = await service.clans(now);
+    expect(clans.totalClans).toBe(1);
+    expect(clans.topWeekly[0]!.tag).toBe('СВР');
+    expect(JSON.stringify(clans)).not.toContain('clan-lead');
+    const armed = new AnalyticsController(configWithToken(), store, { store, kind: 'memory' });
+    const ok = fakeRes();
+    await armed.clans(`Bearer ${TOKEN}`, ok.res, {} as never);
+    expect(ok.box.statusCode).toBe(200);
+    const wrong = fakeRes();
+    await armed.clans('Bearer nope', wrong.res, {} as never);
+    expect(wrong.box.statusCode).toBe(401);
+  });
 });

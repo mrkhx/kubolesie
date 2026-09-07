@@ -14,6 +14,7 @@ const EXPECTED = [
   '20260907130000_products_premium_default',
   '20260907180000_week_two',
   '20260907200000_pvp_analytics',
+  '20260907210000_clans_1',
 ] as const;
 
 function sql(name: string): string {
@@ -76,5 +77,10 @@ describe('prisma migrations (static)', () => {
     expect(sql('20260907200000_pvp_analytics')).toMatch(/last_active_at/);
     expect(sql('20260907200000_pvp_analytics')).toMatch(/combat_matches_mode_started_at_idx/);
     expect(sql('20260907200000_pvp_analytics')).not.toMatch(/DROP TABLE "players"/);
+    expect(sql('20260907210000_clans_1')).toMatch(/clan_task_progress/);
+    expect(sql('20260907210000_clans_1')).toMatch(/disbanded_at/);
+    expect(sql('20260907210000_clans_1')).toMatch(/clan_applications_one_pending_per_player/);
+    expect(sql('20260907210000_clans_1')).not.toMatch(/DROP TABLE "clans"/);
+    expect(sql('20260907210000_clans_1')).not.toMatch(/DROP TABLE "players"/);
   });
 });

@@ -522,3 +522,28 @@ describe('pvp group leak', () => {
   });
 });
 
+describe('clan group leak', () => {
+  it('routes a group clan button to DM and never posts clan gameplay in the chat', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(groupMessage({ text: 'начать', eventId: 'clan-g-start', userId: 82 }));
+    const player = (await store.findPlayerByVkUserId('82'))!;
+    await store.setFlag(player.id, 'week_1_complete', '1');
+    player.coins = 400;
+    await store.savePlayer(player);
+    client.sent.length = 0;
+    const result = await adapter.handleCallback(
+      messageEvent({
+        eventId: 'clan-g-hub',
+        userId: 82,
+        peerId: GROUP_PEER,
+        payload: { action: 'OPEN_MENU', menu: 'clan' },
+      }),
+    );
+    expect(result).toEqual({ status: 200, body: 'ok' });
+    expect(groupSent(client).some((row) => /Создать клан|Мой клан|Задания клана|Сдано/.test(row.text))).toBe(false);
+    const dm = dmSent(client, 82);
+    expect(dm.length).toBeGreaterThan(0);
+    expect(dm.some((row) => /клан|печати|стаи/i.test(row.text))).toBe(true);
+  });
+});
+

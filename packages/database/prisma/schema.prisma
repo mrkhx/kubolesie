@@ -476,24 +476,27 @@ model Season {
 }
 
 model Clan {
-  id             String   @id @default(cuid())
+  id             String    @id @default(cuid())
   name           String
-  nameKey        String   @unique @map("name_key")
+  nameKey        String    @unique @map("name_key")
   tag            String
-  tagKey         String   @unique @map("tag_key")
-  description    String   @default("")
-  leaderPlayerId String   @map("leader_player_id")
-  level          Int      @default(1)
-  xp             Int      @default(0)
-  createdAt      DateTime @default(now()) @map("created_at")
+  tagKey         String    @unique @map("tag_key")
+  description    String    @default("")
+  leaderPlayerId String    @map("leader_player_id")
+  level          Int       @default(1)
+  xp             Int       @default(0)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  disbandedAt    DateTime? @map("disbanded_at")
 
   leader        Player             @relation(fields: [leaderPlayerId], references: [id])
   members       ClanMember[]
   applications  ClanApplication[]
   invites       ClanInvite[]
   contributions ClanContribution[]
+  tasks         ClanTaskProgress[]
 
   @@index([xp(sort: Desc)])
+  @@index([disbandedAt])
   @@map("clans")
 }
 
@@ -557,7 +560,25 @@ model ClanContribution {
 
   @@unique([clanId, playerId, periodKey])
   @@index([clanId, periodKey])
+  @@index([periodKey])
   @@map("clan_contributions")
+}
+
+model ClanTaskProgress {
+  id          String    @id @default(cuid())
+  clanId      String    @map("clan_id")
+  periodKey   String    @map("period_key")
+  taskId      String    @map("task_id")
+  progress    Int       @default(0)
+  target      Int
+  completedAt DateTime? @map("completed_at")
+
+  clan Clan @relation(fields: [clanId], references: [id], onDelete: Cascade)
+
+  @@unique([clanId, periodKey, taskId])
+  @@index([periodKey])
+  @@index([completedAt])
+  @@map("clan_task_progress")
 }
 
 model Product {

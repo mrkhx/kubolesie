@@ -57,6 +57,12 @@ export class AnalyticsController {
     return res.status(200).json(await this.service.system());
   }
 
+  @Get('clans')
+  async clans(@Headers('authorization') authorization: string | undefined, @Res() res: Response, @Req() req: Request) {
+    if (!this.guard(authorization, res, req)) return;
+    return res.status(200).json(await this.service.clans());
+  }
+
   private guard(authorization: string | undefined, res: Response, req: Request): boolean {
     void req;
     const result = checkAdminAnalyticsAuth(this.appConfig.adminAnalyticsToken, authorization);
