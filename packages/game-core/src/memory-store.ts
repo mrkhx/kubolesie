@@ -147,31 +147,33 @@ export class MemoryGameStore implements GameStore {
   }
 
   async createPlayer(input: { vkUserId: string; name: string }): Promise<PlayerRecord> {
-    const existing = this.state.players.find((player) => player.vkUserId === input.vkUserId);
-    if (existing) return existing;
-    const now = new Date();
-    const player: PlayerRecord = {
-      id: randomUUID(),
-      vkUserId: input.vkUserId,
-      name: input.name,
-      level: 1,
-      xp: 0,
-      hp: STARTING_HP,
-      maxHp: STARTING_HP,
-      energy: STARTING_ENERGY,
-      maxEnergy: STARTING_ENERGY,
-      coins: 0,
-      currentLocation: 'forest_clearing',
-      currentState: 'start',
-      lastEnergyAt: now,
-      lastDailyReset: now,
-      createdAt: now,
-      updatedAt: now,
-      stats: { ...STARTING_STATS },
-    };
-    this.state.players.push(player);
-    await this.persist();
-    return player;
+    return this.withMut(async () => {
+      const existing = this.state.players.find((player) => player.vkUserId === input.vkUserId);
+      if (existing) return existing;
+      const now = new Date();
+      const player: PlayerRecord = {
+        id: randomUUID(),
+        vkUserId: input.vkUserId,
+        name: input.name,
+        level: 1,
+        xp: 0,
+        hp: STARTING_HP,
+        maxHp: STARTING_HP,
+        energy: STARTING_ENERGY,
+        maxEnergy: STARTING_ENERGY,
+        coins: 0,
+        currentLocation: 'forest_clearing',
+        currentState: 'start',
+        lastEnergyAt: now,
+        lastDailyReset: now,
+        createdAt: now,
+        updatedAt: now,
+        stats: { ...STARTING_STATS },
+      };
+      this.state.players.push(player);
+      await this.persist();
+      return player;
+    });
   }
 
   async savePlayer(player: PlayerRecord): Promise<PlayerRecord> {

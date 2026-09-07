@@ -15,7 +15,7 @@ VK является только интерфейсом. Вся игровая �
 ```
 VK Messages
     ↓
-VK Adapter          apps/vk-bot
+VK Adapter          apps/vk-bot  (Callback API POST /vk/callback + mock)
     ↓
 Command Router      packages/game-core
     ↓
@@ -41,7 +41,7 @@ PostgreSQL          packages/database (Prisma)
 ```
 apps/
   api/          NestJS HTTP: health, mock VK event, inspect player
-  vk-bot/       адаптер mock-события → NormalizedIncomingEvent → GameResponse
+  vk-bot/       VK Callback API + mock adapter → NormalizedIncomingEvent
   worker/       BullMQ skeleton (без energy cron)
 packages/
   game-core/    команды, энергия, инвентарь, диалоги, флаги, квесты, День 1
@@ -97,7 +97,9 @@ API слушает `PORT` из `.env` (локально часто 3000; в sand
 
 `GET /` отдаёт **mock VK-консоль** — это не игровой клиент и не Mini App, а стенд для mock-событий.
 
-`VK_GROUP_TOKEN` **не нужен**.
+Для локальной разработки `VK_GROUP_TOKEN` **не нужен**.
+
+Боевой вход сообщества: `POST /vk/callback` (VK Callback API). Настройка — [docs/vk-callback-setup.md](docs/vk-callback-setup.md).
 
 ### Mock playthrough
 
@@ -171,9 +173,11 @@ npm test
 | `REDIS_URL` | locks / rate limit / queues |
 | `PORT` | HTTP API |
 | `NODE_ENV` | `development` / `production` |
-| `VK_GROUP_TOKEN` | пусто для локального ядра |
-| `VK_GROUP_ID` | reserved |
-| `VK_CALLBACK_SECRET` | reserved |
+| `VK_GROUP_TOKEN` | токен сообщества; пусто = mock |
+| `VK_GROUP_ID` | id сообщества для callback |
+| `VK_CALLBACK_SECRET` | секрет Callback API |
+| `VK_CONFIRMATION_CODE` | строка confirmation |
+| `VK_API_VERSION` | версия VK API, по умолчанию 5.199 |
 | `GAME_STORE` | `prisma` или `memory` |
 | `MEMORY_STORE_PATH` | JSON-снимок только для dev fallback |
 | `ENABLE_MOCK_API` | mock HTTP, выключен в production по умолчанию |

@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
 import { GameRuntime } from '@kubolesie/game-core';
 import { createGameStore } from '@kubolesie/database';
-import { VkAdapter } from '@kubolesie/vk-bot';
+import { loadVkConfig, VkAdapter, VkApiClient } from '@kubolesie/vk-bot';
 import { GameController } from './game.controller';
 import { HealthController } from './health.controller';
+import { VkController } from './vk.controller';
 import { createRedisLock } from './redis';
 
 @Module({
-  controllers: [HealthController, GameController],
+  controllers: [HealthController, GameController, VkController],
   providers: [
     {
       provide: 'STORE_BUNDLE',
@@ -30,9 +31,22 @@ import { createRedisLock } from './redis';
         new GameRuntime(store),
     },
     {
+      provide: 'VK_CONFIG',
+      useFactory: () => loadVkConfig(),
+    },
+    {
+      provide: 'VK_CLIENT',
+      inject: ['VK_CONFIG'],
+      useFactory: (config: ReturnType<typeof loadVkConfig>) => new VkApiClient(config),
+    },
+    {
       provide: VkAdapter,
-      inject: [GameRuntime],
-      useFactory: (runtime: GameRuntime) => new VkAdapter(runtime),
+      inject: [GameRuntime, 'VK_CLIENT', 'VK_CONFIG'],
+      useFactory: (
+        runtime: GameRuntime,
+        client: VkApiClient,
+        config: ReturnType<typeof loadVkConfig>,
+      ) => new VkAdapter(runtime, { client, config }),
     },
     {
       provide: 'REDIS_LOCK',
