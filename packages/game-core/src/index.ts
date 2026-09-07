@@ -5,3 +5,4 @@ export * from './memory-store';
 export * from './runtime';
 export * from './menus';
 export * from './meta';
+export * from './pvp';

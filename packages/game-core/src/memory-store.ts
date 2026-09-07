@@ -17,6 +17,7 @@ import type {
   ClanMemberRecord,
   ClanRecord,
   CombatMatchRecord,
+  CombatMatchQuery,
   DiscoveryRecord,
   EntitlementRecord,
   GameStore,
@@ -30,8 +31,13 @@ import type {
   PlayerRecord,
   PlayerStatisticsRecord,
   ProcessedEventRecord,
+  PvpCandidate,
   QuestTemplateRecord,
   StatisticsDelta,
+  AnalyticsBossRow,
+  AnalyticsEnemyRow,
+  AnalyticsFlagCount,
+  AnalyticsLevelBucket,
 } from './store';
 import { EMPTY_STATISTICS } from './store';
 import {
@@ -85,6 +91,7 @@ function reviveDates(player: PlayerRecord): PlayerRecord {
     ...player,
     lastEnergyAt: new Date(player.lastEnergyAt),
     lastDailyReset: new Date(player.lastDailyReset),
+    lastActiveAt: new Date(player.lastActiveAt ?? player.updatedAt ?? player.createdAt),
     createdAt: new Date(player.createdAt),
     updatedAt: new Date(player.updatedAt),
   };
@@ -166,6 +173,7 @@ export class MemoryGameStore implements GameStore {
         currentState: 'start',
         lastEnergyAt: now,
         lastDailyReset: now,
+        lastActiveAt: now,
         createdAt: now,
         updatedAt: now,
         stats: { ...STARTING_STATS },
@@ -413,6 +421,157 @@ export class MemoryGameStore implements GameStore {
   async addCombatEvents(matchId: string, events: BattleEvent[]): Promise<void> {
     this.state.matchEvents.push({ matchId, events });
     await this.persist();
+  }
+
+  async listCombatMatches(
+    query: CombatMatchQuery & { limit: number; offset?: number },
+  ): Promise<CombatMatchRecord[]> {
+    const filtered = this.state.matches.filter((row) => matchQuery(row, query));
+    filtered.sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime());
+    const offset = query.offset ?? 0;
+    return filtered.slice(offset, offset + query.limit);
+  }
+
+  async countCombatMatches(query: CombatMatchQuery): Promise<number> {
+    return this.state.matches.filter((row) => matchQuery(row, query)).length;
+  }
+
+  async listPvpCandidates(input: {
+    excludePlayerId: string;
+    minRating: number;
+    maxRating: number;
+    targetRating: number;
+    unlockFlag: string;
+    limit: number;
+  }): Promise<PvpCandidate[]> {
+    const unlocked = new Set(
+      this.state.flags.filter((row) => row.flag === input.unlockFlag).map((row) => row.playerId),
+    );
+    const rows: PvpCandidate[] = [];
+    for (const player of this.state.players) {
+      if (player.id === input.excludePlayerId) continue;
+      if (!unlocked.has(player.id)) continue;
+      const rating = this.ensureRating(player.id);
+      if (rating.pvpRating < input.minRating || rating.pvpRating > input.maxRating) continue;
+      rows.push({
+        playerId: player.id,
+        name: player.name,
+        level: player.level,
+        pvpRating: rating.pvpRating,
+        lastActiveAt: player.lastActiveAt ?? player.updatedAt,
+      });
+    }
+    rows.sort(
+      (a, b) =>
+        Math.abs(a.pvpRating - input.targetRating) - Math.abs(b.pvpRating - input.targetRating) ||
+        b.lastActiveAt.getTime() - a.lastActiveAt.getTime() ||
+        a.playerId.localeCompare(b.playerId),
+    );
+    return rows.slice(0, input.limit);
+  }
+
+  async countPlayers(filter?: {
+    createdSince?: Date;
+    createdUntil?: Date;
+    activeSince?: Date;
+  }): Promise<number> {
+    return this.state.players.filter((player) => {
+      if (filter?.createdSince && player.createdAt < filter.createdSince) return false;
+      if (filter?.createdUntil && player.createdAt >= filter.createdUntil) return false;
+      if (filter?.activeSince && (player.lastActiveAt ?? player.updatedAt) < filter.activeSince) {
+        return false;
+      }
+      return true;
+    }).length;
+  }
+
+  async countProcessedEvents(since?: Date): Promise<number> {
+    if (!since) return this.state.processedEvents.length;
+    return this.state.processedEvents.filter((row) => row.createdAt >= since).length;
+  }
+
+  async countFlags(flags: string[]): Promise<AnalyticsFlagCount[]> {
+    const wanted = new Set(flags);
+    const counts = new Map<string, Set<string>>();
+    for (const flag of flags) counts.set(flag, new Set());
+    for (const row of this.state.flags) {
+      if (!wanted.has(row.flag)) continue;
+      counts.get(row.flag)?.add(row.playerId);
+    }
+    return flags.map((flag) => ({ flag, count: counts.get(flag)?.size ?? 0 }));
+  }
+
+  async countPlayersWithAnyFlag(flags: string[]): Promise<number> {
+    const wanted = new Set(flags);
+    const ids = new Set<string>();
+    for (const row of this.state.flags) {
+      if (wanted.has(row.flag)) ids.add(row.playerId);
+    }
+    return ids.size;
+  }
+
+  async countPlayersWithStat(
+    field: keyof Omit<PlayerStatisticsRecord, 'playerId'>,
+    min: number,
+  ): Promise<number> {
+    return this.state.statistics.filter((row) => (row[field] ?? 0) >= min).length;
+  }
+
+  async averagePvpRating(): Promise<number> {
+    if (!this.state.ratings.length) return 0;
+    const sum = this.state.ratings.reduce((acc, row) => acc + row.pvpRating, 0);
+    return sum / this.state.ratings.length;
+  }
+
+  async countPvpActivePlayers(since?: Date): Promise<number> {
+    const ids = new Set<string>();
+    for (const match of this.state.matches) {
+      if (match.mode !== 'PVP') continue;
+      if (since && match.startedAt < since) continue;
+      ids.add(match.playerId);
+      if (match.opponentPlayerId) ids.add(match.opponentPlayerId);
+    }
+    return ids.size;
+  }
+
+  async levelDistribution(): Promise<AnalyticsLevelBucket[]> {
+    const counts = new Map<number, number>();
+    for (const player of this.state.players) {
+      counts.set(player.level, (counts.get(player.level) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([level, count]) => ({ level, count }));
+  }
+
+  async bossAggregates(): Promise<AnalyticsBossRow[]> {
+    const map = new Map<string, AnalyticsBossRow>();
+    for (const row of this.state.bossStats) {
+      const current = map.get(row.bossId) ?? { bossId: row.bossId, wins: 0, losses: 0 };
+      current.wins += row.wins;
+      current.losses += row.losses;
+      map.set(row.bossId, current);
+    }
+    return [...map.values()];
+  }
+
+  async topPveEnemies(since: Date, limit: number): Promise<AnalyticsEnemyRow[]> {
+    const counts = new Map<string, number>();
+    for (const match of this.state.matches) {
+      if (match.mode !== 'PVE' || match.startedAt < since) continue;
+      counts.set(match.enemyId, (counts.get(match.enemyId) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, limit)
+      .map(([enemyId, count]) => ({ enemyId, count }));
+  }
+
+  async countReturning(createdFrom: Date, createdTo: Date, activeSince: Date): Promise<number> {
+    return this.state.players.filter((player) => {
+      if (player.createdAt < createdFrom || player.createdAt >= createdTo) return false;
+      return (player.lastActiveAt ?? player.updatedAt) >= activeSince;
+    }).length;
   }
 
   async removeItem(itemId: string): Promise<void> {
@@ -939,6 +1098,18 @@ export class MemoryGameStore implements GameStore {
     rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
     return rows;
   }
+}
+
+function matchQuery(row: CombatMatchRecord, query: CombatMatchQuery): boolean {
+  if (query.playerId && row.playerId !== query.playerId) return false;
+  if (query.opponentPlayerId && row.opponentPlayerId !== query.opponentPlayerId) return false;
+  if (query.mode && row.mode !== query.mode) return false;
+  if (query.enemyId && row.enemyId !== query.enemyId) return false;
+  if (query.result && row.result !== query.result) return false;
+  if (query.seasonId && (row.seasonId ?? 'season_0') !== query.seasonId) return false;
+  if (query.since && row.startedAt < query.since) return false;
+  if (query.until && row.startedAt >= query.until) return false;
+  return true;
 }
 
 function emptyState(): MemoryState {

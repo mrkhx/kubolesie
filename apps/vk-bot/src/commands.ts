@@ -86,6 +86,7 @@ const TEXT_MENU_ALIASES: Record<string, string> = {
   клан: 'clan',
   рейтинг: 'ratings',
   рейтинги: 'ratings',
+  пвп: 'pvp_hub',
   статистика: 'stats',
   достижения: 'achievements',
   грядка: 'farm',

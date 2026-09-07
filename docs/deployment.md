@@ -39,6 +39,8 @@ Production + `RATE_LIMIT_ENABLED=true` (так по умолчанию) **без
 - `VK_CALLBACK_SECRET`
 - `VK_CONFIRMATION_CODE`
 
+Опционально: `ADMIN_ANALYTICS_TOKEN` — включает `/v1/admin/analytics/*`. Без него эти пути 404. Токен в логи и JSON не попадает. См. [docs/admin-analytics.md](admin-analytics.md).
+
 `RATE_LIMIT_ENABLED` по умолчанию `true` в production. Явный `false` снимает Redis-требование и оставляет инстанс без distributed anti-abuse — так не деплоить.
 
 `VK_API_VERSION` по умолчанию `5.199`. `VK_API_TIMEOUT_MS` по умолчанию `4000`.

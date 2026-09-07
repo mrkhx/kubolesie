@@ -187,6 +187,72 @@ export const COSMETIC_PRODUCTS: Record<string, CosmeticProduct> = {
     availability: 'CATALOG',
     slot: 'profileFrame',
   },
+  title_pvp_1100: {
+    id: 'title_pvp_1100',
+    type: 'TITLE',
+    name: 'Искатель следа',
+    description: 'PvP 1100. Только вид.',
+    price: 0,
+    currency: 'COINS',
+    availability: 'SEASON',
+    seasonId: 'season_0',
+    slot: 'title',
+  },
+  badge_pvp_1250: {
+    id: 'badge_pvp_1250',
+    type: 'PLAYER_BADGE',
+    name: 'Знак осыпи',
+    description: 'PvP 1250. Только вид.',
+    price: 0,
+    currency: 'COINS',
+    availability: 'SEASON',
+    seasonId: 'season_0',
+    slot: 'badge',
+  },
+  title_pvp_1400: {
+    id: 'title_pvp_1400',
+    type: 'TITLE',
+    name: 'Клинковый',
+    description: 'PvP 1400. Только вид.',
+    price: 0,
+    currency: 'COINS',
+    availability: 'SEASON',
+    seasonId: 'season_0',
+    slot: 'title',
+  },
+  badge_pvp_1600: {
+    id: 'badge_pvp_1600',
+    type: 'PLAYER_BADGE',
+    name: 'Жетон 1600',
+    description: 'PvP 1600. Только вид.',
+    price: 0,
+    currency: 'COINS',
+    availability: 'SEASON',
+    seasonId: 'season_0',
+    slot: 'badge',
+  },
+  frame_pvp_1800: {
+    id: 'frame_pvp_1800',
+    type: 'PROFILE_FRAME',
+    name: 'Рамка арены',
+    description: 'PvP 1800. Только вид.',
+    price: 0,
+    currency: 'COINS',
+    availability: 'SEASON',
+    seasonId: 'season_0',
+    slot: 'profileFrame',
+  },
+  title_pvp_2000: {
+    id: 'title_pvp_2000',
+    type: 'TITLE',
+    name: 'Хозяин осыпи',
+    description: 'PvP 2000. Только вид.',
+    price: 0,
+    currency: 'COINS',
+    availability: 'SEASON',
+    seasonId: 'season_0',
+    slot: 'title',
+  },
   frame_seal: {
     id: 'frame_seal',
     type: 'PROFILE_FRAME',
@@ -330,12 +396,21 @@ export function computeLifetimeScore(input: {
 }
 
 export function eloDelta(playerRating: number, opponentRating: number, win: boolean, k: number): number {
+  return eloScoreDelta(playerRating, opponentRating, win ? 1 : 0, k);
+}
+
+export function eloScoreDelta(
+  playerRating: number,
+  opponentRating: number,
+  score: number,
+  k: number,
+): number {
   const player = finiteNumber(playerRating, PVP_RATING.start);
   const opponent = finiteNumber(opponentRating, PVP_RATING.start);
   const factor = Number.isFinite(k) ? k : PVP_RATING.k;
+  const outcome = Number.isFinite(score) ? Math.min(1, Math.max(0, score)) : 0;
   const expected = 1 / (1 + 10 ** ((opponent - player) / 400));
-  const score = win ? 1 : 0;
-  const delta = factor * (score - expected);
+  const delta = factor * (outcome - expected);
   return Number.isFinite(delta) ? Math.round(delta) : 0;
 }
 

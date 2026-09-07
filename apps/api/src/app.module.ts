@@ -12,12 +12,13 @@ import {
 import { loadAppConfig, type AppConfig } from './app-config';
 import { GameController } from './game.controller';
 import { HealthController } from './health.controller';
+import { AnalyticsController } from './analytics.controller';
 import { StoreLifecycle } from './lifecycle';
 import { VkController } from './vk.controller';
 import { createEphemeralStore } from './redis';
 
 @Module({
-  controllers: [HealthController, GameController, VkController],
+  controllers: [HealthController, GameController, VkController, AnalyticsController],
   providers: [
     StoreLifecycle,
     {

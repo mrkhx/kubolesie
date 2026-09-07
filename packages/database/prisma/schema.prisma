@@ -84,6 +84,7 @@ enum BattleEventType {
 
 enum CombatMode {
   PVE
+  PVP
 }
 
 enum CombatResult {
@@ -113,6 +114,7 @@ model Player {
   currentState     String   @default("start") @map("current_state")
   lastEnergyAt     DateTime @default(now()) @map("last_energy_at")
   lastDailyReset   DateTime @default(now()) @map("last_daily_reset")
+  lastActiveAt     DateTime @default(now()) @map("last_active_at")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
 
@@ -143,6 +145,8 @@ model Player {
   clansLed         Clan[]
   weeklyScores     PlayerWeeklyScore[]
 
+  @@index([createdAt])
+  @@index([lastActiveAt])
   @@map("players")
 }
 
@@ -216,6 +220,7 @@ model PlayerFlag {
   player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
   @@unique([playerId, flag])
+  @@index([flag])
   @@map("player_flags")
 }
 
@@ -269,6 +274,7 @@ model ProcessedEvent {
   player Player? @relation(fields: [playerId], references: [id], onDelete: SetNull)
 
   @@index([playerId])
+  @@index([createdAt])
   @@map("processed_events")
 }
 
@@ -318,22 +324,32 @@ model ItemHistory {
 }
 
 model CombatMatch {
-  id              String        @id @default(cuid())
-  playerId        String        @map("player_id")
-  mode            CombatMode    @default(PVE)
-  enemyId         String        @map("enemy_id")
-  seed            String
-  balanceVersion  String        @map("balance_version")
-  result          CombatResult?
-  playerSnapshot  Json          @map("player_snapshot")
-  enemySnapshot   Json          @map("enemy_snapshot")
-  startedAt       DateTime      @default(now()) @map("started_at")
-  finishedAt      DateTime?     @map("finished_at")
+  id                   String        @id @default(cuid())
+  playerId             String        @map("player_id")
+  mode                 CombatMode    @default(PVE)
+  enemyId              String        @map("enemy_id")
+  opponentPlayerId     String?       @map("opponent_player_id")
+  seasonId             String        @default("season_0") @map("season_id")
+  seed                 String
+  balanceVersion       String        @map("balance_version")
+  result               CombatResult?
+  playerSnapshot       Json          @map("player_snapshot")
+  enemySnapshot        Json          @map("enemy_snapshot")
+  attackerRatingBefore Int?          @map("attacker_rating_before")
+  attackerRatingAfter  Int?          @map("attacker_rating_after")
+  defenderRatingBefore Int?          @map("defender_rating_before")
+  defenderRatingAfter  Int?          @map("defender_rating_after")
+  rewardTier           String?       @map("reward_tier")
+  startedAt            DateTime      @default(now()) @map("started_at")
+  finishedAt           DateTime?     @map("finished_at")
 
   player Player         @relation(fields: [playerId], references: [id], onDelete: Cascade)
   events CombatEvent[]
 
   @@index([playerId, startedAt])
+  @@index([mode, startedAt])
+  @@index([playerId, mode, startedAt])
+  @@index([opponentPlayerId, startedAt])
   @@map("combat_matches")
 }
 

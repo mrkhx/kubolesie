@@ -340,17 +340,25 @@ export async function openMetaMenu(
 
 async function heroMenu(store: GameStore, player: PlayerRecord): Promise<GameResponse> {
   const cosmetics = await store.getCosmetics(player.id);
+  const flags = await store.getFlags(player.id);
   const title = cosmetics.title ? getProduct(cosmetics.title)?.name : null;
+  const buttons: GameButton[] = [
+    { label: '👤 Профиль', action: 'OPEN_MENU', payload: { menu: 'profile' } },
+  ];
+  if (flags.week_1_complete) {
+    buttons.push({ label: '⚔ PvP', action: 'OPEN_MENU', payload: { menu: 'pvp_hub' } });
+  } else {
+    buttons.push({ label: '📊 Статистика', action: 'OPEN_MENU', payload: { menu: 'stats' } });
+  }
+  buttons.push(
+    { label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } },
+    { label: '🛡 Клан', action: 'OPEN_MENU', payload: { menu: 'clan' } },
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
+  );
   return respond(
     player,
     [title ? `${player.name} · ${title}` : player.name, 'Герой Куболесья. Не сила — след.'].join('\n'),
-    [
-      { label: '👤 Профиль', action: 'OPEN_MENU', payload: { menu: 'profile' } },
-      { label: '📊 Статистика', action: 'OPEN_MENU', payload: { menu: 'stats' } },
-      { label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } },
-      { label: '🛡 Клан', action: 'OPEN_MENU', payload: { menu: 'clan' } },
-      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
-    ],
+    buttons,
   );
 }
 

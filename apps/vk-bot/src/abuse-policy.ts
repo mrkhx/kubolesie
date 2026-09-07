@@ -225,6 +225,11 @@ export function classifyCommand(command: GameCommand): CommandClass {
   const type = command.type;
   if (type === 'START_GAME') return 'SYSTEM';
   if (type === 'START_PVP') return 'PVP';
+  if (type === 'PVP_ACT') {
+    const act = String(command.payload?.act ?? '');
+    if (act === 'find' || act === 'claim') return 'PVP';
+    return 'EXPENSIVE_READ';
+  }
   if (type === 'LEADERBOARD_PAGE') return 'EXPENSIVE_READ';
   if (type === 'CLAN_ACT') {
     const act = String(command.payload?.act ?? '');

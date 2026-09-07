@@ -6,7 +6,7 @@
 
 Игрок взаимодействует через сообщения сообщества: текст, кнопки, callback actions и, при необходимости, карточки.
 
-Текущая версия: **Prototype 0.0.4** — Неделя 2 (Туманная низина, дни 8–14) поверх канона Недели 1.
+Текущая версия: **Prototype 0.0.5** — PvP 1.0 и admin analytics поверх Недели 1–2.
 
 ## Архитектура
 
@@ -180,7 +180,7 @@ npm run test:db:migrations  # TEST-ONLY, disposable Postgres
 npm run test:redis          # TEST-ONLY, localhost Redis
 ```
 
-Деплой: [docs/deployment.md](docs/deployment.md). PostgreSQL: [docs/production-database.md](docs/production-database.md). Anti-abuse: [docs/rate-limiting.md](docs/rate-limiting.md).
+Деплой: [docs/deployment.md](docs/deployment.md). PostgreSQL: [docs/production-database.md](docs/production-database.md). Anti-abuse: [docs/rate-limiting.md](docs/rate-limiting.md). PvP: [docs/pvp-1.md](docs/pvp-1.md). Analytics: [docs/admin-analytics.md](docs/admin-analytics.md).
 
 Сохранены тесты 0.0.1/0.0.2 и добавлены проверки цепочки: ящик без камня, отказ WOOD+STONE→кирка, булыжник только с деревянной киркой, деревянная кирка не берёт железо, полный путь до каменной кирки.
 
@@ -205,10 +205,11 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 | `GAME_STORE` | `prisma` или `memory` (memory запрещён в production) |
 | `MEMORY_STORE_PATH` | JSON-снимок только для dev fallback |
 | `ENABLE_MOCK_API` | mock HTTP; в production всегда выключен |
+| `ADMIN_ANALYTICS_TOKEN` | Bearer для `/v1/admin/analytics/*`; пусто = 404 |
 
 ## Game commands
 
-`START_GAME` `EXPLORE` `OPEN_INVENTORY` `OPEN_CAMP` `GATHER_WOOD` `GATHER_STONE` `GATHER_IRON` `CRAFT_ITEM` `EQUIP_ITEM` `USE_ITEM` `TALK_NPC` `START_PVE` `CLAIM_REWARD` `OPEN_CRATE` `DIALOGUE_CHOICE` `INSPECT_TOKEN` `BUILD_TEMP_SHELTER` `FEED_SCAVENGER` `RETURN_IRON` `OPEN_SECRET_CHEST` `MINE_BLUE_MINERAL` `REST_NIGHT` `BEGIN_DAY_2`
+`START_GAME` `EXPLORE` `OPEN_INVENTORY` `OPEN_CAMP` `GATHER_WOOD` `GATHER_STONE` `GATHER_IRON` `CRAFT_ITEM` `EQUIP_ITEM` `USE_ITEM` `TALK_NPC` `START_PVE` `START_PVP` `PVP_ACT` `CLAIM_REWARD` `OPEN_CRATE` `DIALOGUE_CHOICE` `INSPECT_TOKEN` `BUILD_TEMP_SHELTER` `FEED_SCAVENGER` `RETURN_IRON` `OPEN_SECRET_CHEST` `MINE_BLUE_MINERAL` `REST_NIGHT` `BEGIN_DAY_2`
 
 `GameResponse` ядра:
 
@@ -217,6 +218,13 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 ```
 
 Ядро **не** собирает сырой VK keyboard JSON. Это делает VK Adapter.
+
+## Prototype 0.0.5 содержит
+
+- PvP 1.0: реальные соперники, snapshot, Elo K16/K8, антифарм, вехи сезона
+- Admin Analytics 1.0: `/v1/admin/analytics/*` за `ADMIN_ANALYTICS_TOKEN`
+- gate PvP: `week_1_complete`; group chat не публикует боевой лог
+- additive migration `20260907200000_pvp_analytics`
 
 ## Prototype 0.0.4 содержит
 

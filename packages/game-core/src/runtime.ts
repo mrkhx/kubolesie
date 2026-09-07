@@ -115,6 +115,7 @@ import {
   week2Modifiers,
 } from './week2';
 import { dispatchMeta, grantMetaAchievement, isMetaMenu, META_COMMANDS, noteActivity, openMetaMenu } from './meta';
+import { dispatchPvp, isPvpMenu, openPvpMenu, PVP_COMMANDS } from './pvp';
 
 const NAV: GameButton[] = [
   { label: '👁 Осмотреться', action: 'EXPLORE' },
@@ -202,6 +203,8 @@ export class GameRuntime {
         await this.store.savePlayer(refreshed);
       }
       const current = (await this.store.findPlayerById(player.id)) ?? refreshed;
+      current.lastActiveAt = this.now();
+      await this.store.savePlayer(current);
       return await this.dispatch(current, event.command, event.eventId, event.text);
     } catch (error) {
       if (error instanceof GameError) {
@@ -333,6 +336,9 @@ export class GameRuntime {
         if ((META_COMMANDS as readonly string[]).includes(command.type)) {
           return dispatchMeta(this.store, player, command, this.now());
         }
+        if ((PVP_COMMANDS as readonly string[]).includes(command.type)) {
+          return dispatchPvp(this.weekHost(), ctx, command, eventId);
+        }
         if ((WEEK_COMMANDS as readonly string[]).includes(command.type)) {
           return dispatchWeek(this.weekHost(), ctx, command, eventId);
         }
@@ -384,6 +390,7 @@ export class GameRuntime {
       'CLAN_ACT',
       'COSMETIC_ACT',
       'LEADERBOARD_PAGE',
+      'PVP_ACT',
       'PROMPT_HERO_NAME',
       'CANCEL_HERO_NAME',
     ];
@@ -602,6 +609,7 @@ export class GameRuntime {
   }
 
   private async openMenu(ctx: Ctx, menu: ActionMenuId, extraText?: string): Promise<GameResponse> {
+    if (isPvpMenu(menu)) return openPvpMenu(this.weekHost(), ctx, menu);
     if (isMetaMenu(menu)) return openMetaMenu(this.store, ctx.player, menu, this.now());
     if (isWeek2Menu(menu)) return openWeek2Menu(this.weekHost(), ctx, menu);
     if (isWeekMenu(menu)) return openWeekMenu(this.weekHost(), ctx, menu);

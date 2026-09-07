@@ -1,6 +1,7 @@
 import type {
   ApplicationStatus,
   ClanRole,
+  CombatMode,
   CombatResult,
   CurrencyCode,
   EquipmentSlot,
@@ -39,6 +40,7 @@ export interface PlayerRecord {
   currentState: string;
   lastEnergyAt: Date;
   lastDailyReset: Date;
+  lastActiveAt: Date;
   createdAt: Date;
   updatedAt: Date;
   stats: PlayerStatsRecord;
@@ -79,15 +81,62 @@ export interface QuestTemplateRecord {
 export interface CombatMatchRecord {
   id: string;
   playerId: string;
-  mode: 'PVE';
+  mode: CombatMode;
   enemyId: string;
+  opponentPlayerId?: string | null;
+  seasonId?: string;
   seed: string;
   balanceVersion: string;
   result: CombatResult | null;
   playerSnapshot: CombatantSnapshot;
   enemySnapshot: CombatantSnapshot;
+  attackerRatingBefore?: number | null;
+  attackerRatingAfter?: number | null;
+  defenderRatingBefore?: number | null;
+  defenderRatingAfter?: number | null;
+  rewardTier?: string | null;
   startedAt: Date;
   finishedAt: Date | null;
+}
+
+export interface PvpCandidate {
+  playerId: string;
+  name: string;
+  level: number;
+  pvpRating: number;
+  lastActiveAt: Date;
+}
+
+export interface CombatMatchQuery {
+  playerId?: string;
+  opponentPlayerId?: string;
+  mode?: CombatMode;
+  enemyId?: string;
+  result?: CombatResult;
+  since?: Date;
+  until?: Date;
+  seasonId?: string;
+}
+
+export interface AnalyticsFlagCount {
+  flag: string;
+  count: number;
+}
+
+export interface AnalyticsLevelBucket {
+  level: number;
+  count: number;
+}
+
+export interface AnalyticsBossRow {
+  bossId: string;
+  wins: number;
+  losses: number;
+}
+
+export interface AnalyticsEnemyRow {
+  enemyId: string;
+  count: number;
 }
 
 export interface PlayerStatisticsRecord {
@@ -267,6 +316,27 @@ export interface GameStore {
 
   createCombatMatch(input: Omit<CombatMatchRecord, 'id'> & { id?: string }): Promise<CombatMatchRecord>;
   addCombatEvents(matchId: string, events: BattleEvent[]): Promise<void>;
+  listCombatMatches(query: CombatMatchQuery & { limit: number; offset?: number }): Promise<CombatMatchRecord[]>;
+  countCombatMatches(query: CombatMatchQuery): Promise<number>;
+  listPvpCandidates(input: {
+    excludePlayerId: string;
+    minRating: number;
+    maxRating: number;
+    targetRating: number;
+    unlockFlag: string;
+    limit: number;
+  }): Promise<PvpCandidate[]>;
+  countPlayers(filter?: { createdSince?: Date; createdUntil?: Date; activeSince?: Date }): Promise<number>;
+  countProcessedEvents(since?: Date): Promise<number>;
+  countFlags(flags: string[]): Promise<AnalyticsFlagCount[]>;
+  countPlayersWithAnyFlag(flags: string[]): Promise<number>;
+  countPlayersWithStat(field: keyof Omit<PlayerStatisticsRecord, 'playerId'>, min: number): Promise<number>;
+  averagePvpRating(): Promise<number>;
+  countPvpActivePlayers(since?: Date): Promise<number>;
+  levelDistribution(): Promise<AnalyticsLevelBucket[]>;
+  bossAggregates(): Promise<AnalyticsBossRow[]>;
+  topPveEnemies(since: Date, limit: number): Promise<AnalyticsEnemyRow[]>;
+  countReturning(createdFrom: Date, createdTo: Date, activeSince: Date): Promise<number>;
 
   removeItem(itemId: string): Promise<void>;
   listPlayerQuests(playerId: string): Promise<PlayerQuestRecord[]>;

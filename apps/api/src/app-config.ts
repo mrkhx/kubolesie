@@ -11,6 +11,7 @@ import {
   loadVkConfig,
   type VkConfig,
 } from '@kubolesie/vk-bot';
+import { loadAdminAnalyticsToken } from './admin-auth';
 
 export class ProductionConfigError extends Error {
   constructor(readonly missing: string[]) {
@@ -41,6 +42,7 @@ export interface AppConfig {
   vk: VkConfig;
   database: DatabaseConfig;
   rateLimit: RateLimitConfig;
+  adminAnalyticsToken: string | null;
 }
 
 function emptyToNull(value: string | undefined): string | null {
@@ -89,6 +91,7 @@ export function loadAppConfig(env: NodeJS.Dict<string> = process.env): AppConfig
     vk: loadVkConfig(env),
     database: loadDatabaseConfig(env),
     rateLimit: loadRateLimitConfig(env),
+    adminAnalyticsToken: loadAdminAnalyticsToken(env),
   };
 }
 
@@ -122,6 +125,7 @@ export function describeAppConfig(config: AppConfig): Record<string, unknown> {
     rateLimitEnabled: config.rateLimit.enabled,
     redisConfigured: config.rateLimit.redisConfigured,
     redisBackend: config.rateLimit.backend,
+    adminAnalyticsConfigured: Boolean(config.adminAnalyticsToken),
   };
 }
 

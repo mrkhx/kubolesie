@@ -496,3 +496,29 @@ describe('response destination', () => {
     expect(client.sent.every((row) => row.peerId === 9001)).toBe(true);
   });
 });
+
+describe('pvp group leak', () => {
+  it('routes a group PvP button to DM and never posts the battle log in the chat', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(groupMessage({ text: 'начать', eventId: 'pvp-g-start', userId: 80 }));
+    const player = (await store.findPlayerByVkUserId('80'))!;
+    await store.setFlag(player.id, 'week_1_complete', '1');
+    const foe = await store.createPlayer({ vkUserId: '81', name: 'Цель' });
+    await store.setFlag(foe.id, 'week_1_complete', '1');
+    client.sent.length = 0;
+    const result = await adapter.handleCallback(
+      messageEvent({
+        eventId: 'pvp-g-find',
+        userId: 80,
+        peerId: GROUP_PEER,
+        payload: { action: 'PVP_ACT', act: 'find' },
+      }),
+    );
+    expect(result).toEqual({ status: 200, body: 'ok' });
+    expect(groupSent(client).some((row) => /Стычка|Бой начался|HP /.test(row.text))).toBe(false);
+    const dm = dmSent(client, 80);
+    expect(dm.length).toBeGreaterThan(0);
+    expect(dm.some((row) => /Стычка|соперник|PvP|пока нет/i.test(row.text))).toBe(true);
+  });
+});
+

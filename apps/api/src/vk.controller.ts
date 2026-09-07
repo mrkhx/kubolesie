@@ -1,6 +1,7 @@
 import { Body, Controller, Header, Inject, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { VkAdapter } from '@kubolesie/vk-bot';
+import { incMetric } from './metrics';
 
 export function requestIp(req: {
   ip?: string;
@@ -28,6 +29,8 @@ export class VkController {
   @Header('content-type', 'text/plain; charset=utf-8')
   async callback(@Body() body: unknown, @Req() req: Request, @Res() res: Response): Promise<void> {
     const result = await this.adapter.handleCallback(body, { ip: requestIp(req) });
+    if (result.status >= 500) incMetric('vkCallbackErrors');
+    if (result.status === 503) incMetric('vkSendErrors');
     res.status(result.status);
     res.setHeader('content-type', 'text/plain; charset=utf-8');
     res.send(result.body);

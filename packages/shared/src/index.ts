@@ -1,5 +1,5 @@
-export const BALANCE_VERSION = '0.0.4';
-export const PROTOTYPE_VERSION = '0.0.4';
+export const BALANCE_VERSION = '0.0.5';
+export const PROTOTYPE_VERSION = '0.0.5';
 
 export const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
 export const ENERGY_PER_INTERVAL = 1;
@@ -63,6 +63,7 @@ export const GAME_COMMANDS = [
   'TRADE_ACT',
   'PAY_TRIBUTE',
   'START_PVP',
+  'PVP_ACT',
   'BUILD_BARRICADE',
   'HELP_PET',
   'REPAIR_LANTERN',
@@ -219,7 +220,7 @@ export type ItemHistoryType = 'CREATED' | 'LOOTED' | 'EQUIPPED' | 'SALVAGED' | '
 
 export type BattleEventType = 'HIT' | 'CRIT' | 'DODGE' | 'DEFEAT';
 
-export type CombatMode = 'PVE';
+export type CombatMode = 'PVE' | 'PVP';
 export type CombatResult = 'WIN' | 'LOSS' | 'DRAW';
 
 export type CurrencyCode = 'COINS' | 'PREMIUM';

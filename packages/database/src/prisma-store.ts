@@ -10,7 +10,7 @@ import type {
   Rarity,
   ResourceType,
 } from '@kubolesie/shared';
-import type { BattleEvent } from '@kubolesie/combat-engine';
+import type { CombatantSnapshot, BattleEvent } from '@kubolesie/combat-engine';
 import { clanLeaderboardScore, clanLevelForXp, PVP_RATING, applyPvpRating, clampLimit, clampOffset } from '@kubolesie/content';
 import {
   EMPTY_STATISTICS,
@@ -18,6 +18,7 @@ import {
   type ClanApplicationRecord,
   type ClanMemberRecord,
   type ClanRecord,
+  type CombatMatchQuery,
   type CombatMatchRecord,
   type DiscoveryRecord,
   type EntitlementRecord,
@@ -32,8 +33,13 @@ import {
   type PlayerRecord,
   type PlayerStatisticsRecord,
   type ProcessedEventRecord,
+  type PvpCandidate,
   type QuestTemplateRecord,
   type StatisticsDelta,
+  type AnalyticsBossRow,
+  type AnalyticsEnemyRow,
+  type AnalyticsFlagCount,
+  type AnalyticsLevelBucket,
 } from '@kubolesie/game-core';
 import type { GameResponse } from '@kubolesie/shared';
 import { Prisma, type PrismaClient } from './generated/client';
@@ -58,6 +64,7 @@ function mapPlayer(
     currentState: row.currentState,
     lastEnergyAt: row.lastEnergyAt,
     lastDailyReset: row.lastDailyReset,
+    lastActiveAt: row.lastActiveAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     stats: row.stats
@@ -134,6 +141,7 @@ export class PrismaGameStore implements GameStore {
         currentState: player.currentState,
         lastEnergyAt: player.lastEnergyAt,
         lastDailyReset: player.lastDailyReset,
+        lastActiveAt: player.lastActiveAt,
         stats: {
           update: {
             attack: player.stats.attack,
@@ -445,15 +453,18 @@ export class PrismaGameStore implements GameStore {
         result: input.result ?? undefined,
         playerSnapshot: input.playerSnapshot as unknown as Prisma.InputJsonValue,
         enemySnapshot: input.enemySnapshot as unknown as Prisma.InputJsonValue,
+        opponentPlayerId: input.opponentPlayerId ?? null,
+        seasonId: input.seasonId ?? 'season_0',
+        attackerRatingBefore: input.attackerRatingBefore ?? null,
+        attackerRatingAfter: input.attackerRatingAfter ?? null,
+        defenderRatingBefore: input.defenderRatingBefore ?? null,
+        defenderRatingAfter: input.defenderRatingAfter ?? null,
+        rewardTier: input.rewardTier ?? null,
         startedAt: input.startedAt,
         finishedAt: input.finishedAt,
       },
     });
-    return {
-      ...input,
-      id: row.id,
-      result: row.result,
-    };
+    return mapMatch(row);
   }
 
   async addCombatEvents(matchId: string, events: BattleEvent[]): Promise<void> {
@@ -466,6 +477,167 @@ export class PrismaGameStore implements GameStore {
         type: event.type,
         value: event.value,
       })),
+    });
+  }
+
+  async listCombatMatches(
+    query: CombatMatchQuery & { limit: number; offset?: number },
+  ): Promise<CombatMatchRecord[]> {
+    const rows = await this.prisma.combatMatch.findMany({
+      where: combatWhere(query),
+      orderBy: { startedAt: 'desc' },
+      skip: clampOffset(query.offset ?? 0),
+      take: clampLimit(query.limit, 10),
+    });
+    return rows.map(mapMatch);
+  }
+
+  async countCombatMatches(query: CombatMatchQuery): Promise<number> {
+    return this.prisma.combatMatch.count({ where: combatWhere(query) });
+  }
+
+  async listPvpCandidates(input: {
+    excludePlayerId: string;
+    minRating: number;
+    maxRating: number;
+    targetRating: number;
+    unlockFlag: string;
+    limit: number;
+  }): Promise<PvpCandidate[]> {
+    const take = clampLimit(input.limit, 24);
+    const rows = await this.prisma.playerRating.findMany({
+      where: {
+        playerId: { not: input.excludePlayerId },
+        pvpRating: { gte: input.minRating, lte: input.maxRating },
+        player: { flags: { some: { flag: input.unlockFlag } } },
+      },
+      take: Math.min(48, take * 2),
+      include: { player: { select: { id: true, name: true, level: true, lastActiveAt: true } } },
+    });
+    const mapped: PvpCandidate[] = rows.map((row) => ({
+      playerId: row.playerId,
+      name: row.player.name,
+      level: row.player.level,
+      pvpRating: row.pvpRating,
+      lastActiveAt: row.player.lastActiveAt,
+    }));
+    mapped.sort(
+      (a, b) =>
+        Math.abs(a.pvpRating - input.targetRating) - Math.abs(b.pvpRating - input.targetRating) ||
+        b.lastActiveAt.getTime() - a.lastActiveAt.getTime() ||
+        a.playerId.localeCompare(b.playerId),
+    );
+    return mapped.slice(0, take);
+  }
+
+  async countPlayers(filter?: {
+    createdSince?: Date;
+    createdUntil?: Date;
+    activeSince?: Date;
+  }): Promise<number> {
+    return this.prisma.player.count({
+      where: {
+        createdAt: {
+          gte: filter?.createdSince,
+          lt: filter?.createdUntil,
+        },
+        lastActiveAt: filter?.activeSince ? { gte: filter.activeSince } : undefined,
+      },
+    });
+  }
+
+  async countProcessedEvents(since?: Date): Promise<number> {
+    return this.prisma.processedEvent.count({
+      where: since ? { createdAt: { gte: since } } : undefined,
+    });
+  }
+
+  async countFlags(flags: string[]): Promise<AnalyticsFlagCount[]> {
+    if (!flags.length) return [];
+    const rows = await this.prisma.playerFlag.groupBy({
+      by: ['flag'],
+      where: { flag: { in: flags } },
+      _count: { _all: true },
+    });
+    const map = new Map(rows.map((row) => [row.flag, row._count._all]));
+    return flags.map((flag) => ({ flag, count: map.get(flag) ?? 0 }));
+  }
+
+  async countPlayersWithAnyFlag(flags: string[]): Promise<number> {
+    if (!flags.length) return 0;
+    const rows = await this.prisma.playerFlag.findMany({
+      where: { flag: { in: flags } },
+      distinct: ['playerId'],
+      select: { playerId: true },
+    });
+    return rows.length;
+  }
+
+  async countPlayersWithStat(
+    field: keyof Omit<PlayerStatisticsRecord, 'playerId'>,
+    min: number,
+  ): Promise<number> {
+    return this.prisma.playerStatistics.count({
+      where: { [field]: { gte: min } },
+    });
+  }
+
+  async averagePvpRating(): Promise<number> {
+    const agg = await this.prisma.playerRating.aggregate({ _avg: { pvpRating: true } });
+    return agg._avg.pvpRating ?? 0;
+  }
+
+  async countPvpActivePlayers(since?: Date): Promise<number> {
+    const rows = await this.prisma.combatMatch.findMany({
+      where: { mode: 'PVP', startedAt: since ? { gte: since } : undefined },
+      select: { playerId: true, opponentPlayerId: true },
+    });
+    const ids = new Set<string>();
+    for (const row of rows) {
+      ids.add(row.playerId);
+      if (row.opponentPlayerId) ids.add(row.opponentPlayerId);
+    }
+    return ids.size;
+  }
+
+  async levelDistribution(): Promise<AnalyticsLevelBucket[]> {
+    const rows = await this.prisma.player.groupBy({
+      by: ['level'],
+      _count: { _all: true },
+      orderBy: { level: 'asc' },
+    });
+    return rows.map((row) => ({ level: row.level, count: row._count._all }));
+  }
+
+  async bossAggregates(): Promise<AnalyticsBossRow[]> {
+    const rows = await this.prisma.playerBossStat.groupBy({
+      by: ['bossId'],
+      _sum: { wins: true, losses: true },
+    });
+    return rows.map((row) => ({
+      bossId: row.bossId,
+      wins: row._sum.wins ?? 0,
+      losses: row._sum.losses ?? 0,
+    }));
+  }
+
+  async topPveEnemies(since: Date, limit: number): Promise<AnalyticsEnemyRow[]> {
+    const rows = await this.prisma.combatMatch.groupBy({
+      by: ['enemyId'],
+      where: { mode: 'PVE', startedAt: { gte: since } },
+      _count: { _all: true },
+      orderBy: { _count: { enemyId: 'desc' } },
+      take: clampLimit(limit, 5),
+    });
+    return rows.map((row) => ({ enemyId: row.enemyId, count: row._count._all }));
+  }
+
+  async countReturning(createdFrom: Date, createdTo: Date, activeSince: Date): Promise<number> {
+    return this.prisma.player.count({
+      where: {
+        createdAt: { gte: createdFrom, lt: createdTo },
+        lastActiveAt: { gte: activeSince },
+      },
     });
   }
 
@@ -1176,4 +1348,64 @@ function mapClanError(error: unknown): Error {
     if (target.includes('player_id')) return new Error('already_in_clan');
   }
   return error instanceof Error ? error : new Error('clan_error');
+}
+
+function combatWhere(query: CombatMatchQuery): Prisma.CombatMatchWhereInput {
+  return {
+    playerId: query.playerId,
+    opponentPlayerId: query.opponentPlayerId,
+    mode: query.mode,
+    enemyId: query.enemyId,
+    result: query.result,
+    seasonId: query.seasonId,
+    startedAt:
+      query.since || query.until
+        ? {
+            gte: query.since,
+            lt: query.until,
+          }
+        : undefined,
+  };
+}
+
+function mapMatch(row: {
+  id: string;
+  playerId: string;
+  mode: CombatMatchRecord['mode'];
+  enemyId: string;
+  opponentPlayerId?: string | null;
+  seasonId?: string;
+  seed: string;
+  balanceVersion: string;
+  result: CombatMatchRecord['result'];
+  playerSnapshot: Prisma.JsonValue;
+  enemySnapshot: Prisma.JsonValue;
+  attackerRatingBefore?: number | null;
+  attackerRatingAfter?: number | null;
+  defenderRatingBefore?: number | null;
+  defenderRatingAfter?: number | null;
+  rewardTier?: string | null;
+  startedAt: Date;
+  finishedAt: Date | null;
+}): CombatMatchRecord {
+  return {
+    id: row.id,
+    playerId: row.playerId,
+    mode: row.mode,
+    enemyId: row.enemyId,
+    opponentPlayerId: row.opponentPlayerId ?? null,
+    seasonId: row.seasonId ?? 'season_0',
+    seed: row.seed,
+    balanceVersion: row.balanceVersion,
+    result: row.result,
+    playerSnapshot: row.playerSnapshot as unknown as CombatantSnapshot,
+    enemySnapshot: row.enemySnapshot as unknown as CombatantSnapshot,
+    attackerRatingBefore: row.attackerRatingBefore ?? null,
+    attackerRatingAfter: row.attackerRatingAfter ?? null,
+    defenderRatingBefore: row.defenderRatingBefore ?? null,
+    defenderRatingAfter: row.defenderRatingAfter ?? null,
+    rewardTier: row.rewardTier ?? null,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+  };
 }
