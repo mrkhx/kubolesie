@@ -424,6 +424,11 @@ describe('DM unavailable fallback', () => {
     expect(dmSent(client, 99)).toHaveLength(0);
     expect(groupSent(client)).toHaveLength(1);
     expect(groupSent(client)[0]!.text).toBe(GROUP_CONTINUE_IN_DM);
+    expect(groupSent(client)[0]!.keyboard?.buttons[0]?.[0]?.action).toMatchObject({
+      type: 'open_link',
+      label: '✉ Открыть Куболесье',
+      link: 'https://vk.me/club111',
+    });
   });
 
   it('tells the player to open DMs when profile cannot be delivered', async () => {
@@ -434,6 +439,23 @@ describe('DM unavailable fallback', () => {
     await adapter.handleCallback(groupMessage({ text: 'профиль', eventId: 'pu-1', userId: 70 }));
     expect(groupSent(client)[0]!.text).toBe(GROUP_PROFILE_UNAVAILABLE);
     expect(dmSent(client, 70)).toHaveLength(0);
+    expect(groupSent(client)[0]!.keyboard?.buttons[0]?.[0]?.action).toMatchObject({
+      type: 'open_link',
+      label: '✉ Открыть Куболесье',
+      link: 'https://vk.me/club111',
+    });
+  });
+
+  it('still DMs gameplay if the group notice send fails', async () => {
+    const { adapter, store, client } = boot();
+    client.failPeerCodes.set(GROUP_PEER, 10);
+    const result = await adapter.handleCallback(
+      groupMessage({ text: 'Начать', eventId: 'group-fail', userId: 61 }),
+    );
+    expect(result).toEqual({ status: 200, body: 'ok' });
+    expect(await store.findPlayerByVkUserId('61')).not.toBeNull();
+    expect(groupSent(client)).toHaveLength(0);
+    expect(dmSent(client, 61)[0]!.text).toContain('приходишь в себя');
   });
 });
 

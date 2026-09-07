@@ -380,25 +380,29 @@ export class VkAdapter {
       return;
     }
     const userDm = dmPeerId(parsed.userId);
+    const invite = config.groupId
+      ? communityDmKeyboard(config.groupId, '✉ Открыть Куболесье')
+      : undefined;
     if (isGroupStartCommand(parsed.command)) {
-      await this.sendGroupSocialEvent(
-        {
-          kind: 'player_start',
-          peerId: parsed.peerId,
-          userId: parsed.userId,
-        },
-        parsed.eventId,
-      );
+      try {
+        await this.sendGroupSocialEvent(
+          {
+            kind: 'player_start',
+            peerId: parsed.peerId,
+            userId: parsed.userId,
+          },
+          parsed.eventId,
+        );
+      } catch {
+        // Group notice is best-effort; gameplay must still go to DM.
+      }
       const dmOk = await this.trySendDm(userDm, parsed.eventId, game);
       if (!dmOk) {
-        const keyboard = config.groupId
-          ? communityDmKeyboard(config.groupId, '✉ Открыть Куболесье')
-          : undefined;
         await this.notifySafe(
           parsed.peerId,
           `${parsed.eventId}:dm-fallback`,
           formatDmUnavailableNotice(),
-          keyboard,
+          invite,
         );
       }
       return;
@@ -409,12 +413,18 @@ export class VkAdapter {
         parsed.peerId,
         `${parsed.eventId}:group-profile`,
         dmOk ? GROUP_PROFILE_SENT : GROUP_PROFILE_UNAVAILABLE,
+        dmOk ? undefined : invite,
       );
       return;
     }
     const dmOk = await this.trySendDm(userDm, parsed.eventId, game);
     if (!dmOk) {
-      await this.notifySafe(parsed.peerId, `${parsed.eventId}:dm-fallback`, GROUP_CONTINUE_IN_DM);
+      await this.notifySafe(
+        parsed.peerId,
+        `${parsed.eventId}:dm-fallback`,
+        GROUP_CONTINUE_IN_DM,
+        invite,
+      );
     }
   }
 
