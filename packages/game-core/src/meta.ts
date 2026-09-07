@@ -20,6 +20,7 @@ import {
 import type { GameButton, GameCommand, GameResponse } from '@kubolesie/shared';
 import {
   ActionRejectedError,
+  StaleActionError,
 } from './errors';
 import type {
   ClanRecord,
@@ -85,7 +86,8 @@ export async function noteActivity(
       if ((BOSS_IDS as readonly string[]).includes(event.enemyId)) {
         await store.incrementStatistics(player.id, { bossWins: 1 });
         await store.incrementBossStat(player.id, event.enemyId, 'wins');
-        await addClanProgress(store, player.id, period, CLAN_XP.boss, WEEKLY_SCORE.bossWin);
+        const once = await store.tryClaimReward(player.id, 'weekly_boss', event.enemyId);
+        if (once) await addClanProgress(store, player.id, period, CLAN_XP.boss, WEEKLY_SCORE.bossWin);
         await maybeGrant(store, player.id, 'FIRST_BOSS');
       } else {
         await bumpWeekly(store, player.id, WEEKLY_SCORE.pveWin);
@@ -160,8 +162,12 @@ export async function noteActivity(
 async function ensurePeriod(store: GameStore, playerId: string, period: string): Promise<void> {
   const rating = await store.getRating(playerId);
   if (rating.weeklyPeriod === period) return;
+  if (rating.weeklyPeriod) {
+    await store.upsertWeeklyScore(playerId, rating.weeklyPeriod, rating.weeklyScore);
+  }
+  const historic = await store.getWeeklyScore(playerId, period);
   rating.weeklyPeriod = period;
-  rating.weeklyScore = 0;
+  rating.weeklyScore = historic;
   rating.weeklyPvpOpponents = '';
   rating.seasonId = CURRENT_SEASON.id;
   await store.saveRating(rating);
@@ -169,8 +175,11 @@ async function ensurePeriod(store: GameStore, playerId: string, period: string):
 
 async function bumpWeekly(store: GameStore, playerId: string, amount: number): Promise<void> {
   const rating = await store.getRating(playerId);
-  rating.weeklyScore += amount;
+  rating.weeklyScore += Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
   await store.saveRating(rating);
+  if (rating.weeklyPeriod) {
+    await store.upsertWeeklyScore(playerId, rating.weeklyPeriod, rating.weeklyScore);
+  }
 }
 
 async function addClanProgress(
@@ -417,7 +426,9 @@ async function leaderboard(
   now: Date,
 ): Promise<GameResponse> {
   const period = isoWeekKey(now);
-  const offset = Math.max(0, page) * LEADERBOARD_PAGE_SIZE;
+  const rawPage = Number(page);
+  const safePage = Number.isFinite(rawPage) ? Math.max(0, Math.min(1000, Math.floor(rawPage))) : 0;
+  const offset = safePage * LEADERBOARD_PAGE_SIZE;
   const titles: Record<string, string> = {
     score: 'Общий рейтинг',
     pvp: 'PvP рейтинг',
@@ -444,18 +455,18 @@ async function leaderboard(
     rank ? `Твоё место: #${rank}` : 'Тебя ещё нет в таблице.',
   ].join('\n');
   const buttons: GameButton[] = [];
-  if (page > 0) {
+  if (safePage > 0) {
     buttons.push({
       label: '◀ Назад',
       action: 'LEADERBOARD_PAGE',
-      payload: { board, page: page - 1 },
+      payload: { board, page: safePage - 1 },
     });
   }
   if (rows.length === LEADERBOARD_PAGE_SIZE) {
     buttons.push({
       label: 'Ещё ▶',
       action: 'LEADERBOARD_PAGE',
-      payload: { board, page: page + 1 },
+      payload: { board, page: safePage + 1 },
     });
   }
   buttons.push({ label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } });
@@ -673,9 +684,9 @@ async function reviewApps(store: GameStore, player: PlayerRecord): Promise<GameR
 
 async function acceptApp(store: GameStore, player: PlayerRecord, appId: string): Promise<GameResponse> {
   const membership = await requireOfficer(store, player);
-  const apps = await store.listPendingApplications(membership.clan.id);
-  const app = apps.find((row) => row.id === appId);
-  if (!app) throw new ActionRejectedError('Заявки нет.');
+  const app = await store.getApplication(appId);
+  if (!app || app.clanId !== membership.clan.id) throw new ActionRejectedError('Заявки нет.');
+  if (app.status !== 'PENDING') throw new StaleActionError('Заявка уже обработана.');
   const already = await store.getPlayerClan(app.playerId);
   if (already) {
     await store.setApplicationStatus(app.id, 'CANCELLED');
@@ -700,8 +711,11 @@ async function acceptApp(store: GameStore, player: PlayerRecord, appId: string):
 }
 
 async function rejectApp(store: GameStore, player: PlayerRecord, appId: string): Promise<GameResponse> {
-  await requireOfficer(store, player);
-  await store.setApplicationStatus(appId, 'REJECTED');
+  const membership = await requireOfficer(store, player);
+  const app = await store.getApplication(appId);
+  if (!app || app.clanId !== membership.clan.id) throw new ActionRejectedError('Заявки нет.');
+  if (app.status !== 'PENDING') throw new StaleActionError('Заявка уже обработана.');
+  await store.setApplicationStatus(app.id, 'REJECTED');
   return respond(player, 'Заявка отклонена.', [
     { label: '🔙 Назад', action: 'OPEN_MENU', payload: { menu: 'clan_manage' } },
   ]);

@@ -57,6 +57,21 @@ export const CLAN_NAME = { min: 2, max: 24 } as const;
 export const CLAN_TAG = { min: 2, max: 5 } as const;
 
 export const LEADERBOARD_PAGE_SIZE = 10;
+export const QUERY_LIMIT_MAX = 50;
+
+export function clampLimit(value: number, fallback = 10): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.min(QUERY_LIMIT_MAX, Math.floor(value)));
+}
+
+export function clampOffset(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1_000_000, Math.floor(value)));
+}
+
+export function finiteNumber(value: number, fallback = 0): number {
+  return Number.isFinite(value) ? value : fallback;
+}
 
 export type CosmeticType =
   | 'PROFILE_FRAME'
@@ -244,12 +259,17 @@ export const ACHIEVEMENTS: Record<string, AchievementDef> = {
 export const BOSS_IDS = ['stumpfang', 'wenzel_warden'] as const;
 
 export function isoWeekKey(now: Date): string {
-  const date = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
   const day = date.getUTCDay() || 7;
   date.setUTCDate(date.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  const weekYear = date.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(weekYear, 0, 1));
   const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
-  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+  return `${weekYear}-W${String(week).padStart(2, '0')}`;
+}
+
+export function utcDayKey(now: Date): string {
+  return now.toISOString().slice(0, 10);
 }
 
 export function computeLifetimeScore(input: {
@@ -263,30 +283,44 @@ export function computeLifetimeScore(input: {
   discoveries: number;
   rareItems: number;
 }): number {
+  const level = finiteNumber(input.level);
+  const xp = finiteNumber(input.xp);
+  const daysCompleted = finiteNumber(input.daysCompleted);
+  const bossWins = finiteNumber(input.bossWins);
+  const pveWins = finiteNumber(input.pveWins);
+  const pvpRating = finiteNumber(input.pvpRating, PVP_RATING.start);
+  const discoveries = finiteNumber(input.discoveries);
+  const rareItems = finiteNumber(input.rareItems);
   return Math.max(
     0,
     Math.floor(
-      input.level * SCORE_WEIGHTS.level +
-        input.xp * SCORE_WEIGHTS.xp +
-        input.daysCompleted * SCORE_WEIGHTS.day +
+      level * SCORE_WEIGHTS.level +
+        xp * SCORE_WEIGHTS.xp +
+        daysCompleted * SCORE_WEIGHTS.day +
         (input.weekComplete ? SCORE_WEIGHTS.weekComplete : 0) +
-        input.bossWins * SCORE_WEIGHTS.bossWin +
-        input.pveWins * SCORE_WEIGHTS.pveWin +
-        Math.max(0, input.pvpRating - PVP_RATING.start) * SCORE_WEIGHTS.pvpAboveBase +
-        input.discoveries * SCORE_WEIGHTS.discovery +
-        input.rareItems * SCORE_WEIGHTS.rareItem,
+        bossWins * SCORE_WEIGHTS.bossWin +
+        pveWins * SCORE_WEIGHTS.pveWin +
+        Math.max(0, pvpRating - PVP_RATING.start) * SCORE_WEIGHTS.pvpAboveBase +
+        discoveries * SCORE_WEIGHTS.discovery +
+        rareItems * SCORE_WEIGHTS.rareItem,
     ),
   );
 }
 
 export function eloDelta(playerRating: number, opponentRating: number, win: boolean, k: number): number {
-  const expected = 1 / (1 + 10 ** ((opponentRating - playerRating) / 400));
+  const player = finiteNumber(playerRating, PVP_RATING.start);
+  const opponent = finiteNumber(opponentRating, PVP_RATING.start);
+  const factor = Number.isFinite(k) ? k : PVP_RATING.k;
+  const expected = 1 / (1 + 10 ** ((opponent - player) / 400));
   const score = win ? 1 : 0;
-  return Math.round(k * (score - expected));
+  const delta = factor * (score - expected);
+  return Number.isFinite(delta) ? Math.round(delta) : 0;
 }
 
 export function applyPvpRating(current: number, delta: number): number {
-  return Math.min(PVP_RATING.ceiling, Math.max(PVP_RATING.floor, current + delta));
+  const base = finiteNumber(current, PVP_RATING.start);
+  const change = finiteNumber(delta);
+  return Math.min(PVP_RATING.ceiling, Math.max(PVP_RATING.floor, base + change));
 }
 
 export function clanLevelForXp(xp: number): number {

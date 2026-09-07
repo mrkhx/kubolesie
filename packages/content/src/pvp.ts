@@ -1,4 +1,4 @@
-import { ENEMIES, type EnemyTemplate } from './enemies';
+import type { EnemyTemplate } from './enemies';
 
 export const PVP_RIVALS: EnemyTemplate[] = [
   {
@@ -43,7 +43,7 @@ export const PVP_RIVALS: EnemyTemplate[] = [
 ];
 
 export function getPvpRival(id: string): EnemyTemplate | undefined {
-  return PVP_RIVALS.find((row) => row.id === id) ?? ENEMIES[id];
+  return PVP_RIVALS.find((row) => row.id === id);
 }
 
 export function nextPvpRival(index: number): EnemyTemplate {

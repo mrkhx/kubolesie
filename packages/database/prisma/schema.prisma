@@ -131,6 +131,7 @@ model Player {
   bossStats        PlayerBossStat[]
   contributions    ClanContribution[]
   clansLed         Clan[]
+  weeklyScores     PlayerWeeklyScore[]
 
   @@map("players")
 }
@@ -584,4 +585,17 @@ model PlayerAchievement {
 
   @@unique([playerId, achievementId])
   @@map("player_achievements")
+}
+
+model PlayerWeeklyScore {
+  id        String @id @default(cuid())
+  playerId  String @map("player_id")
+  periodKey String @map("period_key")
+  score     Int    @default(0)
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@unique([playerId, periodKey])
+  @@index([periodKey, score(sort: Desc)])
+  @@map("player_weekly_scores")
 }

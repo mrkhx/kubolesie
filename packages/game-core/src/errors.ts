@@ -49,3 +49,15 @@ export class ActionRejectedError extends GameError {
     super(message, 'ACTION_REJECTED');
   }
 }
+
+export class StaleActionError extends GameError {
+  constructor(message = 'Это действие уже недействительно.') {
+    super(message, 'STALE_ACTION');
+  }
+}
+
+export class NotFoundError extends GameError {
+  constructor(message = 'Не найдено.') {
+    super(message, 'NOT_FOUND');
+  }
+}

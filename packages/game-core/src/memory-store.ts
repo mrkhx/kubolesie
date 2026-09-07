@@ -6,6 +6,7 @@ import type {
   ApplicationStatus,
   ClanRole,
   EquipmentSlot,
+  GameResponse,
   ItemHistoryType,
   Rarity,
   ResourceType,
@@ -33,9 +34,17 @@ import type {
   StatisticsDelta,
 } from './store';
 import { EMPTY_STATISTICS } from './store';
-import { clanLeaderboardScore, clanLevelForXp, PVP_RATING, QUEST_TEMPLATES } from '@kubolesie/content';
+import {
+  applyPvpRating,
+  clampLimit,
+  clampOffset,
+  clanLeaderboardScore,
+  clanLevelForXp,
+  PVP_RATING,
+  QUEST_TEMPLATES,
+} from '@kubolesie/content';
 import type { BattleEvent } from '@kubolesie/combat-engine';
-import { RewardAlreadyClaimedError } from './errors';
+import { InsufficientResourcesError, RewardAlreadyClaimedError } from './errors';
 
 interface MemoryState {
   players: PlayerRecord[];
@@ -68,6 +77,7 @@ interface MemoryState {
   entitlements: EntitlementRecord[];
   cosmetics: PlayerCosmeticRecord[];
   achievements: PlayerAchievementRecord[];
+  weeklyScores: { playerId: string; periodKey: string; score: number }[];
 }
 
 function reviveDates(player: PlayerRecord): PlayerRecord {
@@ -114,6 +124,7 @@ export class MemoryGameStore implements GameStore {
       parsed.entitlements = parsed.entitlements ?? [];
       parsed.cosmetics = parsed.cosmetics ?? [];
       parsed.achievements = parsed.achievements ?? [];
+      parsed.weeklyScores = parsed.weeklyScores ?? [];
       store.state = parsed;
     } catch {
       store.state = emptyState();
@@ -136,6 +147,8 @@ export class MemoryGameStore implements GameStore {
   }
 
   async createPlayer(input: { vkUserId: string; name: string }): Promise<PlayerRecord> {
+    const existing = this.state.players.find((player) => player.vkUserId === input.vkUserId);
+    if (existing) return existing;
     const now = new Date();
     const player: PlayerRecord = {
       id: randomUUID(),
@@ -179,18 +192,25 @@ export class MemoryGameStore implements GameStore {
   }
 
   async addResource(playerId: string, resource: ResourceType, amount: number): Promise<number> {
-    const row = this.state.resources.find(
-      (entry) => entry.playerId === playerId && entry.resource === resource,
-    );
-    if (!row) {
-      const next = Math.max(0, amount);
-      this.state.resources.push({ playerId, resource, amount: next });
+    return this.withMut(async () => {
+      if (!Number.isFinite(amount)) throw new InsufficientResourcesError();
+      const row = this.state.resources.find(
+        (entry) => entry.playerId === playerId && entry.resource === resource,
+      );
+      if (amount < 0 && (!row || row.amount + amount < 0)) {
+        throw new InsufficientResourcesError();
+      }
+      if (!row) {
+        const next = Math.max(0, amount);
+        this.state.resources.push({ playerId, resource, amount: next });
+        await this.persist();
+        return next;
+      }
+      row.amount += amount;
+      if (row.amount < 0) throw new InsufficientResourcesError();
       await this.persist();
-      return next;
-    }
-    row.amount = Math.max(0, row.amount + amount);
-    await this.persist();
-    return row.amount;
+      return row.amount;
+    });
   }
 
   async createItem(input: {
@@ -317,20 +337,57 @@ export class MemoryGameStore implements GameStore {
     return this.state.processedEvents.find((row) => row.eventId === eventId) ?? null;
   }
 
+  async tryBeginProcessedEvent(
+    record: Omit<ProcessedEventRecord, 'response'> & { response?: GameResponse },
+  ): Promise<boolean> {
+    return this.withMut(async () => {
+      if (this.state.processedEvents.some((row) => row.eventId === record.eventId)) return false;
+      this.state.processedEvents.push({
+        eventId: record.eventId,
+        playerId: record.playerId,
+        command: record.command,
+        response: record.response ?? { text: '', buttons: [] },
+        createdAt: record.createdAt,
+      });
+      await this.persist();
+      return true;
+    });
+  }
+
+  async completeProcessedEvent(
+    eventId: string,
+    response: GameResponse,
+    playerId?: string | null,
+  ): Promise<void> {
+    const row = this.state.processedEvents.find((entry) => entry.eventId === eventId);
+    if (!row) return;
+    row.response = response;
+    if (playerId !== undefined) row.playerId = playerId;
+    await this.persist();
+  }
+
   async saveProcessedEvent(record: ProcessedEventRecord): Promise<void> {
-    if (this.state.processedEvents.some((row) => row.eventId === record.eventId)) return;
+    const existing = this.state.processedEvents.find((row) => row.eventId === record.eventId);
+    if (existing) {
+      existing.response = record.response;
+      existing.playerId = record.playerId;
+      await this.persist();
+      return;
+    }
     this.state.processedEvents.push(record);
     await this.persist();
   }
 
   async tryClaimReward(playerId: string, rewardType: string, rewardRef: string): Promise<boolean> {
-    const exists = this.state.rewardClaims.some(
-      (row) => row.playerId === playerId && row.rewardType === rewardType && row.rewardRef === rewardRef,
-    );
-    if (exists) return false;
-    this.state.rewardClaims.push({ playerId, rewardType, rewardRef });
-    await this.persist();
-    return true;
+    return this.withMut(async () => {
+      const exists = this.state.rewardClaims.some(
+        (row) => row.playerId === playerId && row.rewardType === rewardType && row.rewardRef === rewardRef,
+      );
+      if (exists) return false;
+      this.state.rewardClaims.push({ playerId, rewardType, rewardRef });
+      await this.persist();
+      return true;
+    });
   }
 
   async hasRewardClaim(playerId: string, rewardType: string, rewardRef: string): Promise<boolean> {
@@ -412,11 +469,17 @@ export class MemoryGameStore implements GameStore {
   }
 
   async saveRating(record: PlayerRatingRecord): Promise<PlayerRatingRecord> {
-    const index = this.state.ratings.findIndex((row) => row.playerId === record.playerId);
-    if (index >= 0) this.state.ratings[index] = { ...record };
-    else this.state.ratings.push({ ...record });
+    const clamped: PlayerRatingRecord = {
+      ...record,
+      pvpRating: applyPvpRating(record.pvpRating, 0),
+      lifetimeScore: Math.max(0, Number.isFinite(record.lifetimeScore) ? Math.floor(record.lifetimeScore) : 0),
+      weeklyScore: Math.max(0, Number.isFinite(record.weeklyScore) ? Math.floor(record.weeklyScore) : 0),
+    };
+    const index = this.state.ratings.findIndex((row) => row.playerId === clamped.playerId);
+    if (index >= 0) this.state.ratings[index] = { ...clamped };
+    else this.state.ratings.push({ ...clamped });
     await this.persist();
-    return record;
+    return clamped;
   }
 
   async listScoreboard(
@@ -426,7 +489,9 @@ export class MemoryGameStore implements GameStore {
     offset: number,
   ): Promise<LeaderboardEntry[]> {
     const rows = this.boardRows(board, periodKey);
-    return rows.slice(offset, offset + limit);
+    const take = clampLimit(limit);
+    const skip = clampOffset(offset);
+    return rows.slice(skip, skip + take);
   }
 
   async getScoreboardRank(
@@ -437,6 +502,20 @@ export class MemoryGameStore implements GameStore {
     const rows = this.boardRows(board, periodKey);
     const index = rows.findIndex((row) => row.id === playerId);
     return index >= 0 ? index + 1 : 0;
+  }
+
+  async upsertWeeklyScore(playerId: string, periodKey: string, score: number): Promise<void> {
+    const safe = Math.max(0, Number.isFinite(score) ? Math.floor(score) : 0);
+    const row = this.state.weeklyScores.find((entry) => entry.playerId === playerId && entry.periodKey === periodKey);
+    if (row) row.score = safe;
+    else this.state.weeklyScores.push({ playerId, periodKey, score: safe });
+    await this.persist();
+  }
+
+  async getWeeklyScore(playerId: string, periodKey: string): Promise<number> {
+    return (
+      this.state.weeklyScores.find((row) => row.playerId === playerId && row.periodKey === periodKey)?.score ?? 0
+    );
   }
 
   async createClan(input: {
@@ -499,20 +578,23 @@ export class MemoryGameStore implements GameStore {
   }
 
   async listClans(query: string, limit: number, offset: number): Promise<ClanRecord[]> {
-    const needle = query.trim().toLowerCase();
+    const needle = query.trim().toLowerCase().slice(0, 24);
     const rows = needle
       ? this.state.clans.filter(
           (clan) => clan.nameKey.includes(needle) || clan.tagKey.includes(needle),
         )
       : [...this.state.clans];
     rows.sort((a, b) => b.xp - a.xp);
-    return rows.slice(offset, offset + limit);
+    const take = clampLimit(limit, 5);
+    const skip = clampOffset(offset);
+    return rows.slice(skip, skip + take);
   }
 
   async addClanXp(clanId: string, amount: number): Promise<ClanRecord> {
     const clan = this.state.clans.find((row) => row.id === clanId);
     if (!clan) throw new Error('clan_missing');
-    clan.xp += amount;
+    const add = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
+    clan.xp += add;
     clan.level = clanLevelForXp(clan.xp);
     await this.persist();
     return clan;
@@ -545,10 +627,12 @@ export class MemoryGameStore implements GameStore {
   }
 
   async removeClanMember(clanId: string, playerId: string): Promise<void> {
-    this.state.clanMembers = this.state.clanMembers.filter(
-      (row) => !(row.clanId === clanId && row.playerId === playerId),
-    );
-    await this.persist();
+    return this.withClanLock(async () => {
+      this.state.clanMembers = this.state.clanMembers.filter(
+        (row) => !(row.clanId === clanId && row.playerId === playerId),
+      );
+      await this.persist();
+    });
   }
 
   async setClanMemberRole(clanId: string, playerId: string, role: ClanRole): Promise<void> {
@@ -575,28 +659,36 @@ export class MemoryGameStore implements GameStore {
   }
 
   async deleteClan(clanId: string): Promise<void> {
-    this.state.clans = this.state.clans.filter((row) => row.id !== clanId);
-    this.state.clanMembers = this.state.clanMembers.filter((row) => row.clanId !== clanId);
-    this.state.clanApplications = this.state.clanApplications.filter((row) => row.clanId !== clanId);
-    this.state.contributions = this.state.contributions.filter((row) => row.clanId !== clanId);
-    await this.persist();
+    return this.withClanLock(async () => {
+      this.state.clans = this.state.clans.filter((row) => row.id !== clanId);
+      this.state.clanMembers = this.state.clanMembers.filter((row) => row.clanId !== clanId);
+      this.state.clanApplications = this.state.clanApplications.filter((row) => row.clanId !== clanId);
+      this.state.contributions = this.state.contributions.filter((row) => row.clanId !== clanId);
+      await this.persist();
+    });
   }
 
   async createApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord> {
-    const existing = this.state.clanApplications.find(
-      (row) => row.clanId === clanId && row.playerId === playerId && row.status === 'PENDING',
-    );
-    if (existing) throw new Error('duplicate_application');
-    const record: ClanApplicationRecord = {
-      id: randomUUID(),
-      clanId,
-      playerId,
-      status: 'PENDING',
-      createdAt: new Date(),
-    };
-    this.state.clanApplications.push(record);
-    await this.persist();
-    return record;
+    return this.withClanLock(async () => {
+      const existing = this.state.clanApplications.find(
+        (row) => row.clanId === clanId && row.playerId === playerId && row.status === 'PENDING',
+      );
+      if (existing) throw new Error('duplicate_application');
+      const record: ClanApplicationRecord = {
+        id: randomUUID(),
+        clanId,
+        playerId,
+        status: 'PENDING',
+        createdAt: new Date(),
+      };
+      this.state.clanApplications.push(record);
+      await this.persist();
+      return record;
+    });
+  }
+
+  async getApplication(id: string): Promise<ClanApplicationRecord | null> {
+    return this.state.clanApplications.find((row) => row.id === id) ?? null;
   }
 
   async getPendingApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord | null> {
@@ -666,7 +758,9 @@ export class MemoryGameStore implements GameStore {
     offset: number,
   ): Promise<LeaderboardEntry[]> {
     const rows = await this.clanBoardRows(periodKey);
-    return rows.slice(offset, offset + limit);
+    const take = clampLimit(limit);
+    const skip = clampOffset(offset);
+    return rows.slice(skip, skip + take);
   }
 
   async getClanLeaderboardRank(clanId: string, periodKey: string): Promise<number> {
@@ -681,18 +775,20 @@ export class MemoryGameStore implements GameStore {
     source: string,
     externalTransactionId?: string,
   ): Promise<boolean> {
-    if (this.state.entitlements.some((row) => row.playerId === playerId && row.productId === productId)) {
-      return false;
-    }
-    this.state.entitlements.push({
-      playerId,
-      productId,
-      grantedAt: new Date(),
-      source,
-      externalTransactionId: externalTransactionId ?? null,
+    return this.withMut(async () => {
+      if (this.state.entitlements.some((row) => row.playerId === playerId && row.productId === productId)) {
+        return false;
+      }
+      this.state.entitlements.push({
+        playerId,
+        productId,
+        grantedAt: new Date(),
+        source,
+        externalTransactionId: externalTransactionId ?? null,
+      });
+      await this.persist();
+      return true;
     });
-    await this.persist();
-    return true;
   }
 
   async listEntitlements(playerId: string): Promise<EntitlementRecord[]> {
@@ -730,12 +826,14 @@ export class MemoryGameStore implements GameStore {
   }
 
   async tryGrantAchievement(playerId: string, achievementId: string): Promise<boolean> {
-    if (this.state.achievements.some((row) => row.playerId === playerId && row.achievementId === achievementId)) {
-      return false;
-    }
-    this.state.achievements.push({ playerId, achievementId, grantedAt: new Date() });
-    await this.persist();
-    return true;
+    return this.withMut(async () => {
+      if (this.state.achievements.some((row) => row.playerId === playerId && row.achievementId === achievementId)) {
+        return false;
+      }
+      this.state.achievements.push({ playerId, achievementId, grantedAt: new Date() });
+      await this.persist();
+      return true;
+    });
   }
 
   async listAchievements(playerId: string): Promise<PlayerAchievementRecord[]> {
@@ -747,6 +845,17 @@ export class MemoryGameStore implements GameStore {
   private withClanLock<T>(fn: () => Promise<T>): Promise<T> {
     const next = this.clanChain.then(fn, fn);
     this.clanChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private mutChain: Promise<unknown> = Promise.resolve();
+
+  private withMut<T>(fn: () => Promise<T>): Promise<T> {
+    const next = this.mutChain.then(fn, fn);
+    this.mutChain = next.then(
       () => undefined,
       () => undefined,
     );
@@ -780,17 +889,21 @@ export class MemoryGameStore implements GameStore {
   }
 
   private boardRows(board: 'score' | 'pvp' | 'weekly', periodKey: string): LeaderboardEntry[] {
-    const valueOf = (row: PlayerRatingRecord) => {
-      if (board === 'pvp') return row.pvpRating;
-      if (board === 'weekly') return row.weeklyPeriod === periodKey ? row.weeklyScore : 0;
-      return row.lifetimeScore;
-    };
+    if (board === 'weekly') {
+      return this.state.weeklyScores
+        .filter((row) => row.periodKey === periodKey && row.score > 0)
+        .map((row) => {
+          const player = this.state.players.find((entry) => entry.id === row.playerId);
+          return { id: row.playerId, name: player?.name ?? 'Путник', value: row.score };
+        })
+        .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+    }
+    const valueOf = (row: PlayerRatingRecord) => (board === 'pvp' ? row.pvpRating : row.lifetimeScore);
     return this.state.ratings
       .map((row) => {
         const player = this.state.players.find((entry) => entry.id === row.playerId);
         return { id: row.playerId, name: player?.name ?? 'Путник', value: valueOf(row) };
       })
-      .filter((row) => board !== 'weekly' || row.value > 0)
       .sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
   }
 
@@ -841,6 +954,7 @@ function emptyState(): MemoryState {
     entitlements: [],
     cosmetics: [],
     achievements: [],
+    weeklyScores: [],
   };
 }
 

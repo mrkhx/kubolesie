@@ -10,9 +10,10 @@ import type {
   ResourceType,
 } from '@kubolesie/shared';
 import type { BattleEvent } from '@kubolesie/combat-engine';
-import { clanLeaderboardScore, clanLevelForXp, PVP_RATING } from '@kubolesie/content';
+import { clanLeaderboardScore, clanLevelForXp, PVP_RATING, applyPvpRating, clampLimit, clampOffset } from '@kubolesie/content';
 import {
   EMPTY_STATISTICS,
+  InsufficientResourcesError,
   type ClanApplicationRecord,
   type ClanMemberRecord,
   type ClanRecord,
@@ -33,6 +34,7 @@ import {
   type QuestTemplateRecord,
   type StatisticsDelta,
 } from '@kubolesie/game-core';
+import type { GameResponse } from '@kubolesie/shared';
 import { Prisma, type PrismaClient } from './generated/client';
 
 type Client = PrismaClient | Prisma.TransactionClient;
@@ -92,19 +94,27 @@ export class PrismaGameStore implements GameStore {
   }
 
   async createPlayer(input: { vkUserId: string; name: string }): Promise<PlayerRecord> {
-    const row = await this.prisma.player.create({
-      data: {
-        vkUserId: input.vkUserId,
-        name: input.name,
-        hp: STARTING_HP,
-        maxHp: STARTING_HP,
-        energy: STARTING_ENERGY,
-        maxEnergy: STARTING_ENERGY,
-        stats: { create: { ...STARTING_STATS } },
-      },
-      include: { stats: true },
-    });
-    return mapPlayer(row);
+    try {
+      const row = await this.prisma.player.create({
+        data: {
+          vkUserId: input.vkUserId,
+          name: input.name,
+          hp: STARTING_HP,
+          maxHp: STARTING_HP,
+          energy: STARTING_ENERGY,
+          maxEnergy: STARTING_ENERGY,
+          stats: { create: { ...STARTING_STATS } },
+        },
+        include: { stats: true },
+      });
+      return mapPlayer(row);
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const existing = await this.findPlayerByVkUserId(input.vkUserId);
+        if (existing) return existing;
+      }
+      throw error;
+    }
   }
 
   async savePlayer(player: PlayerRecord): Promise<PlayerRecord> {
@@ -149,19 +159,32 @@ export class PrismaGameStore implements GameStore {
   }
 
   async addResource(playerId: string, resource: ResourceType, amount: number): Promise<number> {
-    const row = await this.prisma.playerResource.upsert({
-      where: { playerId_resource: { playerId, resource } },
-      update: { amount: { increment: amount } },
-      create: { playerId, resource, amount: Math.max(0, amount) },
-    });
-    if (row.amount < 0) {
-      await this.prisma.playerResource.update({
-        where: { id: row.id },
-        data: { amount: 0 },
+    if (!Number.isFinite(amount)) throw new InsufficientResourcesError();
+    const delta = Math.trunc(amount);
+    if (delta === 0) {
+      const current = await this.prisma.playerResource.findUnique({
+        where: { playerId_resource: { playerId, resource } },
       });
-      return 0;
+      return current?.amount ?? 0;
     }
-    return row.amount;
+    if (delta > 0) {
+      const row = await this.prisma.playerResource.upsert({
+        where: { playerId_resource: { playerId, resource } },
+        update: { amount: { increment: delta } },
+        create: { playerId, resource, amount: delta },
+      });
+      return row.amount;
+    }
+    const spend = -delta;
+    const updated = await this.prisma.playerResource.updateMany({
+      where: { playerId, resource, amount: { gte: spend } },
+      data: { amount: { decrement: spend } },
+    });
+    if (updated.count !== 1) throw new InsufficientResourcesError();
+    const row = await this.prisma.playerResource.findUnique({
+      where: { playerId_resource: { playerId, resource } },
+    });
+    return row?.amount ?? 0;
   }
 
   async createItem(input: {
@@ -314,9 +337,46 @@ export class PrismaGameStore implements GameStore {
       eventId: row.eventId,
       playerId: row.playerId,
       command: row.command,
-      response: row.response as ProcessedEventRecord['response'],
+      response: row.response as unknown as ProcessedEventRecord['response'],
       createdAt: row.createdAt,
     };
+  }
+
+  async tryBeginProcessedEvent(
+    record: Omit<ProcessedEventRecord, 'response'> & { response?: GameResponse },
+  ): Promise<boolean> {
+    try {
+      await this.prisma.processedEvent.create({
+        data: {
+          eventId: record.eventId,
+          playerId: record.playerId,
+          command: record.command,
+          response: (record.response ?? { text: '', buttons: [] }) as unknown as Prisma.InputJsonValue,
+        },
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  async completeProcessedEvent(
+    eventId: string,
+    response: GameResponse,
+    playerId?: string | null,
+  ): Promise<void> {
+    await this.prisma.processedEvent
+      .update({
+        where: { eventId },
+        data: {
+          response: response as unknown as Prisma.InputJsonValue,
+          ...(playerId !== undefined ? { playerId } : {}),
+        },
+      })
+      .catch(() => undefined);
   }
 
   async saveProcessedEvent(record: ProcessedEventRecord): Promise<void> {
@@ -326,7 +386,7 @@ export class PrismaGameStore implements GameStore {
           eventId: record.eventId,
           playerId: record.playerId,
           command: record.command,
-          response: record.response as Prisma.InputJsonValue,
+          response: record.response as unknown as Prisma.InputJsonValue,
         },
       });
     } catch (error) {
@@ -382,8 +442,8 @@ export class PrismaGameStore implements GameStore {
         seed: input.seed,
         balanceVersion: input.balanceVersion,
         result: input.result ?? undefined,
-        playerSnapshot: input.playerSnapshot as Prisma.InputJsonValue,
-        enemySnapshot: input.enemySnapshot as Prisma.InputJsonValue,
+        playerSnapshot: input.playerSnapshot as unknown as Prisma.InputJsonValue,
+        enemySnapshot: input.enemySnapshot as unknown as Prisma.InputJsonValue,
         startedAt: input.startedAt,
         finishedAt: input.finishedAt,
       },
@@ -499,24 +559,20 @@ export class PrismaGameStore implements GameStore {
   }
 
   async saveRating(record: PlayerRatingRecord): Promise<PlayerRatingRecord> {
+    const clamped = {
+      pvpRating: applyPvpRating(record.pvpRating, 0),
+      lifetimeScore: Math.max(0, Number.isFinite(record.lifetimeScore) ? Math.floor(record.lifetimeScore) : 0),
+      weeklyScore: Math.max(0, Number.isFinite(record.weeklyScore) ? Math.floor(record.weeklyScore) : 0),
+      weeklyPeriod: record.weeklyPeriod,
+      seasonId: record.seasonId,
+      weeklyPvpOpponents: record.weeklyPvpOpponents,
+    };
     const row = await this.prisma.playerRating.upsert({
       where: { playerId: record.playerId },
-      update: {
-        pvpRating: record.pvpRating,
-        lifetimeScore: record.lifetimeScore,
-        weeklyScore: record.weeklyScore,
-        weeklyPeriod: record.weeklyPeriod,
-        seasonId: record.seasonId,
-        weeklyPvpOpponents: record.weeklyPvpOpponents,
-      },
+      update: clamped,
       create: {
         playerId: record.playerId,
-        pvpRating: record.pvpRating,
-        lifetimeScore: record.lifetimeScore,
-        weeklyScore: record.weeklyScore,
-        weeklyPeriod: record.weeklyPeriod,
-        seasonId: record.seasonId,
-        weeklyPvpOpponents: record.weeklyPvpOpponents,
+        ...clamped,
       },
     });
     return mapRating(row);
@@ -528,12 +584,27 @@ export class PrismaGameStore implements GameStore {
     limit: number,
     offset: number,
   ): Promise<LeaderboardEntry[]> {
-    const field = board === 'pvp' ? 'pvpRating' : board === 'weekly' ? 'weeklyScore' : 'lifetimeScore';
+    const take = clampLimit(limit);
+    const skip = clampOffset(offset);
+    if (board === 'weekly') {
+      const rows = await this.prisma.playerWeeklyScore.findMany({
+        where: { periodKey, score: { gt: 0 } },
+        orderBy: [{ score: 'desc' }, { player: { name: 'asc' } }],
+        skip,
+        take,
+        include: { player: { select: { name: true } } },
+      });
+      return rows.map((row) => ({
+        id: row.playerId,
+        name: row.player.name,
+        value: row.score,
+      }));
+    }
+    const field = board === 'pvp' ? 'pvpRating' : 'lifetimeScore';
     const rows = await this.prisma.playerRating.findMany({
-      where: board === 'weekly' ? { weeklyPeriod: periodKey, weeklyScore: { gt: 0 } } : {},
       orderBy: [{ [field]: 'desc' }, { player: { name: 'asc' } }],
-      skip: offset,
-      take: limit,
+      skip,
+      take,
       include: { player: { select: { name: true } } },
     });
     return rows.map((row) => ({
@@ -548,15 +619,29 @@ export class PrismaGameStore implements GameStore {
     playerId: string,
     periodKey: string,
   ): Promise<number> {
+    if (board === 'weekly') {
+      const value = await this.getWeeklyScore(playerId, periodKey);
+      if (value <= 0) return 0;
+      const player = await this.findPlayerById(playerId);
+      const name = player?.name ?? '';
+      const higher = await this.prisma.playerWeeklyScore.count({
+        where: {
+          periodKey,
+          OR: [
+            { score: { gt: value } },
+            { AND: [{ score: value }, { player: { name: { lt: name } } }] },
+          ],
+        },
+      });
+      return higher + 1;
+    }
     const mine = await this.getRating(playerId);
-    const field = board === 'pvp' ? 'pvpRating' : board === 'weekly' ? 'weeklyScore' : 'lifetimeScore';
-    const value = board === 'weekly' && mine.weeklyPeriod !== periodKey ? 0 : mine[field];
-    if (board === 'weekly' && value <= 0) return 0;
+    const field = board === 'pvp' ? 'pvpRating' : 'lifetimeScore';
+    const value = mine[field];
     const player = await this.findPlayerById(playerId);
     const name = player?.name ?? '';
     const higher = await this.prisma.playerRating.count({
       where: {
-        ...(board === 'weekly' ? { weeklyPeriod: periodKey } : {}),
         OR: [
           { [field]: { gt: value } },
           { AND: [{ [field]: value }, { player: { name: { lt: name } } }] },
@@ -564,6 +649,22 @@ export class PrismaGameStore implements GameStore {
       },
     });
     return higher + 1;
+  }
+
+  async upsertWeeklyScore(playerId: string, periodKey: string, score: number): Promise<void> {
+    const safe = Math.max(0, Number.isFinite(score) ? Math.floor(score) : 0);
+    await this.prisma.playerWeeklyScore.upsert({
+      where: { playerId_periodKey: { playerId, periodKey } },
+      update: { score: safe },
+      create: { playerId, periodKey, score: safe },
+    });
+  }
+
+  async getWeeklyScore(playerId: string, periodKey: string): Promise<number> {
+    const row = await this.prisma.playerWeeklyScore.findUnique({
+      where: { playerId_periodKey: { playerId, periodKey } },
+    });
+    return row?.score ?? 0;
   }
 
   async createClan(input: {
@@ -622,6 +723,8 @@ export class PrismaGameStore implements GameStore {
 
   async listClans(query: string, limit: number, offset: number): Promise<ClanRecord[]> {
     const needle = query.trim();
+    const take = clampLimit(limit, 5);
+    const skip = clampOffset(offset);
     const rows = await this.prisma.clan.findMany({
       where: needle
         ? {
@@ -632,21 +735,25 @@ export class PrismaGameStore implements GameStore {
           }
         : undefined,
       orderBy: { xp: 'desc' },
-      skip: offset,
-      take: limit,
+      skip,
+      take,
     });
     return rows.map(mapClan);
   }
 
   async addClanXp(clanId: string, amount: number): Promise<ClanRecord> {
-    const current = await this.prisma.clan.findUnique({ where: { id: clanId } });
-    if (!current) throw new Error('clan_missing');
-    const xp = current.xp + amount;
+    const add = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
     const row = await this.prisma.clan.update({
       where: { id: clanId },
-      data: { xp, level: clanLevelForXp(xp) },
+      data: { xp: { increment: add } },
     });
-    return mapClan(row);
+    const level = clanLevelForXp(row.xp);
+    if (row.level === level) return mapClan(row);
+    const next = await this.prisma.clan.update({
+      where: { id: clanId },
+      data: { level },
+    });
+    return mapClan(next);
   }
 
   async listClanMembers(clanId: string): Promise<ClanMemberRecord[]> {
@@ -677,11 +784,11 @@ export class PrismaGameStore implements GameStore {
   }
 
   async setClanMemberRole(clanId: string, playerId: string, role: ClanRole): Promise<void> {
-    await this.prisma.clanMember.update({
-      where: { playerId },
+    const result = await this.prisma.clanMember.updateMany({
+      where: { clanId, playerId },
       data: { role },
     });
-    void clanId;
+    if (result.count === 0) throw new Error('not_member');
   }
 
   async setClanLeader(clanId: string, playerId: string): Promise<void> {
@@ -719,6 +826,11 @@ export class PrismaGameStore implements GameStore {
       }
       throw error;
     }
+  }
+
+  async getApplication(id: string): Promise<ClanApplicationRecord | null> {
+    const row = await this.prisma.clanApplication.findUnique({ where: { id } });
+    return row ? mapApplication(row) : null;
   }
 
   async getPendingApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord | null> {
@@ -786,8 +898,10 @@ export class PrismaGameStore implements GameStore {
     limit: number,
     offset: number,
   ): Promise<LeaderboardEntry[]> {
+    const take = clampLimit(limit);
+    const skip = clampOffset(offset);
     const rows = await this.clanBoardRows(periodKey);
-    return rows.slice(offset, offset + limit);
+    return rows.slice(skip, skip + take);
   }
 
   async getClanLeaderboardRank(clanId: string, periodKey: string): Promise<number> {
@@ -889,17 +1003,19 @@ export class PrismaGameStore implements GameStore {
 
   private async clanBoardRows(periodKey: string): Promise<LeaderboardEntry[]> {
     const clans = await this.prisma.clan.findMany({
-      include: { contributions: { where: { periodKey } } },
-      orderBy: [{ xp: 'desc' }, { name: 'asc' }],
+      select: { id: true, name: true, tag: true, xp: true },
     });
-    const rows = clans.map((clan) => {
-      const season = clan.contributions.reduce((sum, row) => sum + row.score, 0);
-      return {
-        id: clan.id,
-        name: `${clan.name} [${clan.tag}]`,
-        value: clanLeaderboardScore(clan.xp, season),
-      };
+    const sums = await this.prisma.clanContribution.groupBy({
+      by: ['clanId'],
+      where: { periodKey },
+      _sum: { score: true },
     });
+    const seasonByClan = new Map(sums.map((row) => [row.clanId, row._sum.score ?? 0]));
+    const rows = clans.map((clan) => ({
+      id: clan.id,
+      name: `${clan.name} [${clan.tag}]`,
+      value: clanLeaderboardScore(clan.xp, seasonByClan.get(clan.id) ?? 0),
+    }));
     rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
     return rows;
   }

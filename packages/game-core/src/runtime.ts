@@ -121,19 +121,40 @@ export class GameRuntime {
   async handle(event: NormalizedIncomingEvent): Promise<GameResponse> {
     return this.serialize(`event:${event.eventId}`, async () => {
       const existing = await this.store.findProcessedEvent(event.eventId);
-      if (existing) return existing.response;
+      if (existing?.response?.text) return existing.response;
+      if (existing) {
+        return { text: 'Сейчас это сделать нельзя.', buttons: NAV };
+      }
       return this.serialize(`player:${event.identity.providerUserId}`, async () => {
         const again = await this.store.findProcessedEvent(event.eventId);
-        if (again) return again.response;
-        const response = await this.execute(event);
-        await this.store.saveProcessedEvent({
+        if (again?.response?.text) return again.response;
+        const claimed = await this.store.tryBeginProcessedEvent({
           eventId: event.eventId,
-          playerId: response.state?.playerId ?? null,
+          playerId: null,
           command: event.command.type,
-          response,
           createdAt: this.now(),
         });
-        return response;
+        if (!claimed) {
+          const won = await this.store.findProcessedEvent(event.eventId);
+          if (won?.response?.text) return won.response;
+          return { text: 'Сейчас это сделать нельзя.', buttons: NAV };
+        }
+        try {
+          const response = await this.execute(event);
+          await this.store.completeProcessedEvent(
+            event.eventId,
+            response,
+            response.state?.playerId ?? null,
+          );
+          return response;
+        } catch (error) {
+          const response: GameResponse = {
+            text: error instanceof GameError ? error.message : 'Сейчас это сделать нельзя.',
+            buttons: NAV,
+          };
+          await this.store.completeProcessedEvent(event.eventId, response, null);
+          return response;
+        }
       });
     });
   }
@@ -158,7 +179,7 @@ export class GameRuntime {
       if (error instanceof GameError) {
         return { text: error.message, buttons: NAV };
       }
-      throw error;
+      return { text: 'Сейчас это сделать нельзя.', buttons: NAV };
     }
   }
 
@@ -1327,6 +1348,10 @@ export class GameRuntime {
 
   private async claimReward(ctx: Ctx, rewardType: string, rewardRef: string): Promise<GameResponse> {
     if (!rewardType || !rewardRef) return this.respond(ctx.player, 'Награда не найдена.', NAV);
+    const allowed =
+      (rewardType === 'coins' && rewardRef === 'demo_coins') ||
+      (rewardType === 'gift' && rewardRef === 'scavenger_cache');
+    if (!allowed) throw new ActionRejectedError('Награда не найдена.');
     if (rewardType === 'gift' && rewardRef === 'scavenger_cache') {
       if (!ctx.flags.fed_stone_scavenger || ctx.flags.defeated_stone_scavenger) {
         throw new ActionRejectedError('Падальщик не оставляет тебе ничего.');
@@ -1338,13 +1363,10 @@ export class GameRuntime {
       await this.changeCoins(ctx.player, 10, 'claim_reward', rewardRef);
       return this.respond(ctx.player, 'Получено 10 монет.', NAV);
     }
-    if (rewardType === 'gift' && rewardRef === 'scavenger_cache') {
-      await this.store.addResource(ctx.player.id, 'COBBLESTONE', 2);
-      await this.store.setFlag(ctx.player.id, 'scavenger_cache', '1');
-      await this.store.setFlag(ctx.player.id, 'scavenger_day2_visit', '1');
-      return this.renderNode(ctx.player, 'scavenger_day2_cache');
-    }
-    return this.respond(ctx.player, 'Награда отмечена.', NAV);
+    await this.store.addResource(ctx.player.id, 'COBBLESTONE', 2);
+    await this.store.setFlag(ctx.player.id, 'scavenger_cache', '1');
+    await this.store.setFlag(ctx.player.id, 'scavenger_day2_visit', '1');
+    return this.renderNode(ctx.player, 'scavenger_day2_cache');
   }
 
   async changeCoins(player: PlayerRecord, amount: number, reason: string, referenceId?: string): Promise<PlayerRecord> {

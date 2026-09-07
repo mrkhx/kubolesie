@@ -10,6 +10,7 @@ import {
   PVP_RATING,
   validateClanName,
   validateClanTag,
+  WEEKLY_SCORE,
 } from '@kubolesie/content';
 import { GAME_COMMANDS, type NormalizedIncomingEvent } from '@kubolesie/shared';
 import { MemoryGameStore } from './memory-store';
@@ -196,10 +197,12 @@ describe('ratings', () => {
     await noteActivity(store, await reload(store, player.id), { type: 'pve', result: 'WIN', enemyId: 'wild_shrew' }, weekB);
     const afterB = await store.getRating(player.id);
     expect(afterB.weeklyPeriod).toBe('2026-W38');
-    expect(afterB.weeklyScore).toBe(weeklyA);
+    expect(afterB.weeklyScore).toBe(WEEKLY_SCORE.pveWin);
     expect(afterB.lifetimeScore).toBeGreaterThan(lifetime);
+    expect(await store.getWeeklyScore(player.id, '2026-W37')).toBe(weeklyA);
+    expect(await store.getWeeklyScore(player.id, '2026-W38')).toBe(afterB.weeklyScore);
     const weeklyBoard = await store.listScoreboard('weekly', '2026-W37', 10, 0);
-    expect(weeklyBoard.every((row) => row.id !== player.id)).toBe(true);
+    expect(weeklyBoard.some((row) => row.id === player.id && row.value === weeklyA)).toBe(true);
     const currentWeekly = await store.listScoreboard('weekly', '2026-W38', 10, 0);
     expect(currentWeekly.some((row) => row.id === player.id)).toBe(true);
   });
@@ -271,7 +274,7 @@ describe('clans', () => {
     expect(accept.text).toContain('Принят');
     expect((await store.getPlayerClan(applicant.id))?.clan.id).toBe(clan.id);
     const again = await act(runtimeLead, 'vk-lead', 'CLAN_ACT', { act: 'accept', appId: apps[0]!.id });
-    expect(again.text).toMatch(/нет|клане/i);
+    expect(again.text).toMatch(/нет|клане|обработана/i);
   });
 
   it('rejects applications, leave/kick/promote/transfer and blocks leader escape', async () => {

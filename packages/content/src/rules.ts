@@ -136,5 +136,8 @@ export const COMBAT_REQUIREMENTS: Record<string, CommandRequirement> = {
   yara_trace: { locations: ['stone_scree', 'rival_camp_edge'] },
   wedge_scout: { locations: ['stone_scree', 'rival_camp_edge'] },
   foreign_post: { locations: ['stone_scree', 'rival_camp_edge'] },
-  wenzel_warden: { locations: ['seal_forecourt', 'node_7'] },
+  wenzel_warden: {
+    locations: ['seal_forecourt', 'node_7'],
+    flagsAny: ['day_6_complete', 'gate_failing', 'wenzel_seen'],
+  },
 };

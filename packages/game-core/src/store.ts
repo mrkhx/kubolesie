@@ -248,6 +248,8 @@ export interface GameStore {
   upsertPlayerQuest(record: PlayerQuestRecord): Promise<void>;
 
   findProcessedEvent(eventId: string): Promise<ProcessedEventRecord | null>;
+  tryBeginProcessedEvent(record: Omit<ProcessedEventRecord, 'response'> & { response?: GameResponse }): Promise<boolean>;
+  completeProcessedEvent(eventId: string, response: GameResponse, playerId?: string | null): Promise<void>;
   saveProcessedEvent(record: ProcessedEventRecord): Promise<void>;
 
   tryClaimReward(playerId: string, rewardType: string, rewardRef: string): Promise<boolean>;
@@ -283,6 +285,8 @@ export interface GameStore {
     offset: number,
   ): Promise<LeaderboardEntry[]>;
   getScoreboardRank(board: 'score' | 'pvp' | 'weekly', playerId: string, periodKey: string): Promise<number>;
+  upsertWeeklyScore(playerId: string, periodKey: string, score: number): Promise<void>;
+  getWeeklyScore(playerId: string, periodKey: string): Promise<number>;
 
   createClan(input: {
     name: string;
@@ -304,6 +308,7 @@ export interface GameStore {
   deleteClan(clanId: string): Promise<void>;
 
   createApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord>;
+  getApplication(id: string): Promise<ClanApplicationRecord | null>;
   getPendingApplication(clanId: string, playerId: string): Promise<ClanApplicationRecord | null>;
   listPendingApplications(clanId: string): Promise<ClanApplicationRecord[]>;
   listPlayerApplications(playerId: string): Promise<ClanApplicationRecord[]>;

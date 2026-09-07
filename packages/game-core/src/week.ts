@@ -13,6 +13,7 @@ import {
   IRON_TOOL_RECIPES,
   ITEM_TEMPLATES,
   PVP_MAX,
+  PVP_RIVALS,
   PVP_WIN_COINS,
   PVP_WIN_XP,
   STONE_SALVAGE_TOOLS,
@@ -500,6 +501,25 @@ async function completeDay7(host: WeekHost, ctx: WeekCtx): Promise<GameResponse>
 }
 
 export async function openWeekMenu(host: WeekHost, ctx: WeekCtx, menu: WeekMenuId): Promise<GameResponse> {
+  if (menu === 'wedge' || menu === 'daily') {
+    if (!ctx.flags.day_2_complete) throw new ActionRejectedError('Сейчас это сделать нельзя.');
+  }
+  if (menu === 'furnace') {
+    if (!ctx.flags.furnace_placed && !ctx.flags.furnace_built) {
+      throw new ActionRejectedError('Печи нет. Восемь булыжников на стане.');
+    }
+  }
+  if (menu === 'trade') {
+    if (!ctx.flags.met_vel) throw new ActionRejectedError('Вела ещё нет.');
+  }
+  if (menu === 'pvp') {
+    if (!ctx.flags.yara_claim_seen) throw new ActionRejectedError('Сейчас это сделать нельзя.');
+  }
+  if (menu === 'prep') {
+    if (!ctx.flags.day_6_complete && !ctx.flags.gate_failing && !ctx.flags.wenzel_seen) {
+      throw new ActionRejectedError('Сейчас это сделать нельзя.');
+    }
+  }
   if (menu === 'wedge') {
     if (ctx.player.currentLocation !== 'ashen_wedge') {
       ctx.player.currentLocation = 'ashen_wedge';
@@ -609,7 +629,7 @@ async function furnaceAct(host: WeekHost, ctx: WeekCtx, act: string): Promise<Ga
     if (ore < 1) throw new InsufficientResourcesError('Нет железной руды.');
     if (fuel < FURNACE.smeltCost) throw new ActionRejectedError('Не хватает топлива. Положи уголь.');
     await host.store.addResource(ctx.player.id, 'IRON_ORE', -1);
-    const nextFuel = fuel - FURNACE.smeltCost;
+    const nextFuel = Math.max(0, fuel - FURNACE.smeltCost);
     const nextOut = output + 1;
     await setFlag(host, ctx, 'furnace_fuel', String(nextFuel));
     await setFlag(host, ctx, 'furnace_output', String(nextOut));
@@ -819,8 +839,12 @@ async function startPvp(host: WeekHost, ctx: WeekCtx, eventId: string, rivalId: 
   const used = flagNum(ctx.flags, 'pvp_skirmishes');
   if (used >= PVP_MAX) throw new ActionRejectedError('Лимит стычек на сутки.');
   if (ctx.flags.paid_scree_tribute) throw new ActionRejectedError('Дань уже снесена. Войны нет.');
+  if (rivalId && !PVP_RIVALS.some((row) => row.id === rivalId)) {
+    throw new ActionRejectedError('След рассеялся.');
+  }
   const rival = rivalId ? getPvpRival(rivalId) : nextPvpRival(used);
   if (!rival) throw new ActionRejectedError('След рассеялся.');
+  await setFlag(host, ctx, 'pvp_skirmishes', String(used + 1));
   ctx.player.currentLocation = 'stone_scree';
   await host.store.savePlayer(ctx.player);
   const stats = await host.effectiveStats(ctx);
@@ -883,7 +907,6 @@ async function startPvp(host: WeekHost, ctx: WeekCtx, eventId: string, rivalId: 
   if (battle.result === 'LOSS') ctx.player.hp = Math.max(1, Math.floor(ctx.player.maxHp * 0.2));
   else ctx.player.hp = Math.max(1, battle.playerHp);
   await host.store.savePlayer(ctx.player);
-  await setFlag(host, ctx, 'pvp_skirmishes', String(used + 1));
   let extra = '\nВещи при тебе. База цела. Монеты на месте.';
   let standing = flagNum(ctx.flags, 'scree_standing');
   if (battle.result === 'WIN') {
@@ -917,13 +940,16 @@ async function payTribute(host: WeekHost, ctx: WeekCtx, withWhat: string): Promi
     if ((ctx.resources.COBBLESTONE ?? 0) < TRIBUTE_COBBLE) {
       throw new InsufficientResourcesError(`Нужно ${TRIBUTE_COBBLE} булыжника.`);
     }
-    await host.store.addResource(ctx.player.id, 'COBBLESTONE', -TRIBUTE_COBBLE);
-  } else {
-    if (ctx.player.coins < TRIBUTE_COINS) throw new InsufficientCoinsError(`Нужно ${TRIBUTE_COINS} монет.`);
-    await host.changeCoins(ctx.player, -TRIBUTE_COINS, 'tribute', 'yara');
+  } else if (ctx.player.coins < TRIBUTE_COINS) {
+    throw new InsufficientCoinsError(`Нужно ${TRIBUTE_COINS} монет.`);
   }
   const ok = await host.store.tryClaimReward(ctx.player.id, 'tribute', 'yara');
   if (!ok) throw new RewardAlreadyClaimedError();
+  if (withWhat === 'cobble') {
+    await host.store.addResource(ctx.player.id, 'COBBLESTONE', -TRIBUTE_COBBLE);
+  } else {
+    await host.changeCoins(ctx.player, -TRIBUTE_COINS, 'tribute', 'yara');
+  }
   await setFlag(host, ctx, 'paid_scree_tribute');
   await host.store.adjustNpcRelation(ctx.player.id, 'rem', 1, 0);
   return host.respond(
@@ -974,6 +1000,7 @@ async function helpPet(host: WeekHost, ctx: WeekCtx, act: string): Promise<GameR
     );
   }
   if (act === 'tame') {
+    if (ctx.flags.emberkit_bonded) return host.respond(ctx.player, 'Искрик уже с тобой.', NAV);
     if (!ctx.flags.emberkit_rescued) throw new ActionRejectedError('Некого приручать.');
     if ((ctx.resources.COAL ?? 0) < 1) throw new InsufficientResourcesError('Нужен уголь.');
     await host.store.addResource(ctx.player.id, 'COAL', -1);
@@ -988,6 +1015,7 @@ async function helpPet(host: WeekHost, ctx: WeekCtx, act: string): Promise<GameR
     await setFlag(host, ctx, 'scavenger_left_d4');
     return host.respond(ctx.player, 'Падальщик остаётся в пыли. Неделя без него валидна. На расселине ещё может пискнуть Искрик.', NAV);
   }
+  if (ctx.flags.scavenger_bonded) return host.respond(ctx.player, 'Падальщик уже с тобой.', NAV);
   const food =
     ctx.items.find((item) => item.templateId === 'dry_rusk') ||
     ((ctx.resources.RAW_MEAT ?? 0) > 0 ? 'meat' : null) ||
@@ -1142,7 +1170,8 @@ export async function applyWeekLoot(
   }
   if (first && spec.firstItems) {
     for (const templateId of spec.firstItems) {
-      if (hasItem(ctx, templateId)) continue;
+      const unique = await host.store.tryClaimReward(ctx.player.id, 'unique_loot', templateId);
+      if (!unique || hasItem(ctx, templateId)) continue;
       const template = getItemTemplate(templateId);
       if (!template) continue;
       const item = await host.store.createItem({
@@ -1189,6 +1218,8 @@ export async function applyWenzelVictory(host: WeekHost, ctx: WeekCtx): Promise<
   await setFlag(host, ctx, 'wenzel_defeated');
   if (first) {
     for (const templateId of ['wenzel_plate', 'hinge_charm', 'seal_shard_7']) {
+      const unique = await host.store.tryClaimReward(ctx.player.id, 'unique_loot', templateId);
+      if (!unique) continue;
       const template = getItemTemplate(templateId)!;
       const item = await host.store.createItem({
         playerId: ctx.player.id,
