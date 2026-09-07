@@ -19,6 +19,7 @@ const MIGRATIONS = [
   '20260906200000_week_one',
   '20260906210000_meta_progression',
   '20260907120000_hardening',
+  '20260907130000_products_premium_default',
 ] as const;
 
 const MIGRATIONS_DIR = join(__dirname, '../prisma/migrations');
@@ -270,6 +271,7 @@ describePg('postgresql upgrade path', () => {
       await applySql(db, MIGRATIONS[3]);
       await applySql(db, MIGRATIONS[4]);
       await applySql(db, MIGRATIONS[5]);
+      await applySql(db, MIGRATIONS[6]);
       const player = await db.query(`SELECT vk_user_id, name FROM players WHERE id = 'p_up'`);
       expect(player.rows[0]).toMatchObject({ vk_user_id: 'vk-upgrade', name: 'Старый' });
       const resources = await db.query(`SELECT amount FROM player_resources WHERE player_id = 'p_up'`);
@@ -282,6 +284,11 @@ describePg('postgresql upgrade path', () => {
       );
       const weekly = await db.query(`SELECT to_regclass('public.player_weekly_scores') AS name`);
       expect(weekly.rows[0].name).toBe('player_weekly_scores');
+      const premiumDefault = await db.query(
+        `SELECT column_default FROM information_schema.columns
+         WHERE table_name = 'products' AND column_name = 'currency'`,
+      );
+      expect(String(premiumDefault.rows[0]?.column_default)).toMatch(/PREMIUM/);
     } finally {
       await db.end();
       const drop = new Client({ connectionString: replaceDbName(url, 'postgres') });

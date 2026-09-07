@@ -1,4 +1,4 @@
-import { Body, Controller, Header, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Header, Inject, Post, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { VkAdapter } from '@kubolesie/vk-bot';
 
@@ -22,7 +22,7 @@ export function requestIp(req: {
 
 @Controller()
 export class VkController {
-  constructor(private readonly adapter: VkAdapter) {}
+  constructor(@Inject(VkAdapter) private readonly adapter: VkAdapter) {}
 
   @Post(['/vk/callback', '/v1/vk/callback'])
   @Header('content-type', 'text/plain; charset=utf-8')

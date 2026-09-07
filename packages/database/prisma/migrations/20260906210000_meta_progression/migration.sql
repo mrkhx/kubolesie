@@ -130,7 +130,7 @@ CREATE TABLE "products" (
     "name" TEXT NOT NULL,
     "description" TEXT NOT NULL,
     "price" INTEGER NOT NULL DEFAULT 0,
-    "currency" "CurrencyCode" NOT NULL DEFAULT 'PREMIUM',
+    "currency" "CurrencyCode" NOT NULL DEFAULT 'COINS',
     "availability" TEXT NOT NULL DEFAULT 'CATALOG',
     "season_id" TEXT,
 

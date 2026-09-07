@@ -12,6 +12,7 @@ PostgreSQL — единственный source of truth прогресса иг�
 4. `20260906200000_week_one` — `IRON_INGOT`
 5. `20260906210000_meta_progression`
 6. `20260907120000_hardening` — `player_weekly_scores`, CHECK `amount >= 0`
+7. `20260907130000_products_premium_default` — `products.currency` default `PREMIUM` after enum commit (PG 55P04)
 
 Production:
 

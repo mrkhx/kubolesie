@@ -35,6 +35,8 @@ end
 `;
 
 export class RedisEphemeralStore implements EphemeralStore {
+  private connectPromise: Promise<void> | null = null;
+
   constructor(private readonly redis: IORedis) {}
 
   async consume(windows: ConsumeWindow[]): Promise<boolean> {
@@ -77,7 +79,21 @@ export class RedisEphemeralStore implements EphemeralStore {
 
   private async ensureReady(): Promise<void> {
     if (this.redis.status === 'ready') return;
-    await this.redis.connect();
+    if (!this.connectPromise) {
+      this.connectPromise = (async () => {
+        try {
+          if (this.redis.status === 'ready') return;
+          await this.redis.connect();
+        } catch (error) {
+          if (this.redis.status === 'ready') return;
+          throw error;
+        }
+      })().catch((error) => {
+        this.connectPromise = null;
+        throw error;
+      });
+    }
+    await this.connectPromise;
   }
 }
 
