@@ -46,8 +46,13 @@ export function verifyConfirmation(payload: Record<string, unknown>, config: VkC
   if (!config.confirmationCode || config.groupId == null) return 'misconfigured';
   const gid = Number(payload.group_id);
   if (!Number.isFinite(gid) || gid !== config.groupId) return 'group';
-  if (typeof payload.secret === 'string' && payload.secret.length > 0) {
-    if (!config.callbackSecret || !secretsEqual(payload.secret, config.callbackSecret)) return 'secret';
+  // VK sends `secret` on confirmation when the community Callback secret is set.
+  // If we have a secret configured (always in production), require it — do not
+  // hand out VK_CONFIRMATION_CODE to anyone who only knows group_id.
+  if (config.callbackSecret) {
+    if (typeof payload.secret !== 'string' || !secretsEqual(payload.secret, config.callbackSecret)) {
+      return 'secret';
+    }
   }
   return 'ok';
 }

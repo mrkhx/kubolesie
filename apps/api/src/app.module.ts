@@ -1,15 +1,22 @@
 import { Module } from '@nestjs/common';
 import { GameRuntime } from '@kubolesie/game-core';
-import { createGameStore } from '@kubolesie/database';
+import { createGameStore, type StoreBundle } from '@kubolesie/database';
 import { loadVkConfig, VkAdapter, VkApiClient } from '@kubolesie/vk-bot';
+import { loadAppConfig } from './app-config';
 import { GameController } from './game.controller';
 import { HealthController } from './health.controller';
+import { StoreLifecycle } from './lifecycle';
 import { VkController } from './vk.controller';
 import { createRedisLock } from './redis';
 
 @Module({
   controllers: [HealthController, GameController, VkController],
   providers: [
+    StoreLifecycle,
+    {
+      provide: 'APP_CONFIG',
+      useFactory: () => loadAppConfig(),
+    },
     {
       provide: 'STORE_BUNDLE',
       useFactory: async () => createGameStore(),
@@ -17,21 +24,21 @@ import { createRedisLock } from './redis';
     {
       provide: 'GAME_STORE',
       inject: ['STORE_BUNDLE'],
-      useFactory: (bundle: Awaited<ReturnType<typeof createGameStore>>) => bundle.store,
+      useFactory: (bundle: StoreBundle) => bundle.store,
     },
     {
       provide: 'STORE_KIND',
       inject: ['STORE_BUNDLE'],
-      useFactory: (bundle: Awaited<ReturnType<typeof createGameStore>>) => bundle.kind,
+      useFactory: (bundle: StoreBundle) => bundle.kind,
     },
     {
       provide: GameRuntime,
       inject: ['GAME_STORE'],
-      useFactory: (store: Awaited<ReturnType<typeof createGameStore>>['store']) =>
-        new GameRuntime(store),
+      useFactory: (store: StoreBundle['store']) => new GameRuntime(store),
     },
     {
       provide: 'VK_CONFIG',
+      inject: ['APP_CONFIG'],
       useFactory: () => loadVkConfig(),
     },
     {

@@ -49,10 +49,13 @@ JSON `GameResponse` в HTTP-теле callback **не** возвращается.
 
 ## 4. Confirmation
 
-1. Укажи URL `https://<host>/vk/callback`.
-2. VK пришлёт `{ "type": "confirmation", "group_id": ... }`.
-3. Сервер вернёт `VK_CONFIRMATION_CODE` (plain text).
-4. Код меняется при пересоздании сервера — обнови env.
+1. Canonical URL: `https://<host>/vk/callback` (alias `/v1/vk/callback`).
+2. VK пришлёт `{ "type": "confirmation", "group_id": ..., "secret": "..." }`.
+3. Если в сообществе задан секретный ключ (обязателен в production), поле `secret` **проверяется до** возврата кода. Запрос только с `group_id` confirmation code не получит.
+4. Сервер вернёт `VK_CONFIRMATION_CODE` (plain text).
+5. Код меняется при пересоздании сервера — обнови env.
+
+Фактическое поведение VK Callback API: при настроенном секретном ключе **все** уведомления, включая `confirmation`, содержат `secret`. Без ключа в кабинете VK historically шлёт только `{ type, group_id }`. Production всегда требует секрет — confirmation без него → HTTP 403.
 
 ## 5. Secret и group_id
 
@@ -80,10 +83,10 @@ Mock-консоль (`GET /`, `POST /v1/mock/event`) работает отдел
 Callback без реальной VK сети:
 
 ```bash
-# confirmation
+# confirmation (secret required when VK_CALLBACK_SECRET is set)
 curl -s localhost:3000/vk/callback \
   -H 'content-type: application/json' \
-  -d '{"type":"confirmation","group_id":111}'
+  -d '{"type":"confirmation","group_id":111,"secret":"<VK_CALLBACK_SECRET>"}'
 ```
 
 Для `message_new` нужны заполненные env. Фикстуры в тестах используют только fake-значения (`test-token`, `test-secret`).
@@ -95,4 +98,6 @@ curl -s localhost:3000/vk/callback \
 - `VK_CONFIRMATION_CODE`
 - сырые логи с текстом игрока и raw payload
 
-Health (`GET /health`) показывает только `vkConfigured: true|false`.
+Health (`GET /health`) — liveness, без секретов. Readiness (`GET /ready`) проверяет PostgreSQL и не ходит в VK.
+
+Production: [docs/deployment.md](deployment.md), [docs/production-database.md](production-database.md).

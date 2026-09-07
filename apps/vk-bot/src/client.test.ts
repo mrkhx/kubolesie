@@ -120,4 +120,25 @@ describe('random_id and keyboard', () => {
     await expect(api.sendMessage({ peerId: 1, text: 'x', randomId: 1 })).rejects.toBeInstanceOf(VkApiError);
     expect(api.sent).toHaveLength(0);
   });
+
+  it('uses a finite AbortSignal timeout and maps abort to VkApiError timeout', async () => {
+    const http = vi.fn((_url: string | URL, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          const error = new Error('aborted');
+          error.name = 'TimeoutError';
+          reject(error);
+        });
+      });
+    });
+    const client = new VkApiClient(
+      { ...CONFIG, timeoutMs: 30 },
+      http as unknown as typeof fetch,
+    );
+    await expect(client.sendMessage({ peerId: 1, text: 'x', randomId: 1 })).rejects.toMatchObject({
+      name: 'VkApiError',
+      code: 'timeout',
+    });
+  });
 });

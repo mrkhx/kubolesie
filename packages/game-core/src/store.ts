@@ -286,6 +286,7 @@ export interface GameStore {
   ): Promise<LeaderboardEntry[]>;
   getScoreboardRank(board: 'score' | 'pvp' | 'weekly', playerId: string, periodKey: string): Promise<number>;
   upsertWeeklyScore(playerId: string, periodKey: string, score: number): Promise<void>;
+  incrementWeeklyScore(playerId: string, periodKey: string, delta: number): Promise<number>;
   getWeeklyScore(playerId: string, periodKey: string): Promise<number>;
 
   createClan(input: {

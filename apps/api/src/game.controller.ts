@@ -15,12 +15,7 @@ import { GameRuntime, type GameStore } from '@kubolesie/game-core';
 import { VkAdapter, type MockVkEvent } from '@kubolesie/vk-bot';
 import { MOCK_CONSOLE_HTML } from './mock-console';
 import type { RedisLock } from './redis';
-
-function mockApiEnabled(): boolean {
-  if (process.env.ENABLE_MOCK_API === 'true') return true;
-  if (process.env.ENABLE_MOCK_API === 'false') return false;
-  return process.env.NODE_ENV !== 'production';
-}
+import type { AppConfig } from './app-config';
 
 @Controller()
 export class GameController {
@@ -30,10 +25,12 @@ export class GameController {
     @Inject('GAME_STORE') private readonly store: GameStore,
     @Inject('STORE_KIND') private readonly storeKind: 'prisma' | 'memory',
     @Inject('REDIS_LOCK') private readonly redis: RedisLock,
+    @Inject('APP_CONFIG') private readonly appConfig: AppConfig,
   ) {}
 
   @Get('/')
   index(@Res() res: Response) {
+    this.assertMock();
     res.setHeader('content-type', 'text/html; charset=utf-8');
     res.send(MOCK_CONSOLE_HTML);
   }
@@ -104,7 +101,7 @@ export class GameController {
   }
 
   private assertMock() {
-    if (!mockApiEnabled()) {
+    if (this.appConfig.production || !this.appConfig.mockApiEnabled) {
       throw new NotFoundException();
     }
   }

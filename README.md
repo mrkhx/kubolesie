@@ -82,7 +82,7 @@ Level 2: `max_hp +5`, `max_energy +1`, HP заполняется до новог
 
 ## Local setup
 
-Нужны Node.js 20+ и Docker (для Postgres + Redis). Без Docker ядро поднимается на in-memory store (`GAME_STORE=memory`).
+Нужны Node.js 20+ и Docker (для Postgres + Redis). Без Docker ядро поднимается на in-memory store (`GAME_STORE=memory`) **только в development**. Production без `DATABASE_URL` не стартует.
 
 ```bash
 cp .env.example .env
@@ -99,7 +99,7 @@ API слушает `PORT` из `.env` (локально часто 3000; в sand
 
 Для локальной разработки `VK_GROUP_TOKEN` **не нужен**.
 
-Боевой вход сообщества: `POST /vk/callback` (VK Callback API). Настройка — [docs/vk-callback-setup.md](docs/vk-callback-setup.md).
+Боевой вход сообщества: `POST /vk/callback` (VK Callback API). Настройка — [docs/vk-callback-setup.md](docs/vk-callback-setup.md), деплой — [docs/deployment.md](docs/deployment.md).
 
 ### Mock playthrough
 
@@ -158,8 +158,13 @@ npm run prisma:seed
 ## Tests
 
 ```bash
-npm test
+npm test                 # unit tests (без PostgreSQL)
+npm run typecheck
+npm run db:migrate:deploy   # production: prisma migrate deploy
+npm run test:db:migrations  # TEST-ONLY, disposable Postgres
 ```
+
+Деплой: [docs/deployment.md](docs/deployment.md). PostgreSQL: [docs/production-database.md](docs/production-database.md).
 
 Сохранены тесты 0.0.1/0.0.2 и добавлены проверки цепочки: ящик без камня, отказ WOOD+STONE→кирка, булыжник только с деревянной киркой, деревянная кирка не берёт железо, полный путь до каменной кирки.
 
@@ -173,14 +178,17 @@ npm test
 | `REDIS_URL` | locks / rate limit / queues |
 | `PORT` | HTTP API |
 | `NODE_ENV` | `development` / `production` |
+| `HOST` | bind address, default `0.0.0.0` |
 | `VK_GROUP_TOKEN` | токен сообщества; пусто = mock |
 | `VK_GROUP_ID` | id сообщества для callback |
 | `VK_CALLBACK_SECRET` | секрет Callback API |
 | `VK_CONFIRMATION_CODE` | строка confirmation |
 | `VK_API_VERSION` | версия VK API, по умолчанию 5.199 |
-| `GAME_STORE` | `prisma` или `memory` |
+| `VK_API_TIMEOUT_MS` | timeout `messages.send`, по умолчанию 4000 |
+| `APP_COMMIT_SHA` | опционально в `/health` |
+| `GAME_STORE` | `prisma` или `memory` (memory запрещён в production) |
 | `MEMORY_STORE_PATH` | JSON-снимок только для dev fallback |
-| `ENABLE_MOCK_API` | mock HTTP, выключен в production по умолчанию |
+| `ENABLE_MOCK_API` | mock HTTP; в production всегда выключен |
 
 ## Game commands
 

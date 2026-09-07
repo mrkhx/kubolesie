@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { STARTING_ENERGY, STARTING_HP, STARTING_STATS } from '@kubolesie/shared';
 import type {
   ApplicationStatus,
@@ -658,6 +659,18 @@ export class PrismaGameStore implements GameStore {
       update: { score: safe },
       create: { playerId, periodKey, score: safe },
     });
+  }
+
+  async incrementWeeklyScore(playerId: string, periodKey: string, delta: number): Promise<number> {
+    const safe = Math.max(0, Number.isFinite(delta) ? Math.floor(delta) : 0);
+    const rows = await this.prisma.$queryRaw<Array<{ score: number }>>`
+      INSERT INTO "player_weekly_scores" ("id", "player_id", "period_key", "score")
+      VALUES (${randomUUID()}, ${playerId}, ${periodKey}, ${safe})
+      ON CONFLICT ("player_id", "period_key")
+      DO UPDATE SET "score" = "player_weekly_scores"."score" + EXCLUDED."score"
+      RETURNING "score"
+    `;
+    return rows[0]?.score ?? safe;
   }
 
   async getWeeklyScore(playerId: string, periodKey: string): Promise<number> {

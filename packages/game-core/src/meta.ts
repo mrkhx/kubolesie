@@ -174,11 +174,12 @@ async function ensurePeriod(store: GameStore, playerId: string, period: string):
 }
 
 async function bumpWeekly(store: GameStore, playerId: string, amount: number): Promise<void> {
+  const delta = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
   const rating = await store.getRating(playerId);
-  rating.weeklyScore += Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
+  rating.weeklyScore += delta;
   await store.saveRating(rating);
   if (rating.weeklyPeriod) {
-    await store.upsertWeeklyScore(playerId, rating.weeklyPeriod, rating.weeklyScore);
+    await store.incrementWeeklyScore(playerId, rating.weeklyPeriod, delta);
   }
 }
 

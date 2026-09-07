@@ -16,14 +16,20 @@
     "prisma:migrate": "npm run prisma:migrate --workspace=@kubolesie/database",
     "prisma:migrate:dev": "npm run prisma:migrate:dev --workspace=@kubolesie/database",
     "prisma:seed": "npm run prisma:seed --workspace=@kubolesie/database",
+    "db:migrate:deploy": "npm run prisma:migrate:deploy --workspace=@kubolesie/database",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:db": "vitest run --config vitest.integration.config.ts",
+    "test:db:migrations": "tsx scripts/test-db-migrations.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json --noEmit",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down"
   },
   "devDependencies": {
     "@types/node": "^22.16.5",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.0",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

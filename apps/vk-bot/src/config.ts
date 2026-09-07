@@ -1,4 +1,5 @@
 export const DEFAULT_VK_API_VERSION = '5.199';
+export const DEFAULT_VK_API_TIMEOUT_MS = 4000;
 export const VK_CALLBACK_JSON_LIMIT = 32 * 1024;
 export const VK_MESSAGE_MAX_LENGTH = 4096;
 export const VK_BUTTON_PAYLOAD_MAX = 255;
@@ -11,11 +12,18 @@ export interface VkConfig {
   confirmationCode: string | null;
   apiVersion: string;
   production: boolean;
+  timeoutMs?: number;
 }
 
 function emptyToNull(value: string | undefined): string | null {
   const trimmed = value?.trim() ?? '';
   return trimmed.length ? trimmed : null;
+}
+
+function parseTimeoutMs(value: string | undefined): number {
+  const parsed = Number(value ?? DEFAULT_VK_API_TIMEOUT_MS);
+  if (!Number.isFinite(parsed)) return DEFAULT_VK_API_TIMEOUT_MS;
+  return Math.min(15_000, Math.max(500, Math.trunc(parsed)));
 }
 
 export function loadVkConfig(env: NodeJS.Dict<string> = process.env): VkConfig {
@@ -28,6 +36,7 @@ export function loadVkConfig(env: NodeJS.Dict<string> = process.env): VkConfig {
     confirmationCode: emptyToNull(env.VK_CONFIRMATION_CODE),
     apiVersion: emptyToNull(env.VK_API_VERSION) ?? DEFAULT_VK_API_VERSION,
     production: env.NODE_ENV === 'production',
+    timeoutMs: parseTimeoutMs(env.VK_API_TIMEOUT_MS),
   };
 }
 
@@ -44,6 +53,7 @@ export function describeVkConfig(config: VkConfig): {
   callbackSecret: boolean;
   confirmationCode: boolean;
   apiVersion: string;
+  timeoutMs: number;
 } {
   return {
     vkConfigured: isVkCallbackReady(config),
@@ -52,6 +62,7 @@ export function describeVkConfig(config: VkConfig): {
     callbackSecret: Boolean(config.callbackSecret),
     confirmationCode: Boolean(config.confirmationCode),
     apiVersion: config.apiVersion,
+    timeoutMs: config.timeoutMs ?? DEFAULT_VK_API_TIMEOUT_MS,
   };
 }
 

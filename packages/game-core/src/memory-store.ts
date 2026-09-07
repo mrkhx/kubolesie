@@ -514,6 +514,23 @@ export class MemoryGameStore implements GameStore {
     await this.persist();
   }
 
+  async incrementWeeklyScore(playerId: string, periodKey: string, delta: number): Promise<number> {
+    return this.withMut(async () => {
+      const add = Math.max(0, Number.isFinite(delta) ? Math.floor(delta) : 0);
+      const row = this.state.weeklyScores.find(
+        (entry) => entry.playerId === playerId && entry.periodKey === periodKey,
+      );
+      if (row) {
+        row.score += add;
+        await this.persist();
+        return row.score;
+      }
+      this.state.weeklyScores.push({ playerId, periodKey, score: add });
+      await this.persist();
+      return add;
+    });
+  }
+
   async getWeeklyScore(playerId: string, periodKey: string): Promise<number> {
     return (
       this.state.weeklyScores.find((row) => row.playerId === playerId && row.periodKey === periodKey)?.score ?? 0

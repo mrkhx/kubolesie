@@ -100,6 +100,7 @@ describe('vk confirmation and auth', () => {
     const result = await adapter.handleCallback({
       type: 'confirmation',
       group_id: 111,
+      secret: 'test-secret',
     });
     expect(result).toEqual({ status: 200, body: 'confirm-code' });
   });
@@ -434,7 +435,23 @@ describe('vk logging and config', () => {
     expect(secretsEqual('test-secret', 'test-secret')).toBe(true);
     expect(secretsEqual('test-secret', 'test-secr3t')).toBe(false);
     expect(verifyCallbackAuth(messageNew({ text: 'x' }), CONFIG)).toBe('ok');
-    expect(verifyConfirmation({ type: 'confirmation', group_id: 111 }, CONFIG)).toBe('ok');
+    expect(verifyConfirmation({ type: 'confirmation', group_id: 111, secret: 'test-secret' }, CONFIG)).toBe(
+      'ok',
+    );
+  });
+
+  it('requires the callback secret on confirmation when a secret is configured', async () => {
+    const { adapter, runtime } = boot();
+    const handle = vi.spyOn(runtime, 'handle');
+    const missing = await adapter.handleCallback({ type: 'confirmation', group_id: 111 });
+    const wrong = await adapter.handleCallback({
+      type: 'confirmation',
+      group_id: 111,
+      secret: 'nope',
+    });
+    expect(missing.status).toBe(403);
+    expect(wrong.status).toBe(403);
+    expect(handle).not.toHaveBeenCalled();
   });
 });
 

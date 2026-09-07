@@ -1,4 +1,5 @@
 import {
+  DEFAULT_VK_API_TIMEOUT_MS,
   DEFAULT_VK_API_VERSION,
   VK_MESSAGE_MAX_LENGTH,
   type VkConfig,
@@ -100,14 +101,21 @@ export class VkApiClient implements VkMessenger {
     const body = new URLSearchParams(params);
     body.set('access_token', token);
     body.set('v', this.config.apiVersion || DEFAULT_VK_API_VERSION);
+    const timeoutMs = this.config.timeoutMs ?? DEFAULT_VK_API_TIMEOUT_MS;
+    const signal = AbortSignal.timeout(timeoutMs);
     let response: Response;
     try {
       response = await this.http(`${VK_API_ENDPOINT}/${method}`, {
         method: 'POST',
         headers: { 'content-type': 'application/x-www-form-urlencoded' },
         body,
+        signal,
       });
-    } catch {
+    } catch (error) {
+      const name = error instanceof Error ? error.name : '';
+      if (name === 'TimeoutError' || name === 'AbortError' || signal.aborted) {
+        throw new VkApiError(method, 'timeout');
+      }
       throw new VkApiError(method, 'network');
     }
     let json: unknown;

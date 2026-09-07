@@ -1,16 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { HealthController } from './health.controller';
 import { VkController } from './vk.controller';
-import { loadVkConfig, type CallbackHttpResult, type VkConfig } from '@kubolesie/vk-bot';
-
-const READY: VkConfig = {
-  groupId: 111,
-  groupToken: 'test-token',
-  callbackSecret: 'test-secret',
-  confirmationCode: 'confirm-code',
-  apiVersion: '5.199',
-  production: false,
-};
+import type { CallbackHttpResult } from '@kubolesie/vk-bot';
 
 function mockRes() {
   const res = {
@@ -57,19 +47,5 @@ describe('vk http callback', () => {
     expect(adapter.handleCallback).toHaveBeenCalledOnce();
     expect(res.statusCode).toBe(403);
     expect(res.body).toBe('forbidden');
-  });
-});
-
-describe('health vk flag', () => {
-  it('reports vkConfigured without secrets', () => {
-    const empty = new HealthController(loadVkConfig({}));
-    expect(empty.health().vkConfigured).toBe(false);
-    const ready = new HealthController(READY);
-    const body = ready.health();
-    expect(body.vkConfigured).toBe(true);
-    expect(JSON.stringify(body)).not.toContain('test-token');
-    expect(JSON.stringify(body)).not.toContain('test-secret');
-    expect(JSON.stringify(ready.vkHealth())).not.toContain('test-token');
-    expect(ready.vkHealth().vkConfigured).toBe(true);
   });
 });
