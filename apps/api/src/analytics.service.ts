@@ -264,6 +264,10 @@ export class AnalyticsService {
     };
   }
 
+  async market(now = new Date()) {
+    return this.store.getMarketAnalytics(now);
+  }
+
   async combat(now = new Date()) {
     const today = utcDayStart(now);
     const d7 = ago(now, 7 * DAY_MS);

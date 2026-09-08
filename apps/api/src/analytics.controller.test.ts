@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MemoryGameStore } from '@kubolesie/game-core';
+import { MemoryGameStore, createFixedListing, buyFixedListing } from '@kubolesie/game-core';
 import { loadAppConfig } from './app-config';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
@@ -168,5 +168,44 @@ describe('admin analytics payloads', () => {
     const wrong = fakeRes();
     await armed.clans('Bearer nope', wrong.res, {} as never);
     expect(wrong.box.statusCode).toBe(401);
+  });
+
+  it('returns market aggregates without vk ids and still requires auth', async () => {
+    const store = new MemoryGameStore();
+    const now = new Date('2026-09-08T12:00:00Z');
+    const seller = await store.createPlayer({ vkUserId: 'market-seller', name: 'Продавец' });
+    const buyer = await store.createPlayer({ vkUserId: 'market-buyer', name: 'Покупатель' });
+    await store.addResource(seller.id, 'LOG', 2);
+    buyer.coins = 40;
+    await store.savePlayer(buyer);
+    const listing = await createFixedListing(store, {
+      sellerPlayerId: seller.id,
+      assetRef: 'LOG',
+      quantity: 2,
+      unitPrice: 10,
+      now,
+    });
+    await buyFixedListing(store, { listingId: listing.id, buyerPlayerId: buyer.id, now });
+    const service = new AnalyticsService(store, { store, kind: 'memory' }, configWithToken());
+    const market = await service.market(now);
+    expect(market.activeListings).toBe(0);
+    expect(market.completedTradesToday).toBe(1);
+    expect(market.grossVolumeToday).toBe(20);
+    expect(market.feesBurnedToday).toBe(1);
+    expect(market.uniqueSellers7d).toBe(1);
+    expect(market.uniqueBuyers7d).toBe(1);
+    expect(JSON.stringify(market)).not.toContain('market-seller');
+    expect(JSON.stringify(market)).not.toContain('market-buyer');
+    const armed = new AnalyticsController(configWithToken(), store, { store, kind: 'memory' });
+    const ok = fakeRes();
+    await armed.market(`Bearer ${TOKEN}`, ok.res, {} as never);
+    expect(ok.box.statusCode).toBe(200);
+    const wrong = fakeRes();
+    await armed.market('Bearer nope', wrong.res, {} as never);
+    expect(wrong.box.statusCode).toBe(401);
+    const disabled = new AnalyticsController(loadAppConfig({ NODE_ENV: 'test' }), store, { store, kind: 'memory' });
+    const missing = fakeRes();
+    await disabled.market(undefined, missing.res, {} as never);
+    expect(missing.box.statusCode).toBe(404);
   });
 });

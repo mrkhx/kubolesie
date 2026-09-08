@@ -7,3 +7,4 @@ export * from './menus';
 export * from './meta';
 export * from './pvp';
 export * from './clans';
+export * from './market';

@@ -286,6 +286,77 @@ export interface LeaderboardEntry {
   value: number;
 }
 
+export type MarketListingType = 'FIXED_PRICE' | 'AUCTION';
+export type MarketListingStatus = 'ACTIVE' | 'SOLD' | 'CANCELLED' | 'EXPIRED';
+export type MarketAssetKind = 'RESOURCE';
+
+export interface MarketListingRecord {
+  id: string;
+  sellerPlayerId: string;
+  listingType: MarketListingType;
+  assetKind: MarketAssetKind;
+  assetRef: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  status: MarketListingStatus;
+  createdAt: Date;
+  expiresAt: Date;
+  buyerPlayerId: string | null;
+  soldAt: Date | null;
+  cancelledAt: Date | null;
+  requestId: string | null;
+}
+
+export interface MarketTransactionRecord {
+  id: string;
+  listingId: string;
+  sellerPlayerId: string;
+  buyerPlayerId: string;
+  assetKind: MarketAssetKind;
+  assetRef: string;
+  quantity: number;
+  grossPrice: number;
+  fee: number;
+  sellerNet: number;
+  createdAt: Date;
+  requestId: string | null;
+}
+
+export interface CurrencyTransactionRecord {
+  playerId: string;
+  currency: CurrencyCode;
+  amount: number;
+  balanceBefore: number;
+  balanceAfter: number;
+  reason: string;
+  referenceId?: string;
+  createdAt: Date;
+}
+
+export interface MarketSearchQuery {
+  assetRef?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  sort?: 'price_asc' | 'price_desc' | 'created_desc';
+  limit: number;
+  offset?: number;
+}
+
+export interface MarketAnalyticsSnapshot {
+  activeListings: number;
+  listingsCreatedToday: number;
+  listingsCreated7d: number;
+  completedTradesToday: number;
+  completedTrades7d: number;
+  grossVolumeToday: number;
+  grossVolume7d: number;
+  feesBurnedToday: number;
+  feesBurned7d: number;
+  uniqueSellers7d: number;
+  uniqueBuyers7d: number;
+}
+
 export interface GameStore {
   findPlayerById(id: string): Promise<PlayerRecord | null>;
   findPlayerByVkUserId(vkUserId: string): Promise<PlayerRecord | null>;
@@ -475,6 +546,34 @@ export interface GameStore {
   ): Promise<void>;
   tryGrantAchievement(playerId: string, achievementId: string): Promise<boolean>;
   listAchievements(playerId: string): Promise<PlayerAchievementRecord[]>;
+
+  createFixedListing(input: {
+    sellerPlayerId: string;
+    assetKind: MarketAssetKind;
+    assetRef: string;
+    quantity: number;
+    unitPrice: number;
+    totalPrice: number;
+    listingType: MarketListingType;
+    expiresAt: Date;
+    requestId?: string;
+    now?: Date;
+  }): Promise<MarketListingRecord>;
+  cancelListing(input: { listingId: string; sellerPlayerId: string; now?: Date }): Promise<MarketListingRecord>;
+  buyFixedListing(input: {
+    listingId: string;
+    buyerPlayerId: string;
+    requestId?: string;
+    now?: Date;
+  }): Promise<{ listing: MarketListingRecord; transaction: MarketTransactionRecord }>;
+  expireListing(listingId: string, now?: Date): Promise<MarketListingRecord>;
+  expireDueListings(now?: Date): Promise<number>;
+  getListing(listingId: string): Promise<MarketListingRecord | null>;
+  getOwnListings(sellerPlayerId: string): Promise<MarketListingRecord[]>;
+  searchActiveListings(query: MarketSearchQuery, now?: Date): Promise<MarketListingRecord[]>;
+  listMarketTransactions(listingId: string): Promise<MarketTransactionRecord[]>;
+  listCurrencyTransactions(playerId: string, referenceId?: string): Promise<CurrencyTransactionRecord[]>;
+  getMarketAnalytics(now?: Date): Promise<MarketAnalyticsSnapshot>;
 
   persist?(): Promise<void>;
 }

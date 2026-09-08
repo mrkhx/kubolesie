@@ -144,6 +144,10 @@ model Player {
   contributions    ClanContribution[]
   clansLed         Clan[]
   weeklyScores     PlayerWeeklyScore[]
+  listingsSold     MarketListing[]       @relation("MarketListingSeller")
+  listingsBought   MarketListing[]       @relation("MarketListingBuyer")
+  marketSales      MarketTransaction[]   @relation("MarketTxSeller")
+  marketPurchases  MarketTransaction[]   @relation("MarketTxBuyer")
 
   @@index([createdAt])
   @@index([lastActiveAt])
@@ -645,4 +649,74 @@ model PlayerWeeklyScore {
   @@unique([playerId, periodKey])
   @@index([periodKey, score(sort: Desc)])
   @@map("player_weekly_scores")
+}
+
+enum MarketListingType {
+  FIXED_PRICE
+  AUCTION
+}
+
+enum MarketListingStatus {
+  ACTIVE
+  SOLD
+  CANCELLED
+  EXPIRED
+}
+
+enum MarketAssetKind {
+  RESOURCE
+}
+
+model MarketListing {
+  id             String              @id @default(cuid())
+  sellerPlayerId String              @map("seller_player_id")
+  listingType    MarketListingType   @map("listing_type")
+  assetKind      MarketAssetKind     @map("asset_kind")
+  assetRef       String              @map("asset_ref")
+  quantity       Int
+  unitPrice      Int                 @map("unit_price")
+  totalPrice     Int                 @map("total_price")
+  status         MarketListingStatus @default(ACTIVE)
+  createdAt      DateTime            @default(now()) @map("created_at")
+  expiresAt      DateTime            @map("expires_at")
+  buyerPlayerId  String?             @map("buyer_player_id")
+  soldAt         DateTime?           @map("sold_at")
+  cancelledAt    DateTime?           @map("cancelled_at")
+  requestId      String?             @map("request_id")
+
+  seller       Player              @relation("MarketListingSeller", fields: [sellerPlayerId], references: [id], onDelete: Cascade)
+  buyer        Player?             @relation("MarketListingBuyer", fields: [buyerPlayerId], references: [id], onDelete: SetNull)
+  transactions MarketTransaction[]
+
+  @@index([status, assetRef, unitPrice])
+  @@index([sellerPlayerId, status])
+  @@index([expiresAt])
+  @@index([status, expiresAt])
+  @@index([createdAt])
+  @@map("market_listings")
+}
+
+model MarketTransaction {
+  id             String          @id @default(cuid())
+  listingId      String          @map("listing_id")
+  sellerPlayerId String          @map("seller_player_id")
+  buyerPlayerId  String          @map("buyer_player_id")
+  assetKind      MarketAssetKind @map("asset_kind")
+  assetRef       String          @map("asset_ref")
+  quantity       Int
+  grossPrice     Int             @map("gross_price")
+  fee            Int
+  sellerNet      Int             @map("seller_net")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  requestId      String?         @map("request_id")
+
+  listing MarketListing @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  seller  Player        @relation("MarketTxSeller", fields: [sellerPlayerId], references: [id], onDelete: Cascade)
+  buyer   Player        @relation("MarketTxBuyer", fields: [buyerPlayerId], references: [id], onDelete: Cascade)
+
+  @@unique([listingId])
+  @@index([createdAt])
+  @@index([sellerPlayerId, createdAt])
+  @@index([buyerPlayerId, createdAt])
+  @@map("market_transactions")
 }

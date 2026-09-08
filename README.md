@@ -226,6 +226,7 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 - member cap 10→30, без боевых бонусов
 - additive migration `20260907210000_clans_1`
 - admin analytics `/v1/admin/analytics/clans`
+- Player Market Foundation: escrow, 5% fee, allowlist ресурсов, без UI рынка и без auction behaviour (`docs/player-market-foundation.md`)
 
 ## Prototype 0.0.5 содержит
 

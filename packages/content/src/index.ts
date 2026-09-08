@@ -22,6 +22,7 @@ export * from './rules';
 export * from './dialogue-types';
 export * from './furnace';
 export * from './trade';
+export * from './market';
 export * from './pvp';
 export * from './loot';
 export * from './meta';
