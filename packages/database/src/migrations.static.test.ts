@@ -17,6 +17,7 @@ const EXPECTED = [
   '20260907210000_clans_1',
   '20260908120000_player_market_foundation',
   '20260908180000_market_auction_1',
+  '20260908200000_jobs_production_1',
 ] as const;
 
 function sql(name: string): string {
@@ -96,5 +97,12 @@ describe('prisma migrations (static)', () => {
     expect(sql('20260908180000_market_auction_1')).toMatch(/starting_price/);
     expect(sql('20260908180000_market_auction_1')).not.toMatch(/DROP TABLE "market_listings"/);
     expect(sql('20260908180000_market_auction_1')).not.toMatch(/DROP TABLE "players"/);
+    expect(sql('20260908200000_jobs_production_1')).toMatch(/CREATE TABLE "player_jobs"/);
+    expect(sql('20260908200000_jobs_production_1')).toMatch(/CREATE TABLE "player_job_tasks"/);
+    expect(sql('20260908200000_jobs_production_1')).toMatch(/CREATE TABLE "player_production_buildings"/);
+    expect(sql('20260908200000_jobs_production_1')).toMatch(/CREATE TABLE "production_events"/);
+    expect(sql('20260908200000_jobs_production_1')).toMatch(/player_job_tasks_one_accepted_per_profession/);
+    expect(sql('20260908200000_jobs_production_1')).not.toMatch(/DROP TABLE "players"/);
+    expect(sql('20260908200000_jobs_production_1')).not.toMatch(/DROP TABLE "market_listings"/);
   });
 });

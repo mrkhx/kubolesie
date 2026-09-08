@@ -33,6 +33,8 @@ curl -sS -H "Authorization: Bearer $ADMIN_ANALYTICS_TOKEN" \
 | GET | `/v1/admin/analytics/system` | version, uptime, store, db/redis ping, vk configured, process-local counters |
 | GET | `/v1/admin/analytics/clans` | totalClans, activeClans7d, members, contribution, task completions, top 10 weekly |
 | GET | `/v1/admin/analytics/market` | activeListings, created/trades/volume/fees today+7d, unique sellers/buyers 7d |
+| GET | `/v1/admin/analytics/jobs` | playersWithJobs, completions today/7d, avg levels, coins issued, top profession |
+| GET | `/v1/admin/analytics/production` | buildings, collected/produced, coins/resources burned, storage-full estimate |
 
 ## Активность
 

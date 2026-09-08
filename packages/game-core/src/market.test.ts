@@ -487,9 +487,9 @@ describe('player market foundation — auction + UI stay closed until 1.0 wiring
     expect(JSON.stringify(camp.buttons)).not.toMatch(/Рынок/);
   });
 
-  it('bumps prototype to 0.0.7', () => {
-    expect(PROTOTYPE_VERSION).toBe('0.0.7');
-    expect(BALANCE_VERSION).toBe('0.0.7');
+  it('bumps prototype to 0.0.8', () => {
+    expect(PROTOTYPE_VERSION).toBe('0.0.8');
+    expect(BALANCE_VERSION).toBe('0.0.8');
     expect((GAME_COMMANDS as readonly string[]).includes('MARKET_ACT')).toBe(true);
     expect((ACTION_MENUS as readonly string[]).includes('market')).toBe(true);
   });

@@ -12,7 +12,7 @@ import type {
 } from '@kubolesie/shared';
 import { BACK_LABEL } from '@kubolesie/shared';
 
-export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'clan_home' | 'clan_tasks' | 'clan_donate' | 'cosmetics' | 'achievements' | 'farm' | 'quarry' | 'mist' | 'lowland' | 'seal2' | 'pvp_hub' | 'pvp_history' | 'pvp_rewards' | 'market' | 'market_buy' | 'market_sell' | 'market_mine' | 'market_auc';
+export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'clan_home' | 'clan_tasks' | 'clan_donate' | 'cosmetics' | 'achievements' | 'farm' | 'quarry' | 'mist' | 'lowland' | 'seal2' | 'pvp_hub' | 'pvp_history' | 'pvp_rewards' | 'market' | 'market_buy' | 'market_sell' | 'market_mine' | 'market_auc' | 'work' | 'jobs' | 'production';
 
 export const ACTION_MENUS: readonly ActionMenuId[] = [
   'hub',
@@ -58,6 +58,9 @@ export const ACTION_MENUS: readonly ActionMenuId[] = [
   'market_sell',
   'market_mine',
   'market_auc',
+  'work',
+  'jobs',
+  'production',
 ];
 
 export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly string[]> = {
@@ -160,6 +163,9 @@ const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
   market_sell: 'market',
   market_mine: 'market',
   market_auc: 'market',
+  work: 'stats',
+  jobs: 'work',
+  production: 'work',
 };
 
 export interface MenuSnapshot {
@@ -372,6 +378,9 @@ export function campButtons(ctx: MenuSnapshot): GameButton[] {
   if (ctx.flags.farming_unlocked && buttons.length < 4) {
     buttons.push({ label: '🌾 Грядка', action: 'FARM_ACT', payload: { act: 'open' } });
   }
+  if (ctx.flags.week_1_complete && buttons.length < 4) {
+    buttons.push({ label: '⚒ Хозяйство', action: 'OPEN_MENU', payload: { menu: 'work' } });
+  }
   if (buttons.length < 4) {
     buttons.push({ label: '👤 Герой', action: 'OPEN_MENU', payload: { menu: 'hero' } });
   }
@@ -422,7 +431,7 @@ export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText
       buttons: campButtons(ctx),
     };
   }
-  if (menu === 'wedge' || menu === 'daily' || menu === 'furnace' || menu === 'trade' || menu === 'pvp' || menu === 'prep' || menu === 'hero' || menu === 'profile' || menu === 'stats' || menu === 'ratings' || menu === 'clan' || menu === 'cosmetics') {
+  if (menu === 'wedge' || menu === 'daily' || menu === 'furnace' || menu === 'trade' || menu === 'pvp' || menu === 'prep' || menu === 'hero' || menu === 'profile' || menu === 'stats' || menu === 'ratings' || menu === 'clan' || menu === 'cosmetics' || menu === 'work' || menu === 'jobs' || menu === 'production') {
     return {
       id: menu,
       text: extraText || '…',

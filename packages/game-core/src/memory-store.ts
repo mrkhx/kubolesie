@@ -49,8 +49,20 @@ import type {
   MarketTransactionRecord,
   AuctionBidRecord,
   PlayerNoticeRecord,
+  JobProfession,
+  JobProgressEvent,
+  JobProgressUpdate,
+  JobsAnalyticsSnapshot,
+  PlayerJobRecord,
+  PlayerJobTaskRecord,
+  PlayerProductionBuildingRecord,
+  ProductionAnalyticsSnapshot,
+  ProductionBuildingType,
+  ProductionCollectResult,
+  ProductionEventRecord,
 } from './store';
 import { EMPTY_STATISTICS } from './store';
+import { grantPlayerXp } from './jobs';
 import {
   applyPvpRating,
   clampLimit,
@@ -62,6 +74,21 @@ import {
   minBidAmount,
   PVP_RATING,
   QUEST_TEMPLATES,
+  JOBS,
+  getJobTemplate,
+  jobCoinPayout,
+  jobLevelForXp,
+  jobMetricDelta,
+  scaledJobCoins,
+  scaledJobTarget,
+  scaledJobXp,
+  utcDayKey,
+  PRODUCTION,
+  PRODUCTION_DEFS,
+  productionCost,
+  productionRates,
+  tickProduction,
+  type ProductionBuildingType as ContentBuildingType,
 } from '@kubolesie/content';
 import type { BattleEvent } from '@kubolesie/combat-engine';
 import {
@@ -109,6 +136,10 @@ interface MemoryState {
   marketTx: MarketTransactionRecord[];
   auctionBids: AuctionBidRecord[];
   notices: PlayerNoticeRecord[];
+  jobs: PlayerJobRecord[];
+  jobTasks: PlayerJobTaskRecord[];
+  productionBuildings: PlayerProductionBuildingRecord[];
+  productionEvents: ProductionEventRecord[];
 }
 
 function reviveDates(player: PlayerRecord): PlayerRecord {
@@ -172,6 +203,13 @@ export class MemoryGameStore implements GameStore {
         ...row,
         createdAt: new Date(row.createdAt),
         readAt: row.readAt ? new Date(row.readAt) : null,
+      }));
+      parsed.jobs = (parsed.jobs ?? []).map(reviveJob);
+      parsed.jobTasks = (parsed.jobTasks ?? []).map(reviveJobTask);
+      parsed.productionBuildings = (parsed.productionBuildings ?? []).map(reviveBuilding);
+      parsed.productionEvents = (parsed.productionEvents ?? []).map((row) => ({
+        ...row,
+        createdAt: new Date(row.createdAt),
       }));
       parsed.currencyTx = (parsed.currencyTx ?? []).map((row) => ({
         ...row,
@@ -1895,6 +1933,571 @@ export class MemoryGameStore implements GameStore {
     };
   }
 
+  async getJob(playerId: string, profession: JobProfession): Promise<PlayerJobRecord | null> {
+    const row = this.state.jobs.find((job) => job.playerId === playerId && job.profession === profession);
+    return row ? cloneJob(row) : null;
+  }
+
+  async listJobs(playerId: string): Promise<PlayerJobRecord[]> {
+    return this.state.jobs.filter((job) => job.playerId === playerId).map(cloneJob);
+  }
+
+  async listAcceptedJobTasks(playerId: string): Promise<PlayerJobTaskRecord[]> {
+    return this.state.jobTasks
+      .filter((row) => row.playerId === playerId && row.status === 'ACCEPTED')
+      .map(cloneJobTask);
+  }
+
+  async getAcceptedJobTask(playerId: string, profession: JobProfession): Promise<PlayerJobTaskRecord | null> {
+    const row = this.state.jobTasks.find(
+      (task) => task.playerId === playerId && task.profession === profession && task.status === 'ACCEPTED',
+    );
+    return row ? cloneJobTask(row) : null;
+  }
+
+  async listJobTasks(
+    playerId: string,
+    profession?: JobProfession,
+    periodKey?: string,
+  ): Promise<PlayerJobTaskRecord[]> {
+    return this.state.jobTasks
+      .filter((row) => {
+        if (row.playerId !== playerId) return false;
+        if (profession && row.profession !== profession) return false;
+        if (periodKey && row.periodKey !== periodKey) return false;
+        return true;
+      })
+      .map(cloneJobTask);
+  }
+
+  async acceptJobTask(input: {
+    playerId: string;
+    templateId: string;
+    requestId?: string;
+    now?: Date;
+  }): Promise<PlayerJobTaskRecord> {
+    return this.withMut(async () => {
+      if (input.requestId) {
+        const existing = this.state.jobTasks.find((row) => row.requestId === input.requestId);
+        if (existing) return cloneJobTask(existing);
+      }
+      const template = getJobTemplate(input.templateId);
+      if (!template) throw new ActionRejectedError('Нет такого контракта.');
+      const now = input.now ?? new Date();
+      const period = utcDayKey(now);
+      const job = this.ensureJobUnlocked(input.playerId, template.profession);
+      const accepted = this.state.jobTasks.find(
+        (row) =>
+          row.playerId === input.playerId &&
+          row.profession === template.profession &&
+          row.status === 'ACCEPTED',
+      );
+      if (accepted) throw new ActionRejectedError('Уже есть активный контракт этой профессии.');
+      const dup = this.state.jobTasks.find(
+        (row) =>
+          row.playerId === input.playerId &&
+          row.profession === template.profession &&
+          row.periodKey === period &&
+          row.templateId === template.id,
+      );
+      if (dup) throw new ActionRejectedError('Этот контракт уже брали сегодня.');
+      const task: PlayerJobTaskRecord = {
+        id: randomUUID(),
+        playerId: input.playerId,
+        profession: template.profession,
+        templateId: template.id,
+        slot: template.slot,
+        periodKey: period,
+        target: scaledJobTarget(template.target, job.level),
+        progress: 0,
+        coins: scaledJobCoins(template.coins, job.level),
+        jobXp: scaledJobXp(template.jobXp, job.level),
+        playerXp: scaledJobXp(template.playerXp, job.level),
+        status: 'ACCEPTED',
+        acceptedAt: now,
+        completedAt: null,
+        requestId: input.requestId ?? null,
+      };
+      this.state.jobTasks.push(task);
+      await this.persist();
+      return cloneJobTask(task);
+    });
+  }
+
+  async progressJobTasks(input: {
+    playerId: string;
+    event: JobProgressEvent;
+    now?: Date;
+  }): Promise<JobProgressUpdate[]> {
+    return this.withMut(async () => {
+      const now = input.now ?? new Date();
+      const updates: JobProgressUpdate[] = [];
+      const accepted = this.state.jobTasks.filter(
+        (row) => row.playerId === input.playerId && row.status === 'ACCEPTED',
+      );
+      for (const task of accepted) {
+        const template = getJobTemplate(task.templateId);
+        if (!template) continue;
+        const delta = jobMetricDelta(template.metric, input.event);
+        if (delta <= 0) continue;
+        task.progress = Math.min(task.target, task.progress + delta);
+        let completed = false;
+        let coins = 0;
+        let jobXp = 0;
+        let playerXp = 0;
+        if (task.progress >= task.target) {
+          const payout = this.completeJobTaskUnlocked(task, now);
+          completed = true;
+          coins = payout.coins;
+          jobXp = payout.jobXp;
+          playerXp = payout.playerXp;
+        }
+        updates.push({ task: cloneJobTask(task), completed, coins, jobXp, playerXp });
+      }
+      if (updates.length) await this.persist();
+      return updates;
+    });
+  }
+
+  async getJobsAnalytics(now?: Date): Promise<JobsAnalyticsSnapshot> {
+    const at = now ?? new Date();
+    const today = utcDayStart(at);
+    const d7 = new Date(at.getTime() - 7 * 86_400_000);
+    const jobs = this.state.jobs;
+    const completed = this.state.jobTasks.filter((row) => row.status === 'COMPLETED' && row.completedAt);
+    const completedToday = completed.filter((row) => (row.completedAt ?? row.acceptedAt) >= today);
+    const completed7d = completed.filter((row) => (row.completedAt ?? row.acceptedAt) >= d7);
+    const byProf = new Map<string, number>();
+    for (const row of completed7d) {
+      byProf.set(row.profession, (byProf.get(row.profession) ?? 0) + 1);
+    }
+    const avg = new Map<string, { sum: number; n: number }>();
+    for (const job of jobs) {
+      const row = avg.get(job.profession) ?? { sum: 0, n: 0 };
+      row.sum += job.level;
+      row.n += 1;
+      avg.set(job.profession, row);
+    }
+    const issuedToday = this.state.currencyTx
+      .filter((row) => row.reason === 'job_complete' && row.createdAt >= today)
+      .reduce((acc, row) => acc + Math.max(0, row.amount), 0);
+    const issued7d = this.state.currencyTx
+      .filter((row) => row.reason === 'job_complete' && row.createdAt >= d7)
+      .reduce((acc, row) => acc + Math.max(0, row.amount), 0);
+    const top = [...byProf.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+    const activeToday = new Set(
+      [
+        ...completedToday,
+        ...this.state.jobTasks.filter((row) => row.status === 'ACCEPTED' && row.acceptedAt >= today),
+      ].map((row) => row.playerId),
+    );
+    const active7d = new Set(
+      [
+        ...completed7d,
+        ...this.state.jobTasks.filter((row) => row.status === 'ACCEPTED' && row.acceptedAt >= d7),
+      ].map((row) => row.playerId),
+    );
+    return {
+      playersWithJobs: new Set(jobs.map((row) => row.playerId)).size,
+      activeJobPlayersToday: activeToday.size,
+      activeJobPlayers7d: active7d.size,
+      jobsCompletedToday: completedToday.length,
+      jobsCompleted7d: completed7d.length,
+      completionByProfession: [...byProf.entries()].map(([profession, count]) => ({ profession, count })),
+      averageLevelByProfession: [...avg.entries()].map(([profession, row]) => ({
+        profession,
+        avg: row.n ? Math.round((row.sum / row.n) * 10) / 10 : 0,
+      })),
+      coinsIssuedToday: issuedToday,
+      coinsIssued7d: issued7d,
+      topProfession: top,
+    };
+  }
+
+  async getProductionBuilding(
+    playerId: string,
+    buildingType: ProductionBuildingType,
+  ): Promise<PlayerProductionBuildingRecord | null> {
+    const row = this.state.productionBuildings.find(
+      (item) => item.playerId === playerId && item.buildingType === buildingType,
+    );
+    return row ? cloneBuilding(row) : null;
+  }
+
+  async listProductionBuildings(playerId: string): Promise<PlayerProductionBuildingRecord[]> {
+    return this.state.productionBuildings.filter((row) => row.playerId === playerId).map(cloneBuilding);
+  }
+
+  async tickProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    jobLevel?: number;
+    now?: Date;
+  }): Promise<PlayerProductionBuildingRecord | null> {
+    return this.withMut(async () => {
+      const row = this.state.productionBuildings.find(
+        (item) => item.playerId === input.playerId && item.buildingType === input.buildingType,
+      );
+      if (!row) return null;
+      this.tickBuildingUnlocked(row, input.now ?? new Date(), input.jobLevel ?? 0);
+      await this.persist();
+      return cloneBuilding(row);
+    });
+  }
+
+  async buildProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    requestId?: string;
+    now?: Date;
+  }): Promise<PlayerProductionBuildingRecord> {
+    return this.withMut(async () => {
+      if (input.requestId) {
+        const existingEvent = this.state.productionEvents.find((row) => row.requestId === input.requestId);
+        if (existingEvent) {
+          const building = this.state.productionBuildings.find(
+            (row) => row.playerId === input.playerId && row.buildingType === input.buildingType,
+          );
+          if (building) return cloneBuilding(building);
+        }
+      }
+      const now = input.now ?? new Date();
+      if (
+        this.state.productionBuildings.some(
+          (row) => row.playerId === input.playerId && row.buildingType === input.buildingType,
+        )
+      ) {
+        throw new ActionRejectedError('Уже построено.');
+      }
+      const player = this.state.players.find((row) => row.id === input.playerId);
+      if (!player) throw new NotFoundError('Игрок не найден.');
+      const cost = productionCost(input.buildingType as ContentBuildingType, 0);
+      this.spendProductionCostUnlocked(player, cost.resources, cost.coins, now, 'prod_build', input.requestId);
+      const building: PlayerProductionBuildingRecord = {
+        playerId: input.playerId,
+        buildingType: input.buildingType,
+        level: 1,
+        storedPrimary: 0,
+        storedSecondary: 0,
+        accPrimaryMilli: 0,
+        accSecondaryMilli: 0,
+        lastCalculatedAt: now,
+        builtAt: now,
+        upgradedAt: null,
+      };
+      this.state.productionBuildings.push(building);
+      this.state.productionEvents.push({
+        id: randomUUID(),
+        playerId: input.playerId,
+        buildingType: input.buildingType,
+        kind: 'BUILD',
+        primaryAmount: 0,
+        secondaryAmount: 0,
+        coins: cost.coins,
+        resourceUnits: Object.values(cost.resources).reduce((acc, value) => acc + (value ?? 0), 0),
+        createdAt: now,
+        requestId: input.requestId ?? null,
+      });
+      await this.persist();
+      return cloneBuilding(building);
+    });
+  }
+
+  async collectProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    jobLevel?: number;
+    requestId?: string;
+    now?: Date;
+  }): Promise<ProductionCollectResult> {
+    return this.withMut(async () => {
+      if (input.requestId) {
+        const existing = this.state.productionEvents.find(
+          (row) => row.requestId === input.requestId && row.kind === 'COLLECT',
+        );
+        if (existing) {
+          const building = this.state.productionBuildings.find(
+            (row) => row.playerId === input.playerId && row.buildingType === input.buildingType,
+          );
+          if (building) {
+            return {
+              building: cloneBuilding(building),
+              primary: existing.primaryAmount,
+              secondary: existing.secondaryAmount,
+              empty: existing.primaryAmount + existing.secondaryAmount <= 0,
+            };
+          }
+        }
+      }
+      const now = input.now ?? new Date();
+      const row = this.state.productionBuildings.find(
+        (item) => item.playerId === input.playerId && item.buildingType === input.buildingType,
+      );
+      if (!row) throw new ActionRejectedError('Сначала построй.');
+      this.tickBuildingUnlocked(row, now, input.jobLevel ?? 0);
+      const primary = row.storedPrimary;
+      const secondary = row.storedSecondary;
+      if (primary + secondary <= 0) {
+        await this.persist();
+        return { building: cloneBuilding(row), primary: 0, secondary: 0, empty: true };
+      }
+      const def = PRODUCTION_DEFS[row.buildingType as ContentBuildingType];
+      if (primary > 0) this.creditResourceUnlocked(input.playerId, def.primary, primary);
+      if (secondary > 0 && def.secondary) {
+        this.creditResourceUnlocked(input.playerId, def.secondary, secondary);
+      }
+      row.storedPrimary = 0;
+      row.storedSecondary = 0;
+      row.accPrimaryMilli = 0;
+      row.accSecondaryMilli = 0;
+      this.state.productionEvents.push({
+        id: randomUUID(),
+        playerId: input.playerId,
+        buildingType: input.buildingType,
+        kind: 'COLLECT',
+        primaryAmount: primary,
+        secondaryAmount: secondary,
+        coins: 0,
+        resourceUnits: primary + secondary,
+        createdAt: now,
+        requestId: input.requestId ?? null,
+      });
+      await this.persist();
+      return { building: cloneBuilding(row), primary, secondary, empty: false };
+    });
+  }
+
+  async upgradeProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    jobLevel?: number;
+    requestId?: string;
+    now?: Date;
+  }): Promise<PlayerProductionBuildingRecord> {
+    return this.withMut(async () => {
+      if (input.requestId) {
+        const existing = this.state.productionEvents.find(
+          (row) => row.requestId === input.requestId && row.kind === 'UPGRADE',
+        );
+        if (existing) {
+          const building = this.state.productionBuildings.find(
+            (row) => row.playerId === input.playerId && row.buildingType === input.buildingType,
+          );
+          if (building) return cloneBuilding(building);
+        }
+      }
+      const now = input.now ?? new Date();
+      const row = this.state.productionBuildings.find(
+        (item) => item.playerId === input.playerId && item.buildingType === input.buildingType,
+      );
+      if (!row) throw new ActionRejectedError('Сначала построй.');
+      this.tickBuildingUnlocked(row, now, input.jobLevel ?? 0);
+      if (row.level >= PRODUCTION.maxLevel) throw new ActionRejectedError('Максимальный уровень.');
+      const player = this.state.players.find((item) => item.id === input.playerId);
+      if (!player) throw new NotFoundError('Игрок не найден.');
+      const cost = productionCost(input.buildingType as ContentBuildingType, row.level);
+      this.spendProductionCostUnlocked(player, cost.resources, cost.coins, now, 'prod_upgrade', input.requestId);
+      row.level += 1;
+      row.upgradedAt = now;
+      const rates = productionRates(row.buildingType as ContentBuildingType, row.level, input.jobLevel ?? 0);
+      if (row.storedPrimary > rates.capPrimary) row.storedPrimary = rates.capPrimary;
+      if (row.storedSecondary > rates.capSecondary) row.storedSecondary = rates.capSecondary;
+      this.state.productionEvents.push({
+        id: randomUUID(),
+        playerId: input.playerId,
+        buildingType: input.buildingType,
+        kind: 'UPGRADE',
+        primaryAmount: 0,
+        secondaryAmount: 0,
+        coins: cost.coins,
+        resourceUnits: Object.values(cost.resources).reduce((acc, value) => acc + (value ?? 0), 0),
+        createdAt: now,
+        requestId: input.requestId ?? null,
+      });
+      await this.persist();
+      return cloneBuilding(row);
+    });
+  }
+
+  async getProductionAnalytics(now?: Date): Promise<ProductionAnalyticsSnapshot> {
+    const at = now ?? new Date();
+    const today = utcDayStart(at);
+    const d7 = new Date(at.getTime() - 7 * 86_400_000);
+    const buildings = this.state.productionBuildings;
+    const byType = new Map<string, { count: number; sum: number }>();
+    for (const row of buildings) {
+      const cur = byType.get(row.buildingType) ?? { count: 0, sum: 0 };
+      cur.count += 1;
+      cur.sum += row.level;
+      byType.set(row.buildingType, cur);
+    }
+    const collectToday = this.state.productionEvents.filter((row) => row.kind === 'COLLECT' && row.createdAt >= today);
+    const collect7d = this.state.productionEvents.filter((row) => row.kind === 'COLLECT' && row.createdAt >= d7);
+    const tickToday = this.state.productionEvents.filter((row) => row.kind === 'TICK' && row.createdAt >= today);
+    const tick7d = this.state.productionEvents.filter((row) => row.kind === 'TICK' && row.createdAt >= d7);
+    const burns = this.state.productionEvents.filter((row) => row.kind === 'BUILD' || row.kind === 'UPGRADE');
+    let storageFull = 0;
+    for (const row of buildings) {
+      const rates = productionRates(row.buildingType as ContentBuildingType, row.level, 0);
+      if (rates.capPrimary > 0 && row.storedPrimary >= rates.capPrimary) storageFull += 1;
+    }
+    return {
+      playersWithBuildings: new Set(buildings.map((row) => row.playerId)).size,
+      buildingsByType: [...byType.entries()].map(([type, row]) => ({
+        type,
+        count: row.count,
+        avgLevel: row.count ? Math.round((row.sum / row.count) * 10) / 10 : 0,
+      })),
+      resourcesCollectedToday: collectByResource(collectToday),
+      resourcesCollected7d: collectByResource(collect7d),
+      resourcesProducedToday: collectByResource(tickToday.length ? tickToday : collectToday),
+      resourcesProduced7d: collectByResource(tick7d.length ? tick7d : collect7d),
+      coinsBurnedOnBuildings: burns.reduce((acc, row) => acc + row.coins, 0),
+      resourcesBurnedOnBuildings: burns.reduce((acc, row) => acc + row.resourceUnits, 0),
+      storageFullEstimate: storageFull,
+    };
+  }
+
+  private ensureJobUnlocked(playerId: string, profession: JobProfession): PlayerJobRecord {
+    let job = this.state.jobs.find((row) => row.playerId === playerId && row.profession === profession);
+    if (!job) {
+      job = {
+        playerId,
+        profession,
+        xp: 0,
+        level: 1,
+        completedCount: 0,
+        dailyCompleted: 0,
+        dailyPeriod: '',
+        lastCompletedAt: null,
+        coinsEarned: 0,
+      };
+      this.state.jobs.push(job);
+    }
+    return job;
+  }
+
+  private completeJobTaskUnlocked(
+    task: PlayerJobTaskRecord,
+    now: Date,
+  ): { coins: number; jobXp: number; playerXp: number } {
+    if (task.status === 'COMPLETED') {
+      return { coins: 0, jobXp: 0, playerXp: 0 };
+    }
+    const player = this.state.players.find((row) => row.id === task.playerId);
+    if (!player) throw new NotFoundError('Игрок не найден.');
+    const job = this.ensureJobUnlocked(task.playerId, task.profession);
+    const period = utcDayKey(now);
+    if (job.dailyPeriod !== period) {
+      job.dailyCompleted = 0;
+      job.dailyPeriod = period;
+    }
+    const dailyAfter = job.dailyCompleted + 1;
+    const coins = jobCoinPayout(task.coins, dailyAfter);
+    if (coins > 0) {
+      const before = player.coins;
+      player.coins += coins;
+      this.state.currencyTx.push({
+        playerId: player.id,
+        currency: 'COINS',
+        amount: coins,
+        balanceBefore: before,
+        balanceAfter: player.coins,
+        reason: 'job_complete',
+        referenceId: task.id,
+        createdAt: now,
+      });
+      const stats = this.ensureStats(player.id);
+      stats.coinsEarned += coins;
+    }
+    job.xp += task.jobXp;
+    job.level = Math.min(JOBS.maxLevel, jobLevelForXp(job.xp));
+    job.completedCount += 1;
+    job.dailyCompleted = dailyAfter;
+    job.lastCompletedAt = now;
+    job.coinsEarned += coins;
+    grantPlayerXp(player, task.playerXp);
+    task.status = 'COMPLETED';
+    task.completedAt = now;
+    this.state.notices.push({
+      id: randomUUID(),
+      playerId: player.id,
+      kind: 'job_complete',
+      body: `Контракт закрыт. +${coins} монет, +${task.jobXp} XP профессии.`,
+      listingId: null,
+      createdAt: now,
+      readAt: null,
+    });
+    return { coins, jobXp: task.jobXp, playerXp: task.playerXp };
+  }
+
+  private tickBuildingUnlocked(row: PlayerProductionBuildingRecord, now: Date, jobLevel: number): void {
+    const result = tickProduction(
+      row.buildingType as ContentBuildingType,
+      {
+        level: row.level,
+        storedPrimary: row.storedPrimary,
+        storedSecondary: row.storedSecondary,
+        accPrimaryMilli: row.accPrimaryMilli,
+        accSecondaryMilli: row.accSecondaryMilli,
+        lastCalculatedAt: row.lastCalculatedAt,
+      },
+      now,
+      jobLevel,
+    );
+    if (result.producedPrimary > 0 || result.producedSecondary > 0) {
+      this.state.productionEvents.push({
+        id: randomUUID(),
+        playerId: row.playerId,
+        buildingType: row.buildingType,
+        kind: 'TICK',
+        primaryAmount: result.producedPrimary,
+        secondaryAmount: result.producedSecondary,
+        coins: 0,
+        resourceUnits: result.producedPrimary + result.producedSecondary,
+        createdAt: now,
+        requestId: null,
+      });
+    }
+    row.storedPrimary = result.storedPrimary;
+    row.storedSecondary = result.storedSecondary;
+    row.accPrimaryMilli = result.accPrimaryMilli;
+    row.accSecondaryMilli = result.accSecondaryMilli;
+    row.lastCalculatedAt = result.lastCalculatedAt;
+  }
+
+  private spendProductionCostUnlocked(
+    player: PlayerRecord,
+    resources: Partial<Record<string, number>>,
+    coins: number,
+    now: Date,
+    reason: string,
+    requestId?: string,
+  ): void {
+    if (player.coins < coins) throw new InsufficientCoinsError('Не хватает монет.');
+    for (const [resource, need] of Object.entries(resources)) {
+      if ((need ?? 0) > 0) {
+        this.debitResourceUnlocked(player.id, resource as ResourceType, need ?? 0);
+      }
+    }
+    if (coins > 0) {
+      const before = player.coins;
+      player.coins -= coins;
+      this.state.currencyTx.push({
+        playerId: player.id,
+        currency: 'COINS',
+        amount: -coins,
+        balanceBefore: before,
+        balanceAfter: player.coins,
+        reason,
+        referenceId: requestId,
+        createdAt: now,
+      });
+      const stats = this.ensureStats(player.id);
+      stats.coinsSpent += coins;
+    }
+  }
+
   private countSuspiciousSignalsSync(at: Date): number {
     const week = new Date(at.getTime() - 7 * 86_400_000);
     const groups = new Map<string, { sum: number; qty: number }>();
@@ -2243,6 +2846,10 @@ function emptyState(): MemoryState {
     marketTx: [],
     auctionBids: [],
     notices: [],
+    jobs: [],
+    jobTasks: [],
+    productionBuildings: [],
+    productionEvents: [],
   };
 }
 
@@ -2275,6 +2882,56 @@ function reviveMarketTx(row: MarketTransactionRecord): MarketTransactionRecord {
 
 function utcDayStart(now: Date): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+function cloneJob(row: PlayerJobRecord): PlayerJobRecord {
+  return { ...row, lastCompletedAt: row.lastCompletedAt ? new Date(row.lastCompletedAt) : null };
+}
+
+function reviveJob(row: PlayerJobRecord): PlayerJobRecord {
+  return cloneJob(row);
+}
+
+function cloneJobTask(row: PlayerJobTaskRecord): PlayerJobTaskRecord {
+  return {
+    ...row,
+    acceptedAt: new Date(row.acceptedAt),
+    completedAt: row.completedAt ? new Date(row.completedAt) : null,
+  };
+}
+
+function reviveJobTask(row: PlayerJobTaskRecord): PlayerJobTaskRecord {
+  return cloneJobTask(row);
+}
+
+function cloneBuilding(row: PlayerProductionBuildingRecord): PlayerProductionBuildingRecord {
+  return {
+    ...row,
+    lastCalculatedAt: new Date(row.lastCalculatedAt),
+    builtAt: new Date(row.builtAt),
+    upgradedAt: row.upgradedAt ? new Date(row.upgradedAt) : null,
+  };
+}
+
+function reviveBuilding(row: PlayerProductionBuildingRecord): PlayerProductionBuildingRecord {
+  return cloneBuilding(row);
+}
+
+function collectByResource(
+  events: ProductionEventRecord[],
+): Array<{ resource: string; amount: number }> {
+  const map = new Map<string, number>();
+  for (const event of events) {
+    const def = PRODUCTION_DEFS[event.buildingType as ContentBuildingType];
+    if (!def) continue;
+    if (event.primaryAmount > 0) {
+      map.set(def.primary, (map.get(def.primary) ?? 0) + event.primaryAmount);
+    }
+    if (event.secondaryAmount > 0 && def.secondary) {
+      map.set(def.secondary, (map.get(def.secondary) ?? 0) + event.secondaryAmount);
+    }
+  }
+  return [...map.entries()].map(([resource, amount]) => ({ resource, amount }));
 }
 
 export { RewardAlreadyClaimedError };

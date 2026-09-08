@@ -10,6 +10,8 @@ export type CommandClass =
   | 'MARKET_READ'
   | 'MARKET_WRITE'
   | 'AUCTION_BID'
+  | 'JOB_WRITE'
+  | 'PROD_WRITE'
   | 'SYSTEM';
 
 export interface LimitSpec {
@@ -33,6 +35,8 @@ export const DEFAULT_LIMITS = {
   MARKET_READ: { perMinute: 40, minuteTtlMs: 60_000 },
   MARKET_WRITE: { perMinute: 12, minuteTtlMs: 60_000, burst: 4, burstTtlMs: 8_000 },
   AUCTION_BID: { perMinute: 20, minuteTtlMs: 60_000, burst: 6, burstTtlMs: 8_000 },
+  JOB_WRITE: { perMinute: 20, minuteTtlMs: 60_000, burst: 6, burstTtlMs: 8_000 },
+  PROD_WRITE: { perMinute: 20, minuteTtlMs: 60_000, burst: 6, burstTtlMs: 8_000 },
   SYSTEM: { perMinute: 20, minuteTtlMs: 60_000, burst: 8, burstTtlMs: 5_000 },
   callback: { perMinute: 60, minuteTtlMs: 60_000, burst: 15, burstTtlMs: 5_000 },
   ip: { perMinute: 600, minuteTtlMs: 60_000, burst: 120, burstTtlMs: 5_000 },
@@ -146,6 +150,8 @@ export const DEFAULT_ABUSE_POLICY: AbusePolicy = {
     MARKET_READ: { ...DEFAULT_LIMITS.MARKET_READ },
     MARKET_WRITE: { ...DEFAULT_LIMITS.MARKET_WRITE },
     AUCTION_BID: { ...DEFAULT_LIMITS.AUCTION_BID },
+    JOB_WRITE: { ...DEFAULT_LIMITS.JOB_WRITE },
+    PROD_WRITE: { ...DEFAULT_LIMITS.PROD_WRITE },
     SYSTEM: { ...DEFAULT_LIMITS.SYSTEM },
   },
   callback: { ...DEFAULT_LIMITS.callback },
@@ -240,6 +246,18 @@ export function loadAbusePolicy(env: NodeJS.Dict<string> = process.env): AbusePo
           60_000,
         ),
       },
+      JOB_WRITE: {
+        perMinute: envInt(env, 'RATE_LIMIT_JOB_WRITE_PER_MIN', DEFAULT_LIMITS.JOB_WRITE.perMinute, 1, 10_000),
+        minuteTtlMs: 60_000,
+        burst: envInt(env, 'RATE_LIMIT_JOB_WRITE_BURST', DEFAULT_LIMITS.JOB_WRITE.burst, 1, 1_000),
+        burstTtlMs: envInt(env, 'RATE_LIMIT_JOB_WRITE_BURST_MS', DEFAULT_LIMITS.JOB_WRITE.burstTtlMs, 200, 60_000),
+      },
+      PROD_WRITE: {
+        perMinute: envInt(env, 'RATE_LIMIT_PROD_WRITE_PER_MIN', DEFAULT_LIMITS.PROD_WRITE.perMinute, 1, 10_000),
+        minuteTtlMs: 60_000,
+        burst: envInt(env, 'RATE_LIMIT_PROD_WRITE_BURST', DEFAULT_LIMITS.PROD_WRITE.burst, 1, 1_000),
+        burstTtlMs: envInt(env, 'RATE_LIMIT_PROD_WRITE_BURST_MS', DEFAULT_LIMITS.PROD_WRITE.burstTtlMs, 200, 60_000),
+      },
       SYSTEM: {
         perMinute: envInt(env, 'RATE_LIMIT_SYSTEM_PER_MIN', DEFAULT_LIMITS.SYSTEM.perMinute, 1, 10_000),
         minuteTtlMs: 60_000,
@@ -271,6 +289,8 @@ const MARKET_WRITES = new Set([
   'buyout',
 ]);
 const MARKET_BIDS = new Set(['bid']);
+const JOB_WRITES = new Set(['accept']);
+const PROD_WRITES = new Set(['build', 'collect', 'upgrade']);
 
 export function classifyCommand(command: GameCommand): CommandClass {
   const type = command.type;
@@ -287,6 +307,16 @@ export function classifyCommand(command: GameCommand): CommandClass {
     if (MARKET_WRITES.has(act)) return 'MARKET_WRITE';
     return 'MARKET_READ';
   }
+  if (type === 'JOB_ACT') {
+    const act = String(command.payload?.act ?? '');
+    if (JOB_WRITES.has(act)) return 'JOB_WRITE';
+    return 'READ';
+  }
+  if (type === 'PROD_ACT') {
+    const act = String(command.payload?.act ?? '');
+    if (PROD_WRITES.has(act)) return 'PROD_WRITE';
+    return 'READ';
+  }
   if (type === 'LEADERBOARD_PAGE') return 'EXPENSIVE_READ';
   if (type === 'CLAN_ACT') {
     const act = String(command.payload?.act ?? '');
@@ -298,6 +328,7 @@ export function classifyCommand(command: GameCommand): CommandClass {
     const menu = String(command.payload?.menu ?? '');
     if (EXPENSIVE_MENUS.has(menu)) return 'EXPENSIVE_READ';
     if (menu.startsWith('market')) return 'MARKET_READ';
+    if (menu === 'work' || menu === 'jobs' || menu === 'production') return 'READ';
     return 'READ';
   }
   if (READ_TYPES.has(type)) return 'READ';
@@ -313,6 +344,8 @@ export function commandNeedsLock(command: GameCommand): boolean {
     klass === 'PVP' ||
     klass === 'MARKET_WRITE' ||
     klass === 'AUCTION_BID' ||
+    klass === 'JOB_WRITE' ||
+    klass === 'PROD_WRITE' ||
     klass === 'SYSTEM'
   );
 }

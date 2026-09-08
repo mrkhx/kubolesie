@@ -403,6 +403,117 @@ export interface MarketAnalyticsSnapshot {
   suspiciousTradeSignals: number;
 }
 
+export type JobProfession = 'LOGGER' | 'MINER' | 'FARMER' | 'FISHER' | 'HUNTER' | 'CRAFTER';
+export type JobTaskStatus = 'ACCEPTED' | 'COMPLETED';
+export type ProductionBuildingType = 'WHEAT_FARM' | 'SAWMILL' | 'QUARRY' | 'MINE' | 'FISHERY' | 'PEN';
+export type ProductionEventKind = 'TICK' | 'COLLECT' | 'BUILD' | 'UPGRADE';
+
+export interface JobProgressEvent {
+  type: 'gather' | 'craft' | 'pve' | 'farm' | 'furnace';
+  amount?: number;
+  resource?: string;
+  recipeId?: string;
+  enemyId?: string;
+  result?: string;
+  act?: string;
+}
+
+export interface PlayerJobRecord {
+  playerId: string;
+  profession: JobProfession;
+  xp: number;
+  level: number;
+  completedCount: number;
+  dailyCompleted: number;
+  dailyPeriod: string;
+  lastCompletedAt: Date | null;
+  coinsEarned: number;
+}
+
+export interface PlayerJobTaskRecord {
+  id: string;
+  playerId: string;
+  profession: JobProfession;
+  templateId: string;
+  slot: number;
+  periodKey: string;
+  target: number;
+  progress: number;
+  coins: number;
+  jobXp: number;
+  playerXp: number;
+  status: JobTaskStatus;
+  acceptedAt: Date;
+  completedAt: Date | null;
+  requestId: string | null;
+}
+
+export interface JobProgressUpdate {
+  task: PlayerJobTaskRecord;
+  completed: boolean;
+  coins: number;
+  jobXp: number;
+  playerXp: number;
+}
+
+export interface JobsAnalyticsSnapshot {
+  playersWithJobs: number;
+  activeJobPlayersToday: number;
+  activeJobPlayers7d: number;
+  jobsCompletedToday: number;
+  jobsCompleted7d: number;
+  completionByProfession: Array<{ profession: string; count: number }>;
+  averageLevelByProfession: Array<{ profession: string; avg: number }>;
+  coinsIssuedToday: number;
+  coinsIssued7d: number;
+  topProfession: string | null;
+}
+
+export interface PlayerProductionBuildingRecord {
+  playerId: string;
+  buildingType: ProductionBuildingType;
+  level: number;
+  storedPrimary: number;
+  storedSecondary: number;
+  accPrimaryMilli: number;
+  accSecondaryMilli: number;
+  lastCalculatedAt: Date;
+  builtAt: Date;
+  upgradedAt: Date | null;
+}
+
+export interface ProductionEventRecord {
+  id: string;
+  playerId: string;
+  buildingType: ProductionBuildingType;
+  kind: ProductionEventKind;
+  primaryAmount: number;
+  secondaryAmount: number;
+  coins: number;
+  resourceUnits: number;
+  createdAt: Date;
+  requestId: string | null;
+}
+
+export interface ProductionCollectResult {
+  building: PlayerProductionBuildingRecord;
+  primary: number;
+  secondary: number;
+  empty: boolean;
+}
+
+export interface ProductionAnalyticsSnapshot {
+  playersWithBuildings: number;
+  buildingsByType: Array<{ type: string; count: number; avgLevel: number }>;
+  resourcesCollectedToday: Array<{ resource: string; amount: number }>;
+  resourcesCollected7d: Array<{ resource: string; amount: number }>;
+  resourcesProducedToday: Array<{ resource: string; amount: number }>;
+  resourcesProduced7d: Array<{ resource: string; amount: number }>;
+  coinsBurnedOnBuildings: number;
+  resourcesBurnedOnBuildings: number;
+  storageFullEstimate: number;
+}
+
 export interface GameStore {
   findPlayerById(id: string): Promise<PlayerRecord | null>;
   findPlayerByVkUserId(vkUserId: string): Promise<PlayerRecord | null>;
@@ -650,6 +761,57 @@ export interface GameStore {
   listMarketTransactions(listingId: string): Promise<MarketTransactionRecord[]>;
   listCurrencyTransactions(playerId: string, referenceId?: string): Promise<CurrencyTransactionRecord[]>;
   getMarketAnalytics(now?: Date): Promise<MarketAnalyticsSnapshot>;
+
+  getJob(playerId: string, profession: JobProfession): Promise<PlayerJobRecord | null>;
+  listJobs(playerId: string): Promise<PlayerJobRecord[]>;
+  listAcceptedJobTasks(playerId: string): Promise<PlayerJobTaskRecord[]>;
+  getAcceptedJobTask(playerId: string, profession: JobProfession): Promise<PlayerJobTaskRecord | null>;
+  listJobTasks(playerId: string, profession?: JobProfession, periodKey?: string): Promise<PlayerJobTaskRecord[]>;
+  acceptJobTask(input: {
+    playerId: string;
+    templateId: string;
+    requestId?: string;
+    now?: Date;
+  }): Promise<PlayerJobTaskRecord>;
+  progressJobTasks(input: {
+    playerId: string;
+    event: JobProgressEvent;
+    now?: Date;
+  }): Promise<JobProgressUpdate[]>;
+  getJobsAnalytics(now?: Date): Promise<JobsAnalyticsSnapshot>;
+
+  getProductionBuilding(
+    playerId: string,
+    buildingType: ProductionBuildingType,
+  ): Promise<PlayerProductionBuildingRecord | null>;
+  listProductionBuildings(playerId: string): Promise<PlayerProductionBuildingRecord[]>;
+  tickProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    jobLevel?: number;
+    now?: Date;
+  }): Promise<PlayerProductionBuildingRecord | null>;
+  buildProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    requestId?: string;
+    now?: Date;
+  }): Promise<PlayerProductionBuildingRecord>;
+  collectProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    jobLevel?: number;
+    requestId?: string;
+    now?: Date;
+  }): Promise<ProductionCollectResult>;
+  upgradeProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    jobLevel?: number;
+    requestId?: string;
+    now?: Date;
+  }): Promise<PlayerProductionBuildingRecord>;
+  getProductionAnalytics(now?: Date): Promise<ProductionAnalyticsSnapshot>;
 
   persist?(): Promise<void>;
 }

@@ -441,6 +441,7 @@ async function farmAct(host: WeekHost, ctx: WeekCtx, act: string): Promise<GameR
     await setFlag(host, ctx, 'crop_ticks', '0');
     await host.store.setFlag(ctx.player.id, 'crop_ready', '');
     delete ctx.flags.crop_ready;
+    await noteActivity(host.store, ctx.player, { type: 'farm', act: 'plant', amount: 1 });
     return farmScreen(host, await host.load(ctx.player), 'Семена в клетке. Не сейчас. Нужен день или дело.');
   }
   if (act === 'water') {
@@ -476,6 +477,7 @@ async function farmAct(host: WeekHost, ctx: WeekCtx, act: string): Promise<GameR
     const note = firstHarvest
       ? `Первый урожай. Пшеница ×${amount}. Можно печь хлеб.`
       : `Снято пшеницы: ${amount}. Хлеб: три пшеницы.`;
+    await noteActivity(host.store, ctx.player, { type: 'farm', act: 'harvest', amount });
     return farmScreen(host, await host.load(ctx.player), note);
   }
   if (act === 'expand') {

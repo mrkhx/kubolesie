@@ -651,6 +651,7 @@ async function furnaceAct(host: WeekHost, ctx: WeekCtx, act: string): Promise<Ga
     const nextFuel = Math.max(0, fuel - FURNACE.cookCost);
     await setFlag(host, ctx, 'furnace_fuel', String(nextFuel));
     await host.store.addResource(ctx.player.id, 'COOKED_FISH', 1);
+    await noteActivity(host.store, ctx.player, { type: 'furnace', act: 'cook_fish', amount: 1 });
     return furnaceScreen(host, await host.load(ctx.player), `Рыба готова. Топливо ${nextFuel}.`);
   }
   if (act === 'take') {
@@ -1183,6 +1184,11 @@ export async function applyWeekLoot(
       if (amount > 0) {
         await host.store.addResource(ctx.player.id, resource as ResourceType, amount);
         notes.push(`+${amount} ${resourceLabel(resource as ResourceType)}.`);
+        await noteActivity(host.store, ctx.player, {
+          type: 'gather',
+          amount,
+          resource,
+        });
       }
     }
   }

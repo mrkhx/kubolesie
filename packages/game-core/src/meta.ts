@@ -26,6 +26,7 @@ import type {
   PlayerStatisticsRecord,
 } from './store';
 import { clanAct as runClanAct, isClanMenu, noteClanTaskProgress, openClanMenu } from './clans';
+import { applyJobProgress } from './jobs';
 
 export const META_MENUS = [
   'hero',
@@ -59,13 +60,15 @@ export type MetaEvent =
   | { type: 'pve'; result: 'WIN' | 'LOSS' | 'DRAW'; enemyId: string }
   | { type: 'pvp'; result: 'WIN' | 'LOSS' | 'DRAW'; rivalId: string }
   | { type: 'gather'; amount: number; resource?: string }
-  | { type: 'craft'; count: number }
+  | { type: 'craft'; count: number; recipeId?: string; amount?: number }
   | { type: 'loot'; count: number; rare?: boolean }
   | { type: 'trade' }
   | { type: 'quest'; id: string; daily?: boolean }
   | { type: 'day'; day: number }
   | { type: 'week'; week?: number }
-  | { type: 'coins'; amount: number };
+  | { type: 'coins'; amount: number }
+  | { type: 'farm'; act: 'plant' | 'harvest'; amount?: number }
+  | { type: 'furnace'; act: 'cook_fish'; amount?: number };
 
 const NAV: GameButton[] = [
   { label: '👤 Герой', action: 'OPEN_MENU', payload: { menu: 'hero' } },
@@ -162,6 +165,23 @@ export async function noteActivity(
   } else if (event.type === 'coins') {
     if (event.amount > 0) await store.incrementStatistics(player.id, { coinsEarned: event.amount });
     else if (event.amount < 0) await store.incrementStatistics(player.id, { coinsSpent: -event.amount });
+  }
+
+  if (
+    event.type === 'gather' ||
+    event.type === 'craft' ||
+    event.type === 'pve' ||
+    event.type === 'farm' ||
+    event.type === 'furnace'
+  ) {
+    await applyJobProgress(
+      store,
+      player.id,
+      event.type === 'craft'
+        ? { type: 'craft', recipeId: event.recipeId, amount: event.amount ?? event.count }
+        : event,
+      now,
+    );
   }
 
   const stats = await store.getStatistics(player.id);
@@ -418,12 +438,18 @@ function currentDayLabel(flags: Record<string, string>): string {
 
 async function statsScreen(store: GameStore, player: PlayerRecord): Promise<GameResponse> {
   const stats = await store.getStatistics(player.id);
+  const flags = await store.getFlags(player.id);
   const text = `${player.name}\n${formatStats(stats)}`;
-  return respond(player, text, [
+  const buttons: GameButton[] = [];
+  if (flags.week_1_complete) {
+    buttons.push({ label: '⚒ Хозяйство', action: 'OPEN_MENU', payload: { menu: 'work' } });
+  }
+  buttons.push(
     { label: '👤 Профиль', action: 'OPEN_MENU', payload: { menu: 'profile' } },
     { label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } },
     { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } },
-  ]);
+  );
+  return respond(player, text, buttons);
 }
 
 export function formatStats(stats: PlayerStatisticsRecord): string {

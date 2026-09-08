@@ -151,6 +151,10 @@ model Player {
   auctionBids      AuctionBid[]
   highBids         MarketListing[]       @relation("AuctionHighBidder")
   notices          PlayerNotice[]
+  jobs             PlayerJob[]
+  jobTasks         PlayerJobTask[]
+  productionBuildings PlayerProductionBuilding[]
+  productionEvents ProductionEvent[]
 
   @@index([createdAt])
   @@index([lastActiveAt])
@@ -773,3 +777,120 @@ model PlayerNotice {
   @@index([playerId, createdAt])
   @@map("player_notices")
 }
+
+enum JobProfession {
+  LOGGER
+  MINER
+  FARMER
+  FISHER
+  HUNTER
+  CRAFTER
+}
+
+enum JobTaskStatus {
+  ACCEPTED
+  COMPLETED
+}
+
+model PlayerJob {
+  playerId        String        @map("player_id")
+  profession      JobProfession
+  xp              Int           @default(0)
+  level           Int           @default(1)
+  completedCount  Int           @default(0) @map("completed_count")
+  dailyCompleted  Int           @default(0) @map("daily_completed")
+  dailyPeriod     String        @default("") @map("daily_period")
+  lastCompletedAt DateTime?     @map("last_completed_at")
+  coinsEarned     Int           @default(0) @map("coins_earned")
+
+  player Player         @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  tasks  PlayerJobTask[]
+
+  @@id([playerId, profession])
+  @@index([profession, level])
+  @@map("player_jobs")
+}
+
+model PlayerJobTask {
+  id          String        @id @default(cuid())
+  playerId    String        @map("player_id")
+  profession  JobProfession
+  templateId  String        @map("template_id")
+  slot        Int
+  periodKey   String        @map("period_key")
+  target      Int
+  progress    Int           @default(0)
+  coins       Int
+  jobXp       Int           @map("job_xp")
+  playerXp    Int           @map("player_xp")
+  status      JobTaskStatus @default(ACCEPTED)
+  acceptedAt  DateTime      @default(now()) @map("accepted_at")
+  completedAt DateTime?     @map("completed_at")
+  requestId   String?       @map("request_id")
+
+  player Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  job    PlayerJob @relation(fields: [playerId, profession], references: [playerId, profession], onDelete: Cascade)
+
+  @@unique([playerId, profession, periodKey, templateId])
+  @@index([playerId, profession, status])
+  @@index([periodKey, profession])
+  @@index([completedAt])
+  @@map("player_job_tasks")
+}
+
+enum ProductionBuildingType {
+  WHEAT_FARM
+  SAWMILL
+  QUARRY
+  MINE
+  FISHERY
+  PEN
+}
+
+enum ProductionEventKind {
+  TICK
+  COLLECT
+  BUILD
+  UPGRADE
+}
+
+model PlayerProductionBuilding {
+  playerId           String                 @map("player_id")
+  buildingType       ProductionBuildingType @map("building_type")
+  level              Int                    @default(1)
+  storedPrimary      Int                    @default(0) @map("stored_primary")
+  storedSecondary    Int                    @default(0) @map("stored_secondary")
+  accPrimaryMilli    Int                    @default(0) @map("acc_primary_milli")
+  accSecondaryMilli  Int                    @default(0) @map("acc_secondary_milli")
+  lastCalculatedAt   DateTime               @map("last_calculated_at")
+  builtAt            DateTime               @default(now()) @map("built_at")
+  upgradedAt         DateTime?              @map("upgraded_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([playerId, buildingType])
+  @@index([buildingType, level])
+  @@map("player_production_buildings")
+}
+
+model ProductionEvent {
+  id                String                 @id @default(cuid())
+  playerId          String                 @map("player_id")
+  buildingType      ProductionBuildingType @map("building_type")
+  kind              ProductionEventKind
+  primaryAmount     Int                    @default(0) @map("primary_amount")
+  secondaryAmount   Int                    @default(0) @map("secondary_amount")
+  coins             Int                    @default(0)
+  resourceUnits     Int                    @default(0) @map("resource_units")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  requestId         String?                @map("request_id")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([kind, createdAt])
+  @@index([buildingType, createdAt])
+  @@index([playerId, createdAt])
+  @@map("production_events")
+}
+

@@ -52,6 +52,18 @@ describe('command classification', () => {
     expect(commandNeedsLock({ type: 'MARKET_ACT', payload: { act: 'bid' } })).toBe(true);
   });
 
+  it('classifies job and production writes separately from hub reads', () => {
+    expect(classifyCommand({ type: 'JOB_ACT', payload: { act: 'hub' } })).toBe('READ');
+    expect(classifyCommand({ type: 'JOB_ACT', payload: { act: 'accept' } })).toBe('JOB_WRITE');
+    expect(classifyCommand({ type: 'PROD_ACT', payload: { act: 'view' } })).toBe('READ');
+    expect(classifyCommand({ type: 'PROD_ACT', payload: { act: 'collect' } })).toBe('PROD_WRITE');
+    expect(classifyCommand({ type: 'PROD_ACT', payload: { act: 'build' } })).toBe('PROD_WRITE');
+    expect(commandNeedsLock({ type: 'JOB_ACT', payload: { act: 'hub' } })).toBe(false);
+    expect(commandNeedsLock({ type: 'JOB_ACT', payload: { act: 'accept' } })).toBe(true);
+    expect(commandNeedsLock({ type: 'PROD_ACT', payload: { act: 'upgrade' } })).toBe(true);
+    expect(classifyCommand({ type: 'OPEN_MENU', payload: { menu: 'work' } })).toBe('READ');
+  });
+
   it('classifies START_GAME and unknown types as SYSTEM so they do not spend gameplay energy quota', () => {
     expect(classifyCommand({ type: 'START_GAME' })).toBe('SYSTEM');
     expect(commandNeedsLock({ type: 'OPEN_PROFILE' })).toBe(false);

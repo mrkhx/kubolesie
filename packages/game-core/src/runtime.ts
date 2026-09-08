@@ -125,6 +125,7 @@ import {
   MARKET_COMMANDS,
   openMarketMenu,
 } from './market-ui';
+import { isWorkMenu, jobAct, JOB_COMMANDS, openWorkMenu, prodAct, PROD_COMMANDS } from './work-ui';
 import { MARKET } from '@kubolesie/content';
 
 const NAV: GameButton[] = [
@@ -361,6 +362,12 @@ export class GameRuntime {
         if ((MARKET_COMMANDS as readonly string[]).includes(command.type)) {
           return marketAct(this.store, player, command.payload ?? {}, this.now(), eventId);
         }
+        if ((JOB_COMMANDS as readonly string[]).includes(command.type)) {
+          return jobAct(this.store, player, command.payload ?? {}, this.now(), eventId);
+        }
+        if ((PROD_COMMANDS as readonly string[]).includes(command.type)) {
+          return prodAct(this.store, player, command.payload ?? {}, this.now(), eventId);
+        }
         if ((WEEK_COMMANDS as readonly string[]).includes(command.type)) {
           return dispatchWeek(this.weekHost(), ctx, command, eventId);
         }
@@ -414,6 +421,8 @@ export class GameRuntime {
       'LEADERBOARD_PAGE',
       'PVP_ACT',
       'MARKET_ACT',
+      'JOB_ACT',
+      'PROD_ACT',
       'PROMPT_HERO_NAME',
       'CANCEL_HERO_NAME',
     ];
@@ -634,6 +643,7 @@ export class GameRuntime {
   private async openMenu(ctx: Ctx, menu: ActionMenuId, extraText?: string): Promise<GameResponse> {
     if (isPvpMenu(menu)) return openPvpMenu(this.weekHost(), ctx, menu);
     if (isMarketMenu(menu)) return openMarketMenu(this.store, ctx.player, menu, this.now());
+    if (isWorkMenu(menu)) return openWorkMenu(this.store, ctx.player, menu, this.now());
     if (isMetaMenu(menu)) return openMetaMenu(this.store, ctx.player, menu, this.now());
     if (isWeek2Menu(menu)) return openWeek2Menu(this.weekHost(), ctx, menu);
     if (isWeekMenu(menu)) return openWeekMenu(this.weekHost(), ctx, menu);
@@ -744,7 +754,7 @@ export class GameRuntime {
     const tokenNote = await this.tryGrantToken(ctx);
     const daily = await noteDailyGather(this.weekHost(), ctx);
     const dailyNote = daily.length ? ` ${daily.join(' ')}` : '';
-    await noteActivity(this.store, ctx.player, { type: 'gather', amount });
+    await noteActivity(this.store, ctx.player, { type: 'gather', amount, resource: 'COBBLESTONE' });
     const fresh = await this.load(ctx.player);
     const menu = buildActionMenu('gather', this.snapshot(fresh));
     return this.respond(ctx.player, `Ты ломаешь булыжник. +${amount} (всего ${total}).${extraNote}${tokenNote}${dailyNote}`, menu.buttons);
@@ -777,12 +787,12 @@ export class GameRuntime {
     }
     if (total >= IRON_FOR_GATE_TARGET && !ctx.flags.found_blue_light) {
       await this.store.setFlag(ctx.player.id, 'found_blue_light', '1');
-      await noteActivity(this.store, ctx.player, { type: 'gather', amount });
+      await noteActivity(this.store, ctx.player, { type: 'gather', amount, resource: 'IRON_ORE' });
       const node = await this.renderNode(ctx.player, 'adit_blue_light');
       node.text = `${extra}\n\n${node.text}`;
       return node;
     }
-    await noteActivity(this.store, ctx.player, { type: 'gather', amount });
+    await noteActivity(this.store, ctx.player, { type: 'gather', amount, resource: 'IRON_ORE' });
     return this.respond(ctx.player, extra, [
       { label: '⛏ Искать ещё', action: 'GATHER_IRON' },
       { label: 'Штольня', action: 'DIALOGUE_CHOICE', payload: { nodeId: 'old_adit', choiceId: 'leave' } },
@@ -800,7 +810,7 @@ export class GameRuntime {
     }
     const daily = await noteDailyGather(this.weekHost(), ctx);
     const dailyNote = daily.length ? ` ${daily.join(' ')}` : '';
-    await noteActivity(this.store, ctx.player, { type: 'gather', amount });
+    await noteActivity(this.store, ctx.player, { type: 'gather', amount, resource: 'COAL' });
     const fresh = await this.load(ctx.player);
     const menu = buildActionMenu('gather', this.snapshot(fresh));
     return this.respond(
@@ -897,7 +907,12 @@ export class GameRuntime {
       const fresh = await this.load(ctx.player);
       const group = recipeGroup(recipe.id) ?? 'items';
       const menu = buildActionMenu(group, this.snapshot(fresh));
-      await noteActivity(this.store, ctx.player, { type: 'craft', count: 1 });
+      await noteActivity(this.store, ctx.player, {
+        type: 'craft',
+        count: 1,
+        recipeId: recipe.id,
+        amount: recipe.output.amount,
+      });
       return this.respond(
         ctx.player,
         `Скрафчено: ${recipe.name}. +${recipe.output.amount} ${resourceLabel(recipe.output.resource)} (всего ${total}).`,
@@ -937,7 +952,7 @@ export class GameRuntime {
       await grantMetaAchievement(this.store, ctx.player.id, 'FIRST_BOW');
     }
     const dailyNotes = await noteDailyCraft(this.weekHost(), ctx, recipe.id);
-    await noteActivity(this.store, ctx.player, { type: 'craft', count: amount });
+    await noteActivity(this.store, ctx.player, { type: 'craft', count: amount, recipeId: recipe.id, amount });
     const fresh = await this.load(ctx.player);
     const group = recipe.id === 'campfire' ? 'camp' : recipeGroup(recipe.id) ?? 'items';
     const menu = buildActionMenu(group, this.snapshot(fresh));

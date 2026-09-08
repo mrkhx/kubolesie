@@ -26,6 +26,8 @@ export * from './market';
 export * from './pvp';
 export * from './loot';
 export * from './meta';
+export * from './jobs';
+export * from './production';
 
 export { WEEK2_NODES } from './dialogues-week2';
 

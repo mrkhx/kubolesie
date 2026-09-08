@@ -11,7 +11,7 @@ import type {
   ResourceType,
 } from '@kubolesie/shared';
 import type { CombatantSnapshot, BattleEvent } from '@kubolesie/combat-engine';
-import { clanLevelForXp, PVP_RATING, applyPvpRating, clampLimit, clampOffset, MARKET, marketFee, AUCTION, minBidAmount } from '@kubolesie/content';
+import { clanLevelForXp, PVP_RATING, applyPvpRating, clampLimit, clampOffset, MARKET, marketFee, AUCTION, minBidAmount, JOBS, getJobTemplate, jobCoinPayout, jobLevelForXp, jobMetricDelta, scaledJobCoins, scaledJobTarget, scaledJobXp, utcDayKey, PRODUCTION, PRODUCTION_DEFS, productionCost, productionRates, tickProduction } from '@kubolesie/content';
 import {
   ActionRejectedError,
   EMPTY_STATISTICS,
@@ -54,6 +54,17 @@ import {
   type MarketTransactionRecord,
   type AuctionBidRecord,
   type PlayerNoticeRecord,
+  type JobProfession,
+  type JobProgressEvent,
+  type JobProgressUpdate,
+  type JobsAnalyticsSnapshot,
+  type PlayerJobRecord,
+  type PlayerJobTaskRecord,
+  type PlayerProductionBuildingRecord,
+  type ProductionAnalyticsSnapshot,
+  type ProductionBuildingType,
+  type ProductionCollectResult,
+  grantPlayerXp,
 } from '@kubolesie/game-core';
 import type { GameResponse } from '@kubolesie/shared';
 import { Prisma, type PrismaClient } from './generated/client';
@@ -2180,6 +2191,488 @@ export class PrismaGameStore implements GameStore {
     };
   }
 
+  async getJob(playerId: string, profession: JobProfession): Promise<PlayerJobRecord | null> {
+    const row = await this.prisma.playerJob.findUnique({
+      where: { playerId_profession: { playerId, profession } },
+    });
+    return row ? mapJob(row) : null;
+  }
+
+  async listJobs(playerId: string): Promise<PlayerJobRecord[]> {
+    const rows = await this.prisma.playerJob.findMany({ where: { playerId } });
+    return rows.map(mapJob);
+  }
+
+  async listAcceptedJobTasks(playerId: string): Promise<PlayerJobTaskRecord[]> {
+    const rows = await this.prisma.playerJobTask.findMany({ where: { playerId, status: 'ACCEPTED' } });
+    return rows.map(mapJobTask);
+  }
+
+  async getAcceptedJobTask(playerId: string, profession: JobProfession): Promise<PlayerJobTaskRecord | null> {
+    const row = await this.prisma.playerJobTask.findFirst({
+      where: { playerId, profession, status: 'ACCEPTED' },
+    });
+    return row ? mapJobTask(row) : null;
+  }
+
+  async listJobTasks(
+    playerId: string,
+    profession?: JobProfession,
+    periodKey?: string,
+  ): Promise<PlayerJobTaskRecord[]> {
+    const rows = await this.prisma.playerJobTask.findMany({
+      where: {
+        playerId,
+        ...(profession ? { profession } : {}),
+        ...(periodKey ? { periodKey } : {}),
+      },
+    });
+    return rows.map(mapJobTask);
+  }
+
+  async acceptJobTask(input: {
+    playerId: string;
+    templateId: string;
+    requestId?: string;
+    now?: Date;
+  }): Promise<PlayerJobTaskRecord> {
+    const template = getJobTemplate(input.templateId);
+    if (!template) throw new ActionRejectedError('Нет такого контракта.');
+    const now = input.now ?? new Date();
+    const period = utcDayKey(now);
+    try {
+      return await this.withTx(async (tx) => {
+        if (input.requestId) {
+          const existing = await tx.playerJobTask.findFirst({ where: { requestId: input.requestId } });
+          if (existing) return mapJobTask(existing);
+        }
+        await lockPlayer(tx, input.playerId);
+        const job = await ensureJobInTx(tx, input.playerId, template.profession);
+        const accepted = await tx.playerJobTask.findFirst({
+          where: { playerId: input.playerId, profession: template.profession, status: 'ACCEPTED' },
+        });
+        if (accepted) throw new ActionRejectedError('Уже есть активный контракт этой профессии.');
+        const dup = await tx.playerJobTask.findFirst({
+          where: {
+            playerId: input.playerId,
+            profession: template.profession,
+            periodKey: period,
+            templateId: template.id,
+          },
+        });
+        if (dup) throw new ActionRejectedError('Этот контракт уже брали сегодня.');
+        const row = await tx.playerJobTask.create({
+          data: {
+            playerId: input.playerId,
+            profession: template.profession,
+            templateId: template.id,
+            slot: template.slot,
+            periodKey: period,
+            target: scaledJobTarget(template.target, job.level),
+            progress: 0,
+            coins: scaledJobCoins(template.coins, job.level),
+            jobXp: scaledJobXp(template.jobXp, job.level),
+            playerXp: scaledJobXp(template.playerXp, job.level),
+            status: 'ACCEPTED',
+            acceptedAt: now,
+            requestId: input.requestId,
+          },
+        });
+        return mapJobTask(row);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && input.requestId) {
+        const existing = await this.prisma.playerJobTask.findFirst({ where: { requestId: input.requestId } });
+        if (existing) return mapJobTask(existing);
+      }
+      throw error;
+    }
+  }
+
+  async progressJobTasks(input: {
+    playerId: string;
+    event: JobProgressEvent;
+    now?: Date;
+  }): Promise<JobProgressUpdate[]> {
+    return this.withTx(async (tx) => {
+      await lockPlayer(tx, input.playerId);
+      const now = input.now ?? new Date();
+      const accepted = await tx.playerJobTask.findMany({
+        where: { playerId: input.playerId, status: 'ACCEPTED' },
+      });
+      const updates: JobProgressUpdate[] = [];
+      for (const row of accepted) {
+        const template = getJobTemplate(row.templateId);
+        if (!template) continue;
+        const delta = jobMetricDelta(template.metric, input.event);
+        if (delta <= 0) continue;
+        const progress = Math.min(row.target, row.progress + delta);
+        let task = await tx.playerJobTask.update({
+          where: { id: row.id },
+          data: { progress },
+        });
+        let completed = false;
+        let coins = 0;
+        let jobXp = 0;
+        let playerXp = 0;
+        if (progress >= row.target) {
+          const payout = await completeJobInTx(tx, task, now);
+          task = payout.task;
+          completed = true;
+          coins = payout.coins;
+          jobXp = payout.jobXp;
+          playerXp = payout.playerXp;
+        }
+        updates.push({ task: mapJobTask(task), completed, coins, jobXp, playerXp });
+      }
+      return updates;
+    });
+  }
+
+  async getJobsAnalytics(now?: Date): Promise<JobsAnalyticsSnapshot> {
+    const at = now ?? new Date();
+    const today = utcDayStart(at);
+    const d7 = new Date(at.getTime() - 7 * 86_400_000);
+    const [
+      playersWithJobs,
+      completedToday,
+      completed7d,
+      byProf,
+      avgRows,
+      issuedToday,
+      issued7d,
+      acceptedToday,
+      accepted7d,
+    ] = await Promise.all([
+      this.prisma.playerJob.findMany({ select: { playerId: true }, distinct: ['playerId'] }),
+      this.prisma.playerJobTask.count({ where: { status: 'COMPLETED', completedAt: { gte: today } } }),
+      this.prisma.playerJobTask.count({ where: { status: 'COMPLETED', completedAt: { gte: d7 } } }),
+      this.prisma.playerJobTask.groupBy({
+        by: ['profession'],
+        where: { status: 'COMPLETED', completedAt: { gte: d7 } },
+        _count: { _all: true },
+      }),
+      this.prisma.playerJob.groupBy({
+        by: ['profession'],
+        _avg: { level: true },
+      }),
+      this.prisma.currencyTransaction.aggregate({
+        where: { reason: 'job_complete', createdAt: { gte: today }, amount: { gt: 0 } },
+        _sum: { amount: true },
+      }),
+      this.prisma.currencyTransaction.aggregate({
+        where: { reason: 'job_complete', createdAt: { gte: d7 }, amount: { gt: 0 } },
+        _sum: { amount: true },
+      }),
+      this.prisma.playerJobTask.findMany({
+        where: { OR: [{ status: 'COMPLETED', completedAt: { gte: today } }, { status: 'ACCEPTED', acceptedAt: { gte: today } }] },
+        select: { playerId: true },
+        distinct: ['playerId'],
+      }),
+      this.prisma.playerJobTask.findMany({
+        where: { OR: [{ status: 'COMPLETED', completedAt: { gte: d7 } }, { status: 'ACCEPTED', acceptedAt: { gte: d7 } }] },
+        select: { playerId: true },
+        distinct: ['playerId'],
+      }),
+    ]);
+    const top = [...byProf].sort((a, b) => b._count._all - a._count._all)[0]?.profession ?? null;
+    return {
+      playersWithJobs: playersWithJobs.length,
+      activeJobPlayersToday: acceptedToday.length,
+      activeJobPlayers7d: accepted7d.length,
+      jobsCompletedToday: completedToday,
+      jobsCompleted7d: completed7d,
+      completionByProfession: byProf.map((row) => ({ profession: row.profession, count: row._count._all })),
+      averageLevelByProfession: avgRows.map((row) => ({
+        profession: row.profession,
+        avg: Math.round((row._avg.level ?? 0) * 10) / 10,
+      })),
+      coinsIssuedToday: issuedToday._sum.amount ?? 0,
+      coinsIssued7d: issued7d._sum.amount ?? 0,
+      topProfession: top,
+    };
+  }
+
+  async getProductionBuilding(
+    playerId: string,
+    buildingType: ProductionBuildingType,
+  ): Promise<PlayerProductionBuildingRecord | null> {
+    const row = await this.prisma.playerProductionBuilding.findUnique({
+      where: { playerId_buildingType: { playerId, buildingType } },
+    });
+    return row ? mapBuilding(row) : null;
+  }
+
+  async listProductionBuildings(playerId: string): Promise<PlayerProductionBuildingRecord[]> {
+    const rows = await this.prisma.playerProductionBuilding.findMany({ where: { playerId } });
+    return rows.map(mapBuilding);
+  }
+
+  async tickProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    jobLevel?: number;
+    now?: Date;
+  }): Promise<PlayerProductionBuildingRecord | null> {
+    return this.withTx(async (tx) => {
+      await lockPlayer(tx, input.playerId);
+      const row = await tx.playerProductionBuilding.findUnique({
+        where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+      });
+      if (!row) return null;
+      return mapBuilding(await tickBuildingInTx(tx, row, input.now ?? new Date(), input.jobLevel ?? 0));
+    });
+  }
+
+  async buildProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    requestId?: string;
+    now?: Date;
+  }): Promise<PlayerProductionBuildingRecord> {
+    const now = input.now ?? new Date();
+    try {
+      return await this.withTx(async (tx) => {
+        if (input.requestId) {
+          const existingEvent = await tx.productionEvent.findFirst({ where: { requestId: input.requestId } });
+          if (existingEvent) {
+            const building = await tx.playerProductionBuilding.findUnique({
+              where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+            });
+            if (building) return mapBuilding(building);
+          }
+        }
+        await lockPlayer(tx, input.playerId);
+        const existing = await tx.playerProductionBuilding.findUnique({
+          where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+        });
+        if (existing) throw new ActionRejectedError('Уже построено.');
+        const player = await tx.player.findUnique({ where: { id: input.playerId } });
+        if (!player) throw new NotFoundError('Игрок не найден.');
+        const cost = productionCost(input.buildingType, 0);
+        await spendProductionInTx(tx, player, cost.resources, cost.coins, now, 'prod_build', input.requestId);
+        const row = await tx.playerProductionBuilding.create({
+          data: {
+            playerId: input.playerId,
+            buildingType: input.buildingType,
+            level: 1,
+            lastCalculatedAt: now,
+            builtAt: now,
+          },
+        });
+        await tx.productionEvent.create({
+          data: {
+            playerId: input.playerId,
+            buildingType: input.buildingType,
+            kind: 'BUILD',
+            coins: cost.coins,
+            resourceUnits: Object.values(cost.resources).reduce((acc, value) => acc + (value ?? 0), 0),
+            requestId: input.requestId,
+          },
+        });
+        return mapBuilding(row);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && input.requestId) {
+        const existing = await this.prisma.playerProductionBuilding.findUnique({
+          where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+        });
+        if (existing) return mapBuilding(existing);
+      }
+      throw error;
+    }
+  }
+
+  async collectProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    jobLevel?: number;
+    requestId?: string;
+    now?: Date;
+  }): Promise<ProductionCollectResult> {
+    const now = input.now ?? new Date();
+    try {
+      return await this.withTx(async (tx) => {
+        if (input.requestId) {
+          const existing = await tx.productionEvent.findFirst({
+            where: { requestId: input.requestId, kind: 'COLLECT' },
+          });
+          if (existing) {
+            const building = await tx.playerProductionBuilding.findUnique({
+              where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+            });
+            if (building) {
+              return {
+                building: mapBuilding(building),
+                primary: existing.primaryAmount,
+                secondary: existing.secondaryAmount,
+                empty: existing.primaryAmount + existing.secondaryAmount <= 0,
+              };
+            }
+          }
+        }
+        await lockPlayer(tx, input.playerId);
+        const row = await tx.playerProductionBuilding.findUnique({
+          where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+        });
+        if (!row) throw new ActionRejectedError('Сначала построй.');
+        const ticked = await tickBuildingInTx(tx, row, now, input.jobLevel ?? 0);
+        const primary = ticked.storedPrimary;
+        const secondary = ticked.storedSecondary;
+        if (primary + secondary <= 0) {
+          return { building: mapBuilding(ticked), primary: 0, secondary: 0, empty: true };
+        }
+        const def = PRODUCTION_DEFS[input.buildingType];
+        if (primary > 0) await creditResourceInTx(tx, input.playerId, def.primary, primary);
+        if (secondary > 0 && def.secondary) {
+          await creditResourceInTx(tx, input.playerId, def.secondary, secondary);
+        }
+        const cleared = await tx.playerProductionBuilding.update({
+          where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+          data: { storedPrimary: 0, storedSecondary: 0, accPrimaryMilli: 0, accSecondaryMilli: 0 },
+        });
+        await tx.productionEvent.create({
+          data: {
+            playerId: input.playerId,
+            buildingType: input.buildingType,
+            kind: 'COLLECT',
+            primaryAmount: primary,
+            secondaryAmount: secondary,
+            resourceUnits: primary + secondary,
+            requestId: input.requestId,
+          },
+        });
+        return { building: mapBuilding(cleared), primary, secondary, empty: false };
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && input.requestId) {
+        const existing = await this.prisma.productionEvent.findFirst({
+          where: { requestId: input.requestId, kind: 'COLLECT' },
+        });
+        const building = await this.prisma.playerProductionBuilding.findUnique({
+          where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+        });
+        if (existing && building) {
+          return {
+            building: mapBuilding(building),
+            primary: existing.primaryAmount,
+            secondary: existing.secondaryAmount,
+            empty: existing.primaryAmount + existing.secondaryAmount <= 0,
+          };
+        }
+      }
+      throw error;
+    }
+  }
+
+  async upgradeProductionBuilding(input: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    jobLevel?: number;
+    requestId?: string;
+    now?: Date;
+  }): Promise<PlayerProductionBuildingRecord> {
+    const now = input.now ?? new Date();
+    try {
+      return await this.withTx(async (tx) => {
+        if (input.requestId) {
+          const existing = await tx.productionEvent.findFirst({
+            where: { requestId: input.requestId, kind: 'UPGRADE' },
+          });
+          if (existing) {
+            const building = await tx.playerProductionBuilding.findUnique({
+              where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+            });
+            if (building) return mapBuilding(building);
+          }
+        }
+        await lockPlayer(tx, input.playerId);
+        const row = await tx.playerProductionBuilding.findUnique({
+          where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+        });
+        if (!row) throw new ActionRejectedError('Сначала построй.');
+        const ticked = await tickBuildingInTx(tx, row, now, input.jobLevel ?? 0);
+        if (ticked.level >= PRODUCTION.maxLevel) throw new ActionRejectedError('Максимальный уровень.');
+        const player = await tx.player.findUnique({ where: { id: input.playerId } });
+        if (!player) throw new NotFoundError('Игрок не найден.');
+        const cost = productionCost(input.buildingType, ticked.level);
+        await spendProductionInTx(tx, player, cost.resources, cost.coins, now, 'prod_upgrade', input.requestId);
+        const rates = productionRates(input.buildingType, ticked.level + 1, input.jobLevel ?? 0);
+        const updated = await tx.playerProductionBuilding.update({
+          where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+          data: {
+            level: ticked.level + 1,
+            upgradedAt: now,
+            storedPrimary: Math.min(ticked.storedPrimary, rates.capPrimary),
+            storedSecondary: Math.min(ticked.storedSecondary, rates.capSecondary),
+          },
+        });
+        await tx.productionEvent.create({
+          data: {
+            playerId: input.playerId,
+            buildingType: input.buildingType,
+            kind: 'UPGRADE',
+            coins: cost.coins,
+            resourceUnits: Object.values(cost.resources).reduce((acc, value) => acc + (value ?? 0), 0),
+            requestId: input.requestId,
+          },
+        });
+        return mapBuilding(updated);
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && input.requestId) {
+        const existing = await this.prisma.playerProductionBuilding.findUnique({
+          where: { playerId_buildingType: { playerId: input.playerId, buildingType: input.buildingType } },
+        });
+        if (existing) return mapBuilding(existing);
+      }
+      throw error;
+    }
+  }
+
+  async getProductionAnalytics(now?: Date): Promise<ProductionAnalyticsSnapshot> {
+    const at = now ?? new Date();
+    const today = utcDayStart(at);
+    const d7 = new Date(at.getTime() - 7 * 86_400_000);
+    const [players, grouped, collectToday, collect7d, tickToday, tick7d, burns, buildings] = await Promise.all([
+      this.prisma.playerProductionBuilding.findMany({ select: { playerId: true }, distinct: ['playerId'] }),
+      this.prisma.playerProductionBuilding.groupBy({
+        by: ['buildingType'],
+        _count: { _all: true },
+        _avg: { level: true },
+      }),
+      this.prisma.productionEvent.findMany({ where: { kind: 'COLLECT', createdAt: { gte: today } } }),
+      this.prisma.productionEvent.findMany({ where: { kind: 'COLLECT', createdAt: { gte: d7 } } }),
+      this.prisma.productionEvent.findMany({ where: { kind: 'TICK', createdAt: { gte: today } } }),
+      this.prisma.productionEvent.findMany({ where: { kind: 'TICK', createdAt: { gte: d7 } } }),
+      this.prisma.productionEvent.aggregate({
+        where: { kind: { in: ['BUILD', 'UPGRADE'] } },
+        _sum: { coins: true, resourceUnits: true },
+      }),
+      this.prisma.playerProductionBuilding.findMany(),
+    ]);
+    let storageFull = 0;
+    for (const row of buildings) {
+      const rates = productionRates(row.buildingType, row.level, 0);
+      if (rates.capPrimary > 0 && row.storedPrimary >= rates.capPrimary) storageFull += 1;
+    }
+    return {
+      playersWithBuildings: players.length,
+      buildingsByType: grouped.map((row) => ({
+        type: row.buildingType,
+        count: row._count._all,
+        avgLevel: Math.round((row._avg.level ?? 0) * 10) / 10,
+      })),
+      resourcesCollectedToday: collectByResource(collectToday),
+      resourcesCollected7d: collectByResource(collect7d),
+      resourcesProducedToday: collectByResource(tickToday.length ? tickToday : collectToday),
+      resourcesProduced7d: collectByResource(tick7d.length ? tick7d : collect7d),
+      coinsBurnedOnBuildings: burns._sum.coins ?? 0,
+      resourcesBurnedOnBuildings: burns._sum.resourceUnits ?? 0,
+      storageFullEstimate: storageFull,
+    };
+  }
+
   private async withTx<T>(fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
     if ('$transaction' in this.prisma && typeof this.prisma.$transaction === 'function') {
       return this.prisma.$transaction((tx) => fn(tx));
@@ -2785,3 +3278,261 @@ async function expireDueInTx(tx: Prisma.TransactionClient, now: Date, listingId?
   }
   return due.length;
 }
+
+function utcDayStart(now: Date): Date {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+async function lockPlayer(tx: Prisma.TransactionClient, playerId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "players" WHERE id = ${playerId} FOR UPDATE`;
+}
+
+async function ensureJobInTx(
+  tx: Prisma.TransactionClient,
+  playerId: string,
+  profession: JobProfession,
+) {
+  return tx.playerJob.upsert({
+    where: { playerId_profession: { playerId, profession } },
+    update: {},
+    create: { playerId, profession },
+  });
+}
+
+async function completeJobInTx(
+  tx: Prisma.TransactionClient,
+  task: { id: string; playerId: string; profession: JobProfession; coins: number; jobXp: number; playerXp: number; status: string },
+  now: Date,
+): Promise<{ task: Awaited<ReturnType<Prisma.TransactionClient['playerJobTask']['update']>>; coins: number; jobXp: number; playerXp: number }> {
+  if (task.status === 'COMPLETED') {
+    const current = await tx.playerJobTask.findUniqueOrThrow({ where: { id: task.id } });
+    return { task: current, coins: 0, jobXp: 0, playerXp: 0 };
+  }
+  const player = await tx.player.findUnique({ where: { id: task.playerId } });
+  if (!player) throw new NotFoundError('Игрок не найден.');
+  const job = await ensureJobInTx(tx, task.playerId, task.profession);
+  const period = utcDayKey(now);
+  let dailyCompleted = job.dailyCompleted;
+  let dailyPeriod = job.dailyPeriod;
+  if (dailyPeriod !== period) {
+    dailyCompleted = 0;
+    dailyPeriod = period;
+  }
+  const dailyAfter = dailyCompleted + 1;
+  const coins = jobCoinPayout(task.coins, dailyAfter);
+  grantPlayerXp(player, task.playerXp);
+  if (coins > 0) {
+    await tx.currencyTransaction.create({
+      data: {
+        playerId: player.id,
+        currency: 'COINS',
+        amount: coins,
+        balanceBefore: player.coins,
+        balanceAfter: player.coins + coins,
+        reason: 'job_complete',
+        referenceId: task.id,
+      },
+    });
+    player.coins += coins;
+    await tx.playerStatistics.upsert({
+      where: { playerId: player.id },
+      update: { coinsEarned: { increment: coins } },
+      create: { playerId: player.id, coinsEarned: coins },
+    });
+  }
+  await tx.player.update({
+    where: { id: player.id },
+    data: {
+      coins: player.coins,
+      xp: player.xp,
+      level: player.level,
+      hp: player.hp,
+      maxHp: player.maxHp,
+      energy: player.energy,
+      maxEnergy: player.maxEnergy,
+    },
+  });
+  await tx.playerJob.update({
+    where: { playerId_profession: { playerId: task.playerId, profession: task.profession } },
+    data: {
+      xp: { increment: task.jobXp },
+      level: Math.min(JOBS.maxLevel, jobLevelForXp(job.xp + task.jobXp)),
+      completedCount: { increment: 1 },
+      dailyCompleted: dailyAfter,
+      dailyPeriod,
+      lastCompletedAt: now,
+      coinsEarned: { increment: coins },
+    },
+  });
+  const updated = await tx.playerJobTask.update({
+    where: { id: task.id },
+    data: { status: 'COMPLETED', completedAt: now },
+  });
+  await tx.playerNotice.create({
+    data: {
+      playerId: player.id,
+      kind: 'job_complete',
+      body: `Контракт закрыт. +${coins} монет, +${task.jobXp} XP профессии.`,
+    },
+  });
+  return { task: updated, coins, jobXp: task.jobXp, playerXp: task.playerXp };
+}
+
+async function tickBuildingInTx(
+  tx: Prisma.TransactionClient,
+  row: {
+    playerId: string;
+    buildingType: ProductionBuildingType;
+    level: number;
+    storedPrimary: number;
+    storedSecondary: number;
+    accPrimaryMilli: number;
+    accSecondaryMilli: number;
+    lastCalculatedAt: Date;
+  },
+  now: Date,
+  jobLevel: number,
+) {
+  const result = tickProduction(
+    row.buildingType,
+    {
+      level: row.level,
+      storedPrimary: row.storedPrimary,
+      storedSecondary: row.storedSecondary,
+      accPrimaryMilli: row.accPrimaryMilli,
+      accSecondaryMilli: row.accSecondaryMilli,
+      lastCalculatedAt: row.lastCalculatedAt,
+    },
+    now,
+    jobLevel,
+  );
+  if (result.producedPrimary > 0 || result.producedSecondary > 0) {
+    await tx.productionEvent.create({
+      data: {
+        playerId: row.playerId,
+        buildingType: row.buildingType,
+        kind: 'TICK',
+        primaryAmount: result.producedPrimary,
+        secondaryAmount: result.producedSecondary,
+        resourceUnits: result.producedPrimary + result.producedSecondary,
+      },
+    });
+  }
+  return tx.playerProductionBuilding.update({
+    where: { playerId_buildingType: { playerId: row.playerId, buildingType: row.buildingType } },
+    data: {
+      storedPrimary: result.storedPrimary,
+      storedSecondary: result.storedSecondary,
+      accPrimaryMilli: result.accPrimaryMilli,
+      accSecondaryMilli: result.accSecondaryMilli,
+      lastCalculatedAt: result.lastCalculatedAt,
+    },
+  });
+}
+
+async function spendProductionInTx(
+  tx: Prisma.TransactionClient,
+  player: { id: string; coins: number },
+  resources: Partial<Record<string, number>>,
+  coins: number,
+  now: Date,
+  reason: string,
+  requestId?: string,
+): Promise<void> {
+  void now;
+  if (player.coins < coins) throw new InsufficientCoinsError('Не хватает монет.');
+  for (const [resource, need] of Object.entries(resources)) {
+    if ((need ?? 0) > 0) {
+      await debitResourceInTx(tx, player.id, resource as ResourceType, need ?? 0);
+    }
+  }
+  if (coins > 0) {
+    await tx.player.update({
+      where: { id: player.id },
+      data: { coins: { decrement: coins } },
+    });
+    await tx.currencyTransaction.create({
+      data: {
+        playerId: player.id,
+        currency: 'COINS',
+        amount: -coins,
+        balanceBefore: player.coins,
+        balanceAfter: player.coins - coins,
+        reason,
+        referenceId: requestId,
+      },
+    });
+    await tx.playerStatistics.upsert({
+      where: { playerId: player.id },
+      update: { coinsSpent: { increment: coins } },
+      create: { playerId: player.id, coinsSpent: coins },
+    });
+    player.coins -= coins;
+  }
+}
+
+function mapJob(row: {
+  playerId: string;
+  profession: JobProfession;
+  xp: number;
+  level: number;
+  completedCount: number;
+  dailyCompleted: number;
+  dailyPeriod: string;
+  lastCompletedAt: Date | null;
+  coinsEarned: number;
+}): PlayerJobRecord {
+  return { ...row };
+}
+
+function mapJobTask(row: {
+  id: string;
+  playerId: string;
+  profession: JobProfession;
+  templateId: string;
+  slot: number;
+  periodKey: string;
+  target: number;
+  progress: number;
+  coins: number;
+  jobXp: number;
+  playerXp: number;
+  status: 'ACCEPTED' | 'COMPLETED';
+  acceptedAt: Date;
+  completedAt: Date | null;
+  requestId: string | null;
+}): PlayerJobTaskRecord {
+  return { ...row };
+}
+
+function mapBuilding(row: {
+  playerId: string;
+  buildingType: ProductionBuildingType;
+  level: number;
+  storedPrimary: number;
+  storedSecondary: number;
+  accPrimaryMilli: number;
+  accSecondaryMilli: number;
+  lastCalculatedAt: Date;
+  builtAt: Date;
+  upgradedAt: Date | null;
+}): PlayerProductionBuildingRecord {
+  return { ...row };
+}
+
+function collectByResource(
+  events: Array<{ buildingType: ProductionBuildingType; primaryAmount: number; secondaryAmount: number }>,
+): Array<{ resource: string; amount: number }> {
+  const map = new Map<string, number>();
+  for (const event of events) {
+    const def = PRODUCTION_DEFS[event.buildingType];
+    if (event.primaryAmount > 0) {
+      map.set(def.primary, (map.get(def.primary) ?? 0) + event.primaryAmount);
+    }
+    if (event.secondaryAmount > 0 && def.secondary) {
+      map.set(def.secondary, (map.get(def.secondary) ?? 0) + event.secondaryAmount);
+    }
+  }
+  return [...map.entries()].map(([resource, amount]) => ({ resource, amount }));
+}
+

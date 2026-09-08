@@ -35,6 +35,10 @@ VK callback **никогда не получает HTTP 429**. Throttle: ACK `20
 | EXPENSIVE_READ | leaderboard, ratings, clan find/apps | 15 / мин |
 | CLAN_MUTATION | create/apply/accept/reject/kick/promote/demote/transfer/disband/leave | 10 / мин, burst 3 / 10 с |
 | PVP | `START_PVP` (дневной cap 3 стычки — Game Core) | 10 попыток / мин |
+| MARKET_WRITE | create/buy/cancel/buyout | 12 / мин, burst 4 / 8 с |
+| AUCTION_BID | `MARKET_ACT` bid | 20 / мин, burst 6 / 8 с |
+| JOB_WRITE | `JOB_ACT` accept | 20 / мин, burst 6 / 8 с |
+| PROD_WRITE | `PROD_ACT` build/collect/upgrade | 20 / мин, burst 6 / 8 с |
 | SYSTEM | `START_GAME`, неизвестный текст после parser | 20 / мин, burst 8 / 5 с |
 | callback | каждый валидный user event | 60 / мин, burst 15 / 5 с |
 | ip | emergency, не identity | 600 / мин, burst 120 / 5 с |

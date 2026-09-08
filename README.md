@@ -6,7 +6,7 @@
 
 Игрок взаимодействует через сообщения сообщества: текст, кнопки, callback actions и, при необходимости, карточки.
 
-Текущая версия: **Prototype 0.0.7** — Player Market + Auction 1.0 поверх Clans, PvP и Недели 1–2.
+Текущая версия: **Prototype 0.0.8** — Jobs + Auto Farms 1.0 поверх рынка, кланов, PvP и Недели 1–2.
 
 ## Архитектура
 
@@ -218,6 +218,15 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 ```
 
 Ядро **не** собирает сырой VK keyboard JSON. Это делает VK Adapter.
+
+## Prototype 0.0.8 содержит
+
+- Jobs 1.0: 6 профессий, 3 контракта/день, прогресс от реальных действий, daily coin 5/10
+- Auto Farms 1.0: 6 дворов, lazy tick без cron, storage cap ~8–12ч, upgrade 1–10
+- хаб ⚒ Хозяйство (статистика / стан), `JOB_ACT` / `PROD_ACT`, DM-only
+- additive migration `20260908200000_jobs_production_1`
+- admin analytics `/v1/admin/analytics/jobs` и `/production`
+- docs: `docs/jobs-1.md`, `docs/production-1.md`
 
 ## Prototype 0.0.7 содержит
 

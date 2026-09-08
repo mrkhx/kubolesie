@@ -268,6 +268,14 @@ export class AnalyticsService {
     return this.store.getMarketAnalytics(now);
   }
 
+  async jobs(now = new Date()) {
+    return this.store.getJobsAnalytics(now);
+  }
+
+  async production(now = new Date()) {
+    return this.store.getProductionAnalytics(now);
+  }
+
   async combat(now = new Date()) {
     const today = utcDayStart(now);
     const d7 = ago(now, 7 * DAY_MS);

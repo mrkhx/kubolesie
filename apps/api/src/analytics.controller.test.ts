@@ -212,4 +212,49 @@ describe('admin analytics payloads', () => {
     await disabled.market(undefined, missing.res, {} as never);
     expect(missing.box.statusCode).toBe(404);
   });
+
+  it('returns jobs and production aggregates without vk ids and still requires auth', async () => {
+    const store = new MemoryGameStore();
+    const now = new Date('2026-09-08T12:00:00Z');
+    const who = await store.createPlayer({ vkUserId: 'jobs-player', name: 'Работник' });
+    await store.setFlag(who.id, 'week_1_complete', '1');
+    who.coins = 500;
+    await store.savePlayer(who);
+    await store.addResource(who.id, 'LOG', 80);
+    await store.addResource(who.id, 'PLANK', 80);
+    await store.addResource(who.id, 'COBBLESTONE', 80);
+    await store.addResource(who.id, 'IRON_INGOT', 10);
+    await store.acceptJobTask({ playerId: who.id, templateId: 'logger_logs', now });
+    await store.progressJobTasks({
+      playerId: who.id,
+      event: { type: 'gather', resource: 'LOG', amount: 12 },
+      now,
+    });
+    await store.buildProductionBuilding({ playerId: who.id, buildingType: 'SAWMILL', now });
+    await store.collectProductionBuilding({
+      playerId: who.id,
+      buildingType: 'SAWMILL',
+      now: new Date(now.getTime() + 3 * 3600 * 1000),
+    });
+    const service = new AnalyticsService(store, { store, kind: 'memory' }, configWithToken());
+    const jobs = await service.jobs(now);
+    expect(jobs.playersWithJobs).toBe(1);
+    expect(jobs.jobsCompletedToday).toBe(1);
+    expect(jobs.coinsIssuedToday).toBeGreaterThan(0);
+    expect(JSON.stringify(jobs)).not.toContain('jobs-player');
+    const production = await service.production(now);
+    expect(production.playersWithBuildings).toBe(1);
+    expect(production.coinsBurnedOnBuildings).toBeGreaterThan(0);
+    expect(JSON.stringify(production)).not.toContain('jobs-player');
+    const armed = new AnalyticsController(configWithToken(), store, { store, kind: 'memory' });
+    const ok = fakeRes();
+    await armed.jobs(`Bearer ${TOKEN}`, ok.res, {} as never);
+    expect(ok.box.statusCode).toBe(200);
+    const prodOk = fakeRes();
+    await armed.production(`Bearer ${TOKEN}`, prodOk.res, {} as never);
+    expect(prodOk.box.statusCode).toBe(200);
+    const wrong = fakeRes();
+    await armed.jobs('Bearer nope', wrong.res, {} as never);
+    expect(wrong.box.statusCode).toBe(401);
+  });
 });
