@@ -8,3 +8,4 @@ export * from './meta';
 export * from './pvp';
 export * from './clans';
 export * from './market';
+export * from './market-ui';

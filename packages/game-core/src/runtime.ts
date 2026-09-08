@@ -117,6 +117,15 @@ import {
 import { dispatchMeta, grantMetaAchievement, isMetaMenu, META_COMMANDS, noteActivity, openMetaMenu } from './meta';
 import { AWAITING_CLAN_FLAG, handleClanTextInput } from './clans';
 import { dispatchPvp, isPvpMenu, openPvpMenu, PVP_COMMANDS } from './pvp';
+import { AWAITING_MARKET_FLAG } from './market';
+import {
+  handleMarketTextInput,
+  isMarketMenu,
+  marketAct,
+  MARKET_COMMANDS,
+  openMarketMenu,
+} from './market-ui';
+import { MARKET } from '@kubolesie/content';
 
 const NAV: GameButton[] = [
   { label: '👁 Осмотреться', action: 'EXPLORE' },
@@ -206,7 +215,8 @@ export class GameRuntime {
       const current = (await this.store.findPlayerById(player.id)) ?? refreshed;
       current.lastActiveAt = this.now();
       await this.store.savePlayer(current);
-      return await this.dispatch(current, event.command, event.eventId, event.text);
+      const response = await this.dispatch(current, event.command, event.eventId, event.text);
+      return this.withNotices(current.id, response);
     } catch (error) {
       if (error instanceof GameError) {
         return { text: error.message, buttons: NAV };
@@ -260,6 +270,10 @@ export class GameRuntime {
     const clanAwait = ctx.flags[AWAITING_CLAN_FLAG];
     if (!ignoreNameMode && clanAwait && clanAwait !== '0') {
       return this.handleClanInput(ctx, command, eventId, text);
+    }
+    const marketAwait = ctx.flags[AWAITING_MARKET_FLAG];
+    if (!ignoreNameMode && marketAwait && marketAwait !== '0') {
+      return this.handleMarketInput(ctx, command, eventId, text);
     }
     this.assertAllowed(command, ctx);
     switch (command.type) {
@@ -344,6 +358,9 @@ export class GameRuntime {
         if ((PVP_COMMANDS as readonly string[]).includes(command.type)) {
           return dispatchPvp(this.weekHost(), ctx, command, eventId);
         }
+        if ((MARKET_COMMANDS as readonly string[]).includes(command.type)) {
+          return marketAct(this.store, player, command.payload ?? {}, this.now(), eventId);
+        }
         if ((WEEK_COMMANDS as readonly string[]).includes(command.type)) {
           return dispatchWeek(this.weekHost(), ctx, command, eventId);
         }
@@ -396,6 +413,7 @@ export class GameRuntime {
       'COSMETIC_ACT',
       'LEADERBOARD_PAGE',
       'PVP_ACT',
+      'MARKET_ACT',
       'PROMPT_HERO_NAME',
       'CANCEL_HERO_NAME',
     ];
@@ -615,6 +633,7 @@ export class GameRuntime {
 
   private async openMenu(ctx: Ctx, menu: ActionMenuId, extraText?: string): Promise<GameResponse> {
     if (isPvpMenu(menu)) return openPvpMenu(this.weekHost(), ctx, menu);
+    if (isMarketMenu(menu)) return openMarketMenu(this.store, ctx.player, menu, this.now());
     if (isMetaMenu(menu)) return openMetaMenu(this.store, ctx.player, menu, this.now());
     if (isWeek2Menu(menu)) return openWeek2Menu(this.weekHost(), ctx, menu);
     if (isWeekMenu(menu)) return openWeekMenu(this.weekHost(), ctx, menu);
@@ -1866,6 +1885,24 @@ export class GameRuntime {
     return this.dispatch(fresh, command, eventId, text, true);
   }
 
+  private async handleMarketInput(
+    ctx: Ctx,
+    command: GameCommand,
+    eventId: string,
+    text?: string,
+  ): Promise<GameResponse> {
+    const raw = (text ?? '').trim();
+    if (command.type === 'MARKET_ACT' && String(command.payload?.act ?? '') === 'cancel_input') {
+      return marketAct(this.store, ctx.player, command.payload ?? {}, this.now(), eventId);
+    }
+    if (command.type === 'START_GAME' && raw && !isStartAlias(raw)) {
+      return handleMarketTextInput(this.store, ctx.player, raw, this.now());
+    }
+    await this.store.setFlag(ctx.player.id, AWAITING_MARKET_FLAG, '0');
+    const fresh = (await this.store.findPlayerById(ctx.player.id)) ?? ctx.player;
+    return this.dispatch(fresh, command, eventId, text, true);
+  }
+
   private async handleNameInput(
     ctx: Ctx,
     command: GameCommand,
@@ -1937,6 +1974,13 @@ export class GameRuntime {
       xp: player.xp,
     };
     return { text, buttons, state };
+  }
+
+  private async withNotices(playerId: string, response: GameResponse): Promise<GameResponse> {
+    const notices = await this.store.consumeNotices(playerId, MARKET.noticeBatch);
+    if (!notices.length) return response;
+    const prefix = notices.map((row) => `🔔 ${row.body}`).join('\n');
+    return { ...response, text: `${prefix}\n\n${response.text}` };
   }
 }
 

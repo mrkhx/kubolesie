@@ -354,11 +354,12 @@ async function heroMenu(store: GameStore, player: PlayerRecord): Promise<GameRes
   ];
   if (flags.week_1_complete) {
     buttons.push({ label: '⚔ PvP', action: 'OPEN_MENU', payload: { menu: 'pvp_hub' } });
+    buttons.push({ label: '🛒 Рынок', action: 'OPEN_MENU', payload: { menu: 'market' } });
   } else {
     buttons.push({ label: '📊 Статистика', action: 'OPEN_MENU', payload: { menu: 'stats' } });
+    buttons.push({ label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } });
   }
   buttons.push(
-    { label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } },
     { label: '🏕 Клан', action: 'OPEN_MENU', payload: { menu: 'clan' } },
     { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
   );
@@ -420,6 +421,7 @@ async function statsScreen(store: GameStore, player: PlayerRecord): Promise<Game
   const text = `${player.name}\n${formatStats(stats)}`;
   return respond(player, text, [
     { label: '👤 Профиль', action: 'OPEN_MENU', payload: { menu: 'profile' } },
+    { label: '🏆 Рейтинги', action: 'OPEN_MENU', payload: { menu: 'ratings' } },
     { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hero' } },
   ]);
 }

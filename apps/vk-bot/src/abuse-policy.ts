@@ -7,6 +7,9 @@ export type CommandClass =
   | 'EXPENSIVE_READ'
   | 'CLAN_MUTATION'
   | 'PVP'
+  | 'MARKET_READ'
+  | 'MARKET_WRITE'
+  | 'AUCTION_BID'
   | 'SYSTEM';
 
 export interface LimitSpec {
@@ -27,6 +30,9 @@ export const DEFAULT_LIMITS = {
   EXPENSIVE_READ: { perMinute: 15, minuteTtlMs: 60_000 },
   CLAN_MUTATION: { perMinute: 10, minuteTtlMs: 60_000, burst: 3, burstTtlMs: 10_000 },
   PVP: { perMinute: 10, minuteTtlMs: 60_000 },
+  MARKET_READ: { perMinute: 40, minuteTtlMs: 60_000 },
+  MARKET_WRITE: { perMinute: 12, minuteTtlMs: 60_000, burst: 4, burstTtlMs: 8_000 },
+  AUCTION_BID: { perMinute: 20, minuteTtlMs: 60_000, burst: 6, burstTtlMs: 8_000 },
   SYSTEM: { perMinute: 20, minuteTtlMs: 60_000, burst: 8, burstTtlMs: 5_000 },
   callback: { perMinute: 60, minuteTtlMs: 60_000, burst: 15, burstTtlMs: 5_000 },
   ip: { perMinute: 600, minuteTtlMs: 60_000, burst: 120, burstTtlMs: 5_000 },
@@ -137,6 +143,9 @@ export const DEFAULT_ABUSE_POLICY: AbusePolicy = {
     EXPENSIVE_READ: { ...DEFAULT_LIMITS.EXPENSIVE_READ },
     CLAN_MUTATION: { ...DEFAULT_LIMITS.CLAN_MUTATION },
     PVP: { ...DEFAULT_LIMITS.PVP },
+    MARKET_READ: { ...DEFAULT_LIMITS.MARKET_READ },
+    MARKET_WRITE: { ...DEFAULT_LIMITS.MARKET_WRITE },
+    AUCTION_BID: { ...DEFAULT_LIMITS.AUCTION_BID },
     SYSTEM: { ...DEFAULT_LIMITS.SYSTEM },
   },
   callback: { ...DEFAULT_LIMITS.callback },
@@ -203,6 +212,34 @@ export function loadAbusePolicy(env: NodeJS.Dict<string> = process.env): AbusePo
         perMinute: envInt(env, 'RATE_LIMIT_PVP_PER_MIN', DEFAULT_LIMITS.PVP.perMinute, 1, 10_000),
         minuteTtlMs: 60_000,
       },
+      MARKET_READ: {
+        perMinute: envInt(env, 'RATE_LIMIT_MARKET_READ_PER_MIN', DEFAULT_LIMITS.MARKET_READ.perMinute, 1, 10_000),
+        minuteTtlMs: 60_000,
+      },
+      MARKET_WRITE: {
+        perMinute: envInt(env, 'RATE_LIMIT_MARKET_WRITE_PER_MIN', DEFAULT_LIMITS.MARKET_WRITE.perMinute, 1, 10_000),
+        minuteTtlMs: 60_000,
+        burst: envInt(env, 'RATE_LIMIT_MARKET_WRITE_BURST', DEFAULT_LIMITS.MARKET_WRITE.burst, 1, 1_000),
+        burstTtlMs: envInt(
+          env,
+          'RATE_LIMIT_MARKET_WRITE_BURST_MS',
+          DEFAULT_LIMITS.MARKET_WRITE.burstTtlMs,
+          200,
+          60_000,
+        ),
+      },
+      AUCTION_BID: {
+        perMinute: envInt(env, 'RATE_LIMIT_AUCTION_BID_PER_MIN', DEFAULT_LIMITS.AUCTION_BID.perMinute, 1, 10_000),
+        minuteTtlMs: 60_000,
+        burst: envInt(env, 'RATE_LIMIT_AUCTION_BID_BURST', DEFAULT_LIMITS.AUCTION_BID.burst, 1, 1_000),
+        burstTtlMs: envInt(
+          env,
+          'RATE_LIMIT_AUCTION_BID_BURST_MS',
+          DEFAULT_LIMITS.AUCTION_BID.burstTtlMs,
+          200,
+          60_000,
+        ),
+      },
       SYSTEM: {
         perMinute: envInt(env, 'RATE_LIMIT_SYSTEM_PER_MIN', DEFAULT_LIMITS.SYSTEM.perMinute, 1, 10_000),
         minuteTtlMs: 60_000,
@@ -226,6 +263,15 @@ export function loadAbusePolicy(env: NodeJS.Dict<string> = process.env): AbusePo
   };
 }
 
+const MARKET_WRITES = new Set([
+  'buy',
+  'confirm_sell',
+  'cancel',
+  'auc_confirm',
+  'buyout',
+]);
+const MARKET_BIDS = new Set(['bid']);
+
 export function classifyCommand(command: GameCommand): CommandClass {
   const type = command.type;
   if (type === 'START_GAME') return 'SYSTEM';
@@ -234,6 +280,12 @@ export function classifyCommand(command: GameCommand): CommandClass {
     const act = String(command.payload?.act ?? '');
     if (act === 'find' || act === 'claim') return 'PVP';
     return 'EXPENSIVE_READ';
+  }
+  if (type === 'MARKET_ACT') {
+    const act = String(command.payload?.act ?? '');
+    if (MARKET_BIDS.has(act)) return 'AUCTION_BID';
+    if (MARKET_WRITES.has(act)) return 'MARKET_WRITE';
+    return 'MARKET_READ';
   }
   if (type === 'LEADERBOARD_PAGE') return 'EXPENSIVE_READ';
   if (type === 'CLAN_ACT') {
@@ -245,6 +297,7 @@ export function classifyCommand(command: GameCommand): CommandClass {
   if (type === 'OPEN_MENU') {
     const menu = String(command.payload?.menu ?? '');
     if (EXPENSIVE_MENUS.has(menu)) return 'EXPENSIVE_READ';
+    if (menu.startsWith('market')) return 'MARKET_READ';
     return 'READ';
   }
   if (READ_TYPES.has(type)) return 'READ';
@@ -254,7 +307,14 @@ export function classifyCommand(command: GameCommand): CommandClass {
 
 export function commandNeedsLock(command: GameCommand): boolean {
   const klass = classifyCommand(command);
-  return klass === 'GAMEPLAY' || klass === 'CLAN_MUTATION' || klass === 'PVP' || klass === 'SYSTEM';
+  return (
+    klass === 'GAMEPLAY' ||
+    klass === 'CLAN_MUTATION' ||
+    klass === 'PVP' ||
+    klass === 'MARKET_WRITE' ||
+    klass === 'AUCTION_BID' ||
+    klass === 'SYSTEM'
+  );
 }
 
 export function sanitizeId(id: string): string {

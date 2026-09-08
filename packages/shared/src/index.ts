@@ -1,5 +1,5 @@
-export const BALANCE_VERSION = '0.0.6';
-export const PROTOTYPE_VERSION = '0.0.6';
+export const BALANCE_VERSION = '0.0.7';
+export const PROTOTYPE_VERSION = '0.0.7';
 
 export const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
 export const ENERGY_PER_INTERVAL = 1;
@@ -70,6 +70,7 @@ export const GAME_COMMANDS = [
   'SALVAGE_ITEM',
   'OPEN_PROFILE',
   'CLAN_ACT',
+  'MARKET_ACT',
   'COSMETIC_ACT',
   'LEADERBOARD_PAGE',
   'PROMPT_HERO_NAME',

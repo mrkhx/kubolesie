@@ -306,6 +306,34 @@ export interface MarketListingRecord {
   soldAt: Date | null;
   cancelledAt: Date | null;
   requestId: string | null;
+  startingPrice: number | null;
+  currentBid: number | null;
+  currentBidderPlayerId: string | null;
+  buyoutPrice: number | null;
+  bidCount: number;
+  extensionCount: number;
+}
+
+export type AuctionBidStatus = 'HOLD' | 'REFUNDED' | 'SETTLED' | 'SUPERSEDED';
+
+export interface AuctionBidRecord {
+  id: string;
+  listingId: string;
+  bidderPlayerId: string;
+  amount: number;
+  status: AuctionBidStatus;
+  createdAt: Date;
+  requestId: string | null;
+}
+
+export interface PlayerNoticeRecord {
+  id: string;
+  playerId: string;
+  kind: string;
+  body: string;
+  listingId: string | null;
+  createdAt: Date;
+  readAt: Date | null;
 }
 
 export interface MarketTransactionRecord {
@@ -336,9 +364,12 @@ export interface CurrencyTransactionRecord {
 
 export interface MarketSearchQuery {
   assetRef?: string;
+  assetRefs?: string[];
+  listingType?: MarketListingType | 'ALL';
+  sellerPlayerId?: string;
   minPrice?: number;
   maxPrice?: number;
-  sort?: 'price_asc' | 'price_desc' | 'created_desc';
+  sort?: 'price_asc' | 'price_desc' | 'created_desc' | 'ending_soon';
   limit: number;
   offset?: number;
 }
@@ -355,6 +386,21 @@ export interface MarketAnalyticsSnapshot {
   feesBurned7d: number;
   uniqueSellers7d: number;
   uniqueBuyers7d: number;
+  fixedActive: number;
+  auctionActive: number;
+  auctionsWithBids: number;
+  auctionsSold: number;
+  auctionsExpired: number;
+  bidsToday: number;
+  bids7d: number;
+  auctionGrossVolume: number;
+  buyoutCount: number;
+  feesBurned: number;
+  uniqueSellers: number;
+  uniqueBuyers: number;
+  topTradedResources: Array<{ assetRef: string; volume: number; count: number }>;
+  averageSalePrice: Array<{ assetRef: string; avg: number }>;
+  suspiciousTradeSignals: number;
 }
 
 export interface GameStore {
@@ -558,6 +604,10 @@ export interface GameStore {
     expiresAt: Date;
     requestId?: string;
     now?: Date;
+    startingPrice?: number | null;
+    buyoutPrice?: number | null;
+    currentBid?: number | null;
+    bidCount?: number;
   }): Promise<MarketListingRecord>;
   cancelListing(input: { listingId: string; sellerPlayerId: string; now?: Date }): Promise<MarketListingRecord>;
   buyFixedListing(input: {
@@ -566,6 +616,32 @@ export interface GameStore {
     requestId?: string;
     now?: Date;
   }): Promise<{ listing: MarketListingRecord; transaction: MarketTransactionRecord }>;
+  placeAuctionBid(input: {
+    listingId: string;
+    bidderPlayerId: string;
+    amount: number;
+    requestId?: string;
+    now?: Date;
+  }): Promise<{ listing: MarketListingRecord; bid: AuctionBidRecord }>;
+  buyoutAuction(input: {
+    listingId: string;
+    buyerPlayerId: string;
+    requestId?: string;
+    now?: Date;
+  }): Promise<{ listing: MarketListingRecord; transaction: MarketTransactionRecord }>;
+  settleExpiredAuctions(now?: Date, limit?: number): Promise<number>;
+  listAuctionBids(listingId: string): Promise<AuctionBidRecord[]>;
+  listPlayerBids(playerId: string, limit?: number): Promise<AuctionBidRecord[]>;
+  enqueueNotice(input: {
+    playerId: string;
+    kind: string;
+    body: string;
+    listingId?: string | null;
+  }): Promise<void>;
+  consumeNotices(playerId: string, limit?: number): Promise<PlayerNoticeRecord[]>;
+  averageSalePrices(since: Date, assetRef?: string): Promise<Array<{ assetRef: string; avg: number; count: number }>>;
+  countPairTrades(sellerPlayerId: string, buyerPlayerId: string, since: Date): Promise<number>;
+  countSuspiciousSignals(now?: Date): Promise<number>;
   expireListing(listingId: string, now?: Date): Promise<MarketListingRecord>;
   expireDueListings(now?: Date): Promise<number>;
   getListing(listingId: string): Promise<MarketListingRecord | null>;

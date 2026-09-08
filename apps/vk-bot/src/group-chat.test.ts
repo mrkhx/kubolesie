@@ -91,6 +91,8 @@ describe('resolveGroupText', () => {
     expect(resolveGroupText('Помощь', 111)?.kind).toBe('help');
     expect(resolveGroupText('меню', 111)).toBeNull();
     expect(resolveGroupText('рубить', 111)).toBeNull();
+    expect(resolveGroupText('рынок', 111)).toBeNull();
+    expect(resolveGroupText('аукцион', 111)).toBeNull();
   });
 
   it('accepts addressed public commands and ignores gameplay aliases', () => {

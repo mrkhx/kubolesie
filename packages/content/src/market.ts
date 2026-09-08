@@ -15,6 +15,8 @@ export const MARKET = {
   listingTtlMs: 72 * 60 * 60 * 1000,
   intMax: 2_147_483_647,
   searchLimitMax: 50,
+  pageSize: 3,
+  noticeBatch: 5,
 } as const;
 
 /**
@@ -88,4 +90,49 @@ export function marketSellerNet(gross: number): number {
 
 export function listingExpiresAt(createdAt: Date, ttlMs = MARKET.listingTtlMs): Date {
   return new Date(createdAt.getTime() + ttlMs);
+}
+
+export const AUCTION = {
+  durationsMs: {
+    h6: 6 * 60 * 60 * 1000,
+    h12: 12 * 60 * 60 * 1000,
+    h24: 24 * 60 * 60 * 1000,
+    h48: 48 * 60 * 60 * 1000,
+    h72: 72 * 60 * 60 * 1000,
+  },
+  durationHours: [6, 12, 24, 48, 72] as const,
+  maxDurationMs: 72 * 60 * 60 * 1000,
+  minBidBps: 500,
+  antiSnipeWindowMs: 2 * 60 * 1000,
+  antiSnipeExtendMs: 2 * 60 * 1000,
+  maxExtensions: 5,
+} as const;
+
+export const MARKET_CATEGORIES: Record<string, readonly TradeableResource[]> = {
+  wood: ['LOG', 'PLANK', 'STICK', 'WOOD'],
+  stone: ['COBBLESTONE', 'STONE', 'COAL', 'IRON_ORE', 'IRON_INGOT'],
+  food: ['RAW_FISH', 'COOKED_FISH', 'RAW_MEAT', 'FOOD', 'WHEAT', 'SEED'],
+  mats: ['HIDE', 'REED', 'CLAY', 'FIBER', 'HERBS', 'SHREW_FUR', 'CHITIN_PLATE', 'MIST_RESIN', 'STRING'],
+};
+
+export const MARKET_CATEGORY_LABELS: Record<string, string> = {
+  wood: '🪵 Дерево',
+  stone: '🪨 Камень/руда',
+  food: '🍖 Еда',
+  mats: '🌿 Материалы',
+  all: '📋 Все',
+};
+
+export function minBidAmount(currentBid: number | null | undefined, startingPrice: number): number {
+  const base = currentBid && currentBid > 0 ? currentBid : 0;
+  if (!base) return Math.max(1, Math.trunc(startingPrice));
+  const step = Math.max(1, Math.ceil((base * AUCTION.minBidBps) / 10_000));
+  return base + step;
+}
+
+export function auctionDurationMs(hours: number): number {
+  if (!(AUCTION.durationHours as readonly number[]).includes(hours)) {
+    return AUCTION.durationsMs.h24;
+  }
+  return hours * 60 * 60 * 1000;
 }

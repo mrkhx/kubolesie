@@ -47,6 +47,8 @@ import type {
   MarketListingRecord,
   MarketSearchQuery,
   MarketTransactionRecord,
+  AuctionBidRecord,
+  PlayerNoticeRecord,
 } from './store';
 import { EMPTY_STATISTICS } from './store';
 import {
@@ -56,6 +58,8 @@ import {
   clanLevelForXp,
   MARKET,
   marketFee,
+  AUCTION,
+  minBidAmount,
   PVP_RATING,
   QUEST_TEMPLATES,
 } from '@kubolesie/content';
@@ -103,6 +107,8 @@ interface MemoryState {
   weeklyScores: { playerId: string; periodKey: string; score: number }[];
   listings: MarketListingRecord[];
   marketTx: MarketTransactionRecord[];
+  auctionBids: AuctionBidRecord[];
+  notices: PlayerNoticeRecord[];
 }
 
 function reviveDates(player: PlayerRecord): PlayerRecord {
@@ -158,6 +164,15 @@ export class MemoryGameStore implements GameStore {
       parsed.weeklyScores = parsed.weeklyScores ?? [];
       parsed.listings = (parsed.listings ?? []).map(reviveListing);
       parsed.marketTx = (parsed.marketTx ?? []).map(reviveMarketTx);
+      parsed.auctionBids = (parsed.auctionBids ?? []).map((row) => ({
+        ...row,
+        createdAt: new Date(row.createdAt),
+      }));
+      parsed.notices = (parsed.notices ?? []).map((row) => ({
+        ...row,
+        createdAt: new Date(row.createdAt),
+        readAt: row.readAt ? new Date(row.readAt) : null,
+      }));
       parsed.currencyTx = (parsed.currencyTx ?? []).map((row) => ({
         ...row,
         createdAt: new Date(row.createdAt ?? 0),
@@ -1105,13 +1120,14 @@ export class MemoryGameStore implements GameStore {
     expiresAt: Date;
     requestId?: string;
     now?: Date;
+    startingPrice?: number | null;
+    buyoutPrice?: number | null;
+    currentBid?: number | null;
+    bidCount?: number;
   }): Promise<MarketListingRecord> {
     return this.withMut(async () => {
       const now = input.now ?? new Date();
       this.expireDueUnlocked(now);
-      if (input.listingType !== 'FIXED_PRICE') {
-        throw new ActionRejectedError('Аукцион ещё не открыт.');
-      }
       if (input.requestId) {
         const existing = this.state.listings.find((row) => row.requestId === input.requestId);
         if (existing) return cloneListing(existing);
@@ -1128,7 +1144,7 @@ export class MemoryGameStore implements GameStore {
       const listing: MarketListingRecord = {
         id: randomUUID(),
         sellerPlayerId: input.sellerPlayerId,
-        listingType: 'FIXED_PRICE',
+        listingType: input.listingType,
         assetKind: 'RESOURCE',
         assetRef: input.assetRef,
         quantity: input.quantity,
@@ -1141,6 +1157,12 @@ export class MemoryGameStore implements GameStore {
         soldAt: null,
         cancelledAt: null,
         requestId: input.requestId ?? null,
+        startingPrice: input.startingPrice ?? (input.listingType === 'AUCTION' ? input.unitPrice : null),
+        currentBid: input.currentBid ?? null,
+        currentBidderPlayerId: null,
+        buyoutPrice: input.buyoutPrice ?? null,
+        bidCount: input.bidCount ?? 0,
+        extensionCount: 0,
       };
       this.state.listings.push(listing);
       await this.persist();
@@ -1164,6 +1186,9 @@ export class MemoryGameStore implements GameStore {
       if (listing.status === 'CANCELLED') return cloneListing(listing);
       if (listing.status !== 'ACTIVE') {
         throw new ActionRejectedError('Лот уже закрыт.');
+      }
+      if (listing.listingType === 'AUCTION' && listing.bidCount > 0) {
+        throw new ActionRejectedError('Аукцион со ставками отменить нельзя.');
       }
       listing.status = 'CANCELLED';
       listing.cancelledAt = now;
@@ -1193,6 +1218,7 @@ export class MemoryGameStore implements GameStore {
       if (!listing) throw new NotFoundError('Лот не найден.');
       if (listing.status === 'EXPIRED') throw new ActionRejectedError('Лот истёк.');
       if (listing.status !== 'ACTIVE') throw new ActionRejectedError('Лот уже закрыт.');
+      if (listing.listingType !== 'FIXED_PRICE') throw new ActionRejectedError('Это аукцион.');
       if (listing.sellerPlayerId === input.buyerPlayerId) {
         throw new ActionRejectedError('Нельзя купить свой лот.');
       }
@@ -1251,9 +1277,260 @@ export class MemoryGameStore implements GameStore {
       const sellerStats = this.ensureStats(seller.id);
       sellerStats.tradesCompleted += 1;
       sellerStats.coinsEarned += net;
+      this.enqueueNoticeUnlocked(seller.id, 'sold', 'Ваш товар продан.', listing.id);
       await this.persist();
       return { listing: cloneListing(listing), transaction: { ...transaction } };
     });
+  }
+
+  async placeAuctionBid(input: {
+    listingId: string;
+    bidderPlayerId: string;
+    amount: number;
+    requestId?: string;
+    now?: Date;
+  }): Promise<{ listing: MarketListingRecord; bid: AuctionBidRecord }> {
+    return this.withMut(async () => {
+      const now = input.now ?? new Date();
+      if (input.requestId) {
+        const existing = this.state.auctionBids.find((row) => row.requestId === input.requestId);
+        if (existing) {
+          const listing = this.state.listings.find((row) => row.id === existing.listingId)!;
+          return { listing: cloneListing(listing), bid: { ...existing } };
+        }
+      }
+      this.expireDueUnlocked(now);
+      const listing = this.state.listings.find((row) => row.id === input.listingId);
+      if (!listing) throw new NotFoundError('Лот не найден.');
+      if (listing.listingType !== 'AUCTION') throw new ActionRejectedError('Это не аукцион.');
+      if (listing.status !== 'ACTIVE' || listing.expiresAt <= now) {
+        throw new ActionRejectedError('Аукцион уже закрыт.');
+      }
+      if (listing.sellerPlayerId === input.bidderPlayerId) {
+        throw new ActionRejectedError('Нельзя ставить на свой лот.');
+      }
+      const min = minBidAmount(listing.currentBid, listing.startingPrice ?? listing.unitPrice);
+      if (input.amount < min) throw new ActionRejectedError(`Минимальная ставка: ${min}.`);
+      if (listing.buyoutPrice && input.amount >= listing.buyoutPrice) {
+        throw new ActionRejectedError('Для выкупа нажми «Купить сразу».');
+      }
+      const bidder = this.state.players.find((row) => row.id === input.bidderPlayerId);
+      if (!bidder) throw new NotFoundError('Игрок не найден.');
+      const previousId = listing.currentBidderPlayerId;
+      const previousBid = listing.currentBid ?? 0;
+      let debit = input.amount;
+      if (previousId === bidder.id) debit = input.amount - previousBid;
+      if (debit < 0) debit = 0;
+      if (bidder.coins < debit) throw new InsufficientCoinsError('Не хватает монет.');
+      this.debitCoinsUnlocked(bidder, debit, 'auction_bid_hold', listing.id, now);
+      if (previousId && previousId !== bidder.id && previousBid > 0) {
+        const prev = this.state.players.find((row) => row.id === previousId);
+        if (prev) {
+          this.creditCoinsUnlocked(prev, previousBid, 'auction_bid_release', listing.id, now);
+          this.enqueueNoticeUnlocked(prev.id, 'outbid', 'Вашу ставку перебили.', listing.id);
+        }
+        for (const row of this.state.auctionBids) {
+          if (row.listingId === listing.id && row.bidderPlayerId === previousId && row.status === 'HOLD') {
+            row.status = 'REFUNDED';
+          }
+        }
+      }
+      if (previousId === bidder.id) {
+        for (const row of this.state.auctionBids) {
+          if (row.listingId === listing.id && row.bidderPlayerId === bidder.id && row.status === 'HOLD') {
+            row.status = 'SUPERSEDED';
+          }
+        }
+      }
+      const bid: AuctionBidRecord = {
+        id: randomUUID(),
+        listingId: listing.id,
+        bidderPlayerId: bidder.id,
+        amount: input.amount,
+        status: 'HOLD',
+        createdAt: now,
+        requestId: input.requestId ?? null,
+      };
+      this.state.auctionBids.push(bid);
+      listing.currentBid = input.amount;
+      listing.currentBidderPlayerId = bidder.id;
+      listing.bidCount += 1;
+      listing.unitPrice = input.amount;
+      listing.totalPrice = input.amount;
+      if (
+        listing.expiresAt.getTime() - now.getTime() <= AUCTION.antiSnipeWindowMs &&
+        listing.extensionCount < AUCTION.maxExtensions
+      ) {
+        listing.expiresAt = new Date(listing.expiresAt.getTime() + AUCTION.antiSnipeExtendMs);
+        listing.extensionCount += 1;
+      }
+      await this.persist();
+      return { listing: cloneListing(listing), bid: { ...bid } };
+    });
+  }
+
+  async buyoutAuction(input: {
+    listingId: string;
+    buyerPlayerId: string;
+    requestId?: string;
+    now?: Date;
+  }): Promise<{ listing: MarketListingRecord; transaction: MarketTransactionRecord }> {
+    return this.withMut(async () => {
+      const now = input.now ?? new Date();
+      if (input.requestId) {
+        const existingTx = this.state.marketTx.find((row) => row.requestId === input.requestId);
+        if (existingTx) {
+          const listing = this.state.listings.find((row) => row.id === existingTx.listingId)!;
+          return { listing: cloneListing(listing), transaction: { ...existingTx } };
+        }
+      }
+      this.expireDueUnlocked(now);
+      const listing = this.state.listings.find((row) => row.id === input.listingId);
+      if (!listing) throw new NotFoundError('Лот не найден.');
+      if (listing.listingType !== 'AUCTION') throw new ActionRejectedError('Это не аукцион.');
+      if (listing.status === 'SOLD' && listing.buyerPlayerId === input.buyerPlayerId) {
+        const tx = this.state.marketTx.find((row) => row.listingId === listing.id);
+        if (tx) return { listing: cloneListing(listing), transaction: { ...tx } };
+      }
+      if (listing.status !== 'ACTIVE' || listing.expiresAt <= now) {
+        throw new ActionRejectedError('Аукцион уже закрыт.');
+      }
+      if (!listing.buyoutPrice) throw new ActionRejectedError('Выкупа нет.');
+      if (listing.sellerPlayerId === input.buyerPlayerId) {
+        throw new ActionRejectedError('Нельзя купить свой лот.');
+      }
+      const buyer = this.state.players.find((row) => row.id === input.buyerPlayerId);
+      const seller = this.state.players.find((row) => row.id === listing.sellerPlayerId);
+      if (!buyer || !seller) throw new NotFoundError('Игрок не найден.');
+      const buyout = listing.buyoutPrice;
+      const held = listing.currentBidderPlayerId === buyer.id ? listing.currentBid ?? 0 : 0;
+      const debit = buyout - held;
+      if (buyer.coins < debit) throw new InsufficientCoinsError('Не хватает монет.');
+      if (listing.currentBidderPlayerId && listing.currentBidderPlayerId !== buyer.id) {
+        const prev = this.state.players.find((row) => row.id === listing.currentBidderPlayerId);
+        if (prev && listing.currentBid) {
+          this.creditCoinsUnlocked(prev, listing.currentBid, 'auction_bid_release', listing.id, now);
+          this.enqueueNoticeUnlocked(prev.id, 'outbid', 'Аукцион выкупили сразу. Ставка возвращена.', listing.id);
+        }
+        for (const row of this.state.auctionBids) {
+          if (row.listingId === listing.id && row.status === 'HOLD') row.status = 'REFUNDED';
+        }
+      } else {
+        for (const row of this.state.auctionBids) {
+          if (row.listingId === listing.id && row.bidderPlayerId === buyer.id && row.status === 'HOLD') {
+            row.status = 'SETTLED';
+          }
+        }
+      }
+      this.debitCoinsUnlocked(buyer, debit, held ? 'auction_settle' : 'auction_bid_hold', listing.id, now);
+      const sold = this.finishAuctionSaleUnlocked(listing, buyer, seller, buyout, now, input.requestId, 'buyout');
+      await this.persist();
+      return sold;
+    });
+  }
+
+  async settleExpiredAuctions(now?: Date, limit = 50): Promise<number> {
+    return this.withMut(async () => {
+      const at = now ?? new Date();
+      const due = this.state.listings
+        .filter((row) => row.listingType === 'AUCTION' && row.status === 'ACTIVE' && row.expiresAt <= at)
+        .slice(0, Math.max(1, limit));
+      for (const listing of due) this.expireOneUnlocked(listing, at);
+      await this.persist();
+      return due.length;
+    });
+  }
+
+  async listAuctionBids(listingId: string): Promise<AuctionBidRecord[]> {
+    return this.state.auctionBids
+      .filter((row) => row.listingId === listingId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .map((row) => ({ ...row }));
+  }
+
+  async listPlayerBids(playerId: string, limit = 10): Promise<AuctionBidRecord[]> {
+    return this.state.auctionBids
+      .filter((row) => row.bidderPlayerId === playerId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, clampLimit(limit, 10))
+      .map((row) => ({ ...row }));
+  }
+
+  async enqueueNotice(input: {
+    playerId: string;
+    kind: string;
+    body: string;
+    listingId?: string | null;
+  }): Promise<void> {
+    this.enqueueNoticeUnlocked(input.playerId, input.kind, input.body, input.listingId ?? null);
+    await this.persist();
+  }
+
+  async consumeNotices(playerId: string, limit = 5): Promise<PlayerNoticeRecord[]> {
+    const unread = this.state.notices
+      .filter((row) => row.playerId === playerId && !row.readAt)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      .slice(0, clampLimit(limit, 5));
+    const now = new Date();
+    for (const row of unread) row.readAt = now;
+    await this.persist();
+    return unread.map((row) => ({ ...row }));
+  }
+
+  async averageSalePrices(
+    since: Date,
+    assetRef?: string,
+  ): Promise<Array<{ assetRef: string; avg: number; count: number }>> {
+    const groups = new Map<string, { sum: number; qty: number; count: number }>();
+    for (const tx of this.state.marketTx) {
+      if (tx.createdAt < since) continue;
+      if (assetRef && tx.assetRef !== assetRef) continue;
+      const row = groups.get(tx.assetRef) ?? { sum: 0, qty: 0, count: 0 };
+      row.sum += tx.grossPrice;
+      row.qty += tx.quantity;
+      row.count += 1;
+      groups.set(tx.assetRef, row);
+    }
+    return [...groups.entries()].map(([ref, row]) => ({
+      assetRef: ref,
+      avg: row.qty ? Math.round(row.sum / row.qty) : 0,
+      count: row.count,
+    }));
+  }
+
+  async countPairTrades(sellerPlayerId: string, buyerPlayerId: string, since: Date): Promise<number> {
+    return this.state.marketTx.filter(
+      (row) =>
+        row.sellerPlayerId === sellerPlayerId &&
+        row.buyerPlayerId === buyerPlayerId &&
+        row.createdAt >= since,
+    ).length;
+  }
+
+  async countSuspiciousSignals(now?: Date): Promise<number> {
+    const at = now ?? new Date();
+    const week = new Date(at.getTime() - 7 * 86_400_000);
+    const avgs = await this.averageSalePrices(week);
+    const avgMap = new Map(avgs.map((row) => [row.assetRef, row.avg]));
+    let signals = 0;
+    const pairs = new Map<string, number>();
+    for (const tx of this.state.marketTx) {
+      if (tx.createdAt < week) continue;
+      const key = `${tx.sellerPlayerId}:${tx.buyerPlayerId}`;
+      pairs.set(key, (pairs.get(key) ?? 0) + 1);
+      const avg = avgMap.get(tx.assetRef) ?? 0;
+      const unit = tx.quantity ? tx.grossPrice / tx.quantity : tx.grossPrice;
+      if (avg > 0 && unit > avg * 3) signals += 1;
+    }
+    for (const count of pairs.values()) if (count >= 5) signals += 1;
+    const tenMin = new Date(at.getTime() - 10 * 60_000);
+    const relist = new Map<string, number>();
+    for (const listing of this.state.listings) {
+      if (listing.createdAt < tenMin) continue;
+      relist.set(listing.sellerPlayerId, (relist.get(listing.sellerPlayerId) ?? 0) + 1);
+    }
+    for (const count of relist.values()) if (count >= 5) signals += 1;
+    return signals;
   }
 
   async expireListing(listingId: string, now?: Date): Promise<MarketListingRecord> {
@@ -1261,7 +1538,7 @@ export class MemoryGameStore implements GameStore {
       const at = now ?? new Date();
       const listing = this.state.listings.find((row) => row.id === listingId);
       if (!listing) throw new NotFoundError('Лот не найден.');
-      if (listing.status === 'EXPIRED') return cloneListing(listing);
+      if (listing.status === 'EXPIRED' || listing.status === 'SOLD') return cloneListing(listing);
       if (listing.status !== 'ACTIVE') throw new ActionRejectedError('Лот уже закрыт.');
       if (listing.expiresAt > at) throw new ActionRejectedError('Срок лота ещё не вышел.');
       this.expireOneUnlocked(listing, at);
@@ -1297,18 +1574,29 @@ export class MemoryGameStore implements GameStore {
     const limit = clampLimit(query.limit);
     const offset = clampOffset(query.offset ?? 0);
     let rows = this.state.listings.filter((row) => row.status === 'ACTIVE' && row.expiresAt > at);
+    if (query.listingType && query.listingType !== 'ALL') {
+      rows = rows.filter((row) => row.listingType === query.listingType);
+    }
+    if (query.sellerPlayerId) rows = rows.filter((row) => row.sellerPlayerId === query.sellerPlayerId);
     if (query.assetRef) rows = rows.filter((row) => row.assetRef === query.assetRef);
+    if (query.assetRefs?.length) {
+      const wanted = new Set(query.assetRefs);
+      rows = rows.filter((row) => wanted.has(row.assetRef));
+    }
+    const priceOf = (row: MarketListingRecord) =>
+      row.listingType === 'AUCTION' ? (row.currentBid ?? row.startingPrice ?? row.unitPrice) : row.unitPrice;
     if (Number.isFinite(query.minPrice)) {
-      rows = rows.filter((row) => row.unitPrice >= (query.minPrice as number));
+      rows = rows.filter((row) => priceOf(row) >= (query.minPrice as number));
     }
     if (Number.isFinite(query.maxPrice)) {
-      rows = rows.filter((row) => row.unitPrice <= (query.maxPrice as number));
+      rows = rows.filter((row) => priceOf(row) <= (query.maxPrice as number));
     }
     const sort = query.sort ?? 'price_asc';
     rows.sort((a, b) => {
-      if (sort === 'price_desc') return b.unitPrice - a.unitPrice || a.createdAt.getTime() - b.createdAt.getTime();
+      if (sort === 'price_desc') return priceOf(b) - priceOf(a) || a.createdAt.getTime() - b.createdAt.getTime();
       if (sort === 'created_desc') return b.createdAt.getTime() - a.createdAt.getTime();
-      return a.unitPrice - b.unitPrice || a.createdAt.getTime() - b.createdAt.getTime();
+      if (sort === 'ending_soon') return a.expiresAt.getTime() - b.expiresAt.getTime();
+      return priceOf(a) - priceOf(b) || a.createdAt.getTime() - b.createdAt.getTime();
     });
     return rows.slice(offset, offset + limit).map(cloneListing);
   }
@@ -1349,6 +1637,7 @@ export class MemoryGameStore implements GameStore {
       feesBurned7d: sum(weekSold, 'fee'),
       uniqueSellers7d: unique(weekSold, 'sellerPlayerId'),
       uniqueBuyers7d: unique(weekSold, 'buyerPlayerId'),
+      ...this.marketAnalyticsExtras(at, weekSold),
     };
   }
 
@@ -1365,9 +1654,279 @@ export class MemoryGameStore implements GameStore {
 
   private expireOneUnlocked(listing: MarketListingRecord, now: Date): void {
     if (listing.status !== 'ACTIVE') return;
+    if (listing.listingType === 'AUCTION' && listing.currentBidderPlayerId && (listing.currentBid ?? 0) > 0) {
+      const winner = this.state.players.find((row) => row.id === listing.currentBidderPlayerId);
+      const seller = this.state.players.find((row) => row.id === listing.sellerPlayerId);
+      if (winner && seller) {
+        this.finishAuctionSaleUnlocked(
+          listing,
+          winner,
+          seller,
+          listing.currentBid ?? listing.unitPrice,
+          now,
+          undefined,
+          'settle',
+        );
+        return;
+      }
+    }
+    if (listing.listingType === 'AUCTION') {
+      for (const row of this.state.auctionBids) {
+        if (row.listingId === listing.id && row.status === 'HOLD') {
+          row.status = 'REFUNDED';
+          const bidder = this.state.players.find((player) => player.id === row.bidderPlayerId);
+          if (bidder) this.creditCoinsUnlocked(bidder, row.amount, 'auction_bid_release', listing.id, now);
+        }
+      }
+      this.enqueueNoticeUnlocked(
+        listing.sellerPlayerId,
+        'ended',
+        'Аукцион завершён без ставок. Товар возвращён.',
+        listing.id,
+      );
+    }
     listing.status = 'EXPIRED';
     this.creditResourceUnlocked(listing.sellerPlayerId, listing.assetRef as ResourceType, listing.quantity);
-    void now;
+  }
+
+  private finishAuctionSaleUnlocked(
+    listing: MarketListingRecord,
+    buyer: PlayerRecord,
+    seller: PlayerRecord,
+    gross: number,
+    now: Date,
+    requestId: string | undefined,
+    kind: 'buyout' | 'settle',
+  ): { listing: MarketListingRecord; transaction: MarketTransactionRecord } {
+    const existingTx = this.state.marketTx.find((row) => row.listingId === listing.id);
+    if (existingTx) {
+      listing.status = 'SOLD';
+      return { listing: cloneListing(listing), transaction: { ...existingTx } };
+    }
+    const fee = marketFee(gross);
+    const net = gross - fee;
+    if (seller.coins + net > MARKET.intMax) throw new ActionRejectedError('Переполнение монет.');
+    seller.coins += net;
+    this.creditResourceUnlocked(buyer.id, listing.assetRef as ResourceType, listing.quantity);
+    listing.status = 'SOLD';
+    listing.buyerPlayerId = buyer.id;
+    listing.soldAt = now;
+    listing.totalPrice = gross;
+    const transaction: MarketTransactionRecord = {
+      id: randomUUID(),
+      listingId: listing.id,
+      sellerPlayerId: seller.id,
+      buyerPlayerId: buyer.id,
+      assetKind: listing.assetKind,
+      assetRef: listing.assetRef,
+      quantity: listing.quantity,
+      grossPrice: gross,
+      fee,
+      sellerNet: net,
+      createdAt: now,
+      requestId: requestId ?? null,
+    };
+    this.state.marketTx.push(transaction);
+    this.state.currencyTx.push({
+      playerId: seller.id,
+      currency: 'COINS',
+      amount: net,
+      balanceBefore: seller.coins - net,
+      balanceAfter: seller.coins,
+      reason: 'auction_settle',
+      referenceId: listing.id,
+      createdAt: now,
+    });
+    for (const row of this.state.auctionBids) {
+      if (row.listingId !== listing.id) continue;
+      if (row.bidderPlayerId === buyer.id && row.status === 'HOLD') row.status = 'SETTLED';
+      else if (row.status === 'HOLD') {
+        row.status = 'REFUNDED';
+        const other = this.state.players.find((player) => player.id === row.bidderPlayerId);
+        if (other) this.creditCoinsUnlocked(other, row.amount, 'auction_bid_release', listing.id, now);
+      }
+    }
+    const buyerStats = this.ensureStats(buyer.id);
+    buyerStats.tradesCompleted += 1;
+    buyerStats.coinsSpent += gross;
+    const sellerStats = this.ensureStats(seller.id);
+    sellerStats.tradesCompleted += 1;
+    sellerStats.coinsEarned += net;
+    this.enqueueNoticeUnlocked(
+      seller.id,
+      'sold',
+      kind === 'buyout' ? 'Ваш аукцион выкупили сразу.' : 'Ваш аукцион завершён. Товар продан.',
+      listing.id,
+    );
+    this.enqueueNoticeUnlocked(buyer.id, 'won', 'Вы выиграли аукцион.', listing.id);
+    return { listing: cloneListing(listing), transaction: { ...transaction } };
+  }
+
+  private debitCoinsUnlocked(
+    player: PlayerRecord,
+    amount: number,
+    reason: string,
+    referenceId: string,
+    now: Date,
+  ): void {
+    if (amount <= 0) return;
+    if (player.coins < amount) throw new InsufficientCoinsError('Не хватает монет.');
+    const before = player.coins;
+    player.coins -= amount;
+    this.state.currencyTx.push({
+      playerId: player.id,
+      currency: 'COINS',
+      amount: -amount,
+      balanceBefore: before,
+      balanceAfter: player.coins,
+      reason,
+      referenceId,
+      createdAt: now,
+    });
+  }
+
+  private creditCoinsUnlocked(
+    player: PlayerRecord,
+    amount: number,
+    reason: string,
+    referenceId: string,
+    now: Date,
+  ): void {
+    if (amount <= 0) return;
+    if (player.coins + amount > MARKET.intMax) throw new ActionRejectedError('Переполнение монет.');
+    const before = player.coins;
+    player.coins += amount;
+    this.state.currencyTx.push({
+      playerId: player.id,
+      currency: 'COINS',
+      amount,
+      balanceBefore: before,
+      balanceAfter: player.coins,
+      reason,
+      referenceId,
+      createdAt: now,
+    });
+  }
+
+  private enqueueNoticeUnlocked(
+    playerId: string,
+    kind: string,
+    body: string,
+    listingId: string | null,
+  ): void {
+    this.state.notices.push({
+      id: randomUUID(),
+      playerId,
+      kind,
+      body,
+      listingId,
+      createdAt: new Date(),
+      readAt: null,
+    });
+  }
+
+  private marketAnalyticsExtras(
+    at: Date,
+    weekSold: MarketTransactionRecord[],
+  ): Pick<
+    MarketAnalyticsSnapshot,
+    | 'fixedActive'
+    | 'auctionActive'
+    | 'auctionsWithBids'
+    | 'auctionsSold'
+    | 'auctionsExpired'
+    | 'bidsToday'
+    | 'bids7d'
+    | 'auctionGrossVolume'
+    | 'buyoutCount'
+    | 'feesBurned'
+    | 'uniqueSellers'
+    | 'uniqueBuyers'
+    | 'topTradedResources'
+    | 'averageSalePrice'
+    | 'suspiciousTradeSignals'
+  > {
+    const today = utcDayStart(at);
+    const d7 = new Date(at.getTime() - 7 * 86_400_000);
+    const active = (type: MarketListingRecord['listingType']) =>
+      this.state.listings.filter(
+        (row) => row.listingType === type && row.status === 'ACTIVE' && row.expiresAt > at,
+      );
+    const auctionListings = this.state.listings.filter((row) => row.listingType === 'AUCTION');
+    const auctionIds = new Set(auctionListings.map((row) => row.id));
+    const auctionSoldTx = this.state.marketTx.filter((row) => auctionIds.has(row.listingId));
+    const listingById = new Map(this.state.listings.map((row) => [row.id, row]));
+    const groups = new Map<string, { volume: number; count: number; sum: number; qty: number }>();
+    for (const tx of weekSold) {
+      const row = groups.get(tx.assetRef) ?? { volume: 0, count: 0, sum: 0, qty: 0 };
+      row.volume += tx.grossPrice;
+      row.count += 1;
+      row.sum += tx.grossPrice;
+      row.qty += tx.quantity;
+      groups.set(tx.assetRef, row);
+    }
+    const top = [...groups.entries()]
+      .sort((a, b) => b[1].volume - a[1].volume || b[1].count - a[1].count)
+      .slice(0, 8)
+      .map(([assetRef, row]) => ({ assetRef, volume: row.volume, count: row.count }));
+    const averages = [...groups.entries()].map(([assetRef, row]) => ({
+      assetRef,
+      avg: row.qty ? Math.round(row.sum / row.qty) : 0,
+    }));
+    return {
+      fixedActive: active('FIXED_PRICE').length,
+      auctionActive: active('AUCTION').length,
+      auctionsWithBids: active('AUCTION').filter((row) => row.bidCount > 0).length,
+      auctionsSold: auctionListings.filter((row) => row.status === 'SOLD').length,
+      auctionsExpired: auctionListings.filter((row) => row.status === 'EXPIRED').length,
+      bidsToday: this.state.auctionBids.filter((row) => row.createdAt >= today).length,
+      bids7d: this.state.auctionBids.filter((row) => row.createdAt >= d7).length,
+      auctionGrossVolume: auctionSoldTx.reduce((acc, row) => acc + row.grossPrice, 0),
+      buyoutCount: auctionSoldTx.filter((row) => {
+        const listing = listingById.get(row.listingId);
+        return Boolean(listing?.buyoutPrice && row.grossPrice === listing.buyoutPrice);
+      }).length,
+      feesBurned: this.state.marketTx.reduce((acc, row) => acc + row.fee, 0),
+      uniqueSellers: new Set(this.state.marketTx.map((row) => row.sellerPlayerId)).size,
+      uniqueBuyers: new Set(this.state.marketTx.map((row) => row.buyerPlayerId)).size,
+      topTradedResources: top,
+      averageSalePrice: averages,
+      suspiciousTradeSignals: this.countSuspiciousSignalsSync(at),
+    };
+  }
+
+  private countSuspiciousSignalsSync(at: Date): number {
+    const week = new Date(at.getTime() - 7 * 86_400_000);
+    const groups = new Map<string, { sum: number; qty: number }>();
+    for (const tx of this.state.marketTx) {
+      if (tx.createdAt < week) continue;
+      const row = groups.get(tx.assetRef) ?? { sum: 0, qty: 0 };
+      row.sum += tx.grossPrice;
+      row.qty += tx.quantity;
+      groups.set(tx.assetRef, row);
+    }
+    const avgMap = new Map(
+      [...groups.entries()].map(([ref, row]) => [ref, row.qty ? row.sum / row.qty : 0]),
+    );
+    let signals = 0;
+    const pairs = new Map<string, number>();
+    for (const tx of this.state.marketTx) {
+      if (tx.createdAt < week) continue;
+      const key = `${tx.sellerPlayerId}:${tx.buyerPlayerId}`;
+      pairs.set(key, (pairs.get(key) ?? 0) + 1);
+      const avg = avgMap.get(tx.assetRef) ?? 0;
+      const unit = tx.quantity ? tx.grossPrice / tx.quantity : tx.grossPrice;
+      if (avg > 0 && unit > avg * 3) signals += 1;
+    }
+    for (const count of pairs.values()) if (count >= 5) signals += 1;
+    const tenMin = new Date(at.getTime() - 10 * 60_000);
+    const relist = new Map<string, number>();
+    for (const listing of this.state.listings) {
+      if (listing.createdAt < tenMin) continue;
+      relist.set(listing.sellerPlayerId, (relist.get(listing.sellerPlayerId) ?? 0) + 1);
+    }
+    for (const count of relist.values()) if (count >= 5) signals += 1;
+    return signals;
   }
 
   private debitResourceUnlocked(playerId: string, resource: ResourceType, amount: number): number {
@@ -1682,6 +2241,8 @@ function emptyState(): MemoryState {
     weeklyScores: [],
     listings: [],
     marketTx: [],
+    auctionBids: [],
+    notices: [],
   };
 }
 
@@ -1699,6 +2260,12 @@ function reviveListing(listing: MarketListingRecord): MarketListingRecord {
   return cloneListing({
     ...listing,
     requestId: listing.requestId ?? null,
+    startingPrice: listing.startingPrice ?? null,
+    currentBid: listing.currentBid ?? null,
+    currentBidderPlayerId: listing.currentBidderPlayerId ?? null,
+    buyoutPrice: listing.buyoutPrice ?? null,
+    bidCount: listing.bidCount ?? 0,
+    extensionCount: listing.extensionCount ?? 0,
   });
 }
 

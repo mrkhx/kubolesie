@@ -12,7 +12,7 @@ import type {
 } from '@kubolesie/shared';
 import { BACK_LABEL } from '@kubolesie/shared';
 
-export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'clan_home' | 'clan_tasks' | 'clan_donate' | 'cosmetics' | 'achievements' | 'farm' | 'quarry' | 'mist' | 'lowland' | 'seal2' | 'pvp_hub' | 'pvp_history' | 'pvp_rewards';
+export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'clan_home' | 'clan_tasks' | 'clan_donate' | 'cosmetics' | 'achievements' | 'farm' | 'quarry' | 'mist' | 'lowland' | 'seal2' | 'pvp_hub' | 'pvp_history' | 'pvp_rewards' | 'market' | 'market_buy' | 'market_sell' | 'market_mine' | 'market_auc';
 
 export const ACTION_MENUS: readonly ActionMenuId[] = [
   'hub',
@@ -53,6 +53,11 @@ export const ACTION_MENUS: readonly ActionMenuId[] = [
   'pvp_hub',
   'pvp_history',
   'pvp_rewards',
+  'market',
+  'market_buy',
+  'market_sell',
+  'market_mine',
+  'market_auc',
 ];
 
 export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly string[]> = {
@@ -150,6 +155,11 @@ const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
   pvp_hub: 'hero',
   pvp_history: 'pvp_hub',
   pvp_rewards: 'pvp_hub',
+  market: 'hero',
+  market_buy: 'market',
+  market_sell: 'market',
+  market_mine: 'market',
+  market_auc: 'market',
 };
 
 export interface MenuSnapshot {

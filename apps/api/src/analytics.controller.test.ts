@@ -194,6 +194,10 @@ describe('admin analytics payloads', () => {
     expect(market.feesBurnedToday).toBe(1);
     expect(market.uniqueSellers7d).toBe(1);
     expect(market.uniqueBuyers7d).toBe(1);
+    expect(market.fixedActive).toBe(0);
+    expect(market.auctionActive).toBe(0);
+    expect(market.feesBurned).toBe(1);
+    expect(market.suspiciousTradeSignals).toBeGreaterThanOrEqual(0);
     expect(JSON.stringify(market)).not.toContain('market-seller');
     expect(JSON.stringify(market)).not.toContain('market-buyer');
     const armed = new AnalyticsController(configWithToken(), store, { store, kind: 'memory' });

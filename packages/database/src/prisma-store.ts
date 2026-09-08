@@ -11,7 +11,7 @@ import type {
   ResourceType,
 } from '@kubolesie/shared';
 import type { CombatantSnapshot, BattleEvent } from '@kubolesie/combat-engine';
-import { clanLevelForXp, PVP_RATING, applyPvpRating, clampLimit, clampOffset, MARKET, marketFee } from '@kubolesie/content';
+import { clanLevelForXp, PVP_RATING, applyPvpRating, clampLimit, clampOffset, MARKET, marketFee, AUCTION, minBidAmount } from '@kubolesie/content';
 import {
   ActionRejectedError,
   EMPTY_STATISTICS,
@@ -52,6 +52,8 @@ import {
   type MarketListingRecord,
   type MarketSearchQuery,
   type MarketTransactionRecord,
+  type AuctionBidRecord,
+  type PlayerNoticeRecord,
 } from '@kubolesie/game-core';
 import type { GameResponse } from '@kubolesie/shared';
 import { Prisma, type PrismaClient } from './generated/client';
@@ -1493,10 +1495,11 @@ export class PrismaGameStore implements GameStore {
     expiresAt: Date;
     requestId?: string;
     now?: Date;
+    startingPrice?: number | null;
+    buyoutPrice?: number | null;
+    currentBid?: number | null;
+    bidCount?: number;
   }): Promise<MarketListingRecord> {
-    if (input.listingType !== 'FIXED_PRICE') {
-      throw new ActionRejectedError('Аукцион ещё не открыт.');
-    }
     const now = input.now ?? new Date();
     try {
       return await this.withTx(async (tx) => {
@@ -1517,7 +1520,7 @@ export class PrismaGameStore implements GameStore {
         const row = await tx.marketListing.create({
           data: {
             sellerPlayerId: input.sellerPlayerId,
-            listingType: 'FIXED_PRICE',
+            listingType: input.listingType,
             assetKind: 'RESOURCE',
             assetRef: input.assetRef,
             quantity: input.quantity,
@@ -1527,6 +1530,11 @@ export class PrismaGameStore implements GameStore {
             createdAt: now,
             expiresAt: input.expiresAt,
             requestId: input.requestId,
+            startingPrice: input.startingPrice ?? (input.listingType === 'AUCTION' ? input.unitPrice : null),
+            currentBid: input.currentBid ?? null,
+            buyoutPrice: input.buyoutPrice ?? null,
+            bidCount: input.bidCount ?? 0,
+            extensionCount: 0,
           },
         });
         return mapListing(row);
@@ -1556,6 +1564,9 @@ export class PrismaGameStore implements GameStore {
       }
       if (listing.status === 'CANCELLED') return mapListing(listing);
       if (listing.status !== 'ACTIVE') throw new ActionRejectedError('Лот уже закрыт.');
+      if (listing.listingType === 'AUCTION' && listing.bidCount > 0) {
+        throw new ActionRejectedError('Аукцион со ставками отменить нельзя.');
+      }
       await creditResourceInTx(tx, listing.sellerPlayerId, listing.assetRef as ResourceType, listing.quantity);
       const updated = await tx.marketListing.updateMany({
         where: { id: listing.id, status: 'ACTIVE' },
@@ -1589,6 +1600,7 @@ export class PrismaGameStore implements GameStore {
         if (!listing) throw new NotFoundError('Лот не найден.');
         if (listing.status === 'EXPIRED') throw new ActionRejectedError('Лот истёк.');
         if (listing.status !== 'ACTIVE') throw new ActionRejectedError('Лот уже закрыт.');
+        if (listing.listingType !== 'FIXED_PRICE') throw new ActionRejectedError('Это аукцион.');
         if (listing.sellerPlayerId === input.buyerPlayerId) {
           throw new ActionRejectedError('Нельзя купить свой лот.');
         }
@@ -1658,6 +1670,7 @@ export class PrismaGameStore implements GameStore {
           update: { tradesCompleted: { increment: 1 }, coinsEarned: { increment: net } },
           create: { playerId: seller.id, tradesCompleted: 1, coinsEarned: net },
         });
+        await enqueueNoticeInTx(tx, seller.id, 'sold', 'Ваш товар продан.', listing.id);
         const sold = await tx.marketListing.findUnique({ where: { id: listing.id } });
         return { listing: mapListing(sold!), transaction: mapMarketTx(transaction) };
       });
@@ -1673,13 +1686,293 @@ export class PrismaGameStore implements GameStore {
     }
   }
 
+  async placeAuctionBid(input: {
+    listingId: string;
+    bidderPlayerId: string;
+    amount: number;
+    requestId?: string;
+    now?: Date;
+  }): Promise<{ listing: MarketListingRecord; bid: AuctionBidRecord }> {
+    const now = input.now ?? new Date();
+    try {
+      return await this.withTx(async (tx) => {
+        if (input.requestId) {
+          const existing = await tx.auctionBid.findFirst({ where: { requestId: input.requestId } });
+          if (existing) {
+            const listing = await tx.marketListing.findUnique({ where: { id: existing.listingId } });
+            return { listing: mapListing(listing!), bid: mapBid(existing) };
+          }
+        }
+        await lockListing(tx, input.listingId);
+        await expireDueInTx(tx, now, input.listingId);
+        const listing = await tx.marketListing.findUnique({ where: { id: input.listingId } });
+        if (!listing) throw new NotFoundError('Лот не найден.');
+        if (listing.listingType !== 'AUCTION') throw new ActionRejectedError('Это не аукцион.');
+        if (listing.status !== 'ACTIVE' || listing.expiresAt <= now) {
+          throw new ActionRejectedError('Аукцион уже закрыт.');
+        }
+        if (listing.sellerPlayerId === input.bidderPlayerId) {
+          throw new ActionRejectedError('Нельзя ставить на свой лот.');
+        }
+        const min = minBidAmount(listing.currentBid, listing.startingPrice ?? listing.unitPrice);
+        if (input.amount < min) throw new ActionRejectedError(`Минимальная ставка: ${min}.`);
+        if (listing.buyoutPrice && input.amount >= listing.buyoutPrice) {
+          throw new ActionRejectedError('Для выкупа нажми «Купить сразу».');
+        }
+        const bidder = await tx.player.findUnique({ where: { id: input.bidderPlayerId } });
+        if (!bidder) throw new NotFoundError('Игрок не найден.');
+        const previousId = listing.currentBidderPlayerId;
+        const previousBid = listing.currentBid ?? 0;
+        let debit = input.amount;
+        if (previousId === bidder.id) debit = input.amount - previousBid;
+        if (debit < 0) debit = 0;
+        await debitCoinsInTx(tx, bidder, debit, 'auction_bid_hold', listing.id, now);
+        if (previousId && previousId !== bidder.id && previousBid > 0) {
+          const prev = await tx.player.findUnique({ where: { id: previousId } });
+          if (prev) {
+            await creditCoinsInTx(tx, prev, previousBid, 'auction_bid_release', listing.id, now);
+            await enqueueNoticeInTx(tx, prev.id, 'outbid', 'Вашу ставку перебили.', listing.id);
+          }
+          await tx.auctionBid.updateMany({
+            where: { listingId: listing.id, bidderPlayerId: previousId, status: 'HOLD' },
+            data: { status: 'REFUNDED' },
+          });
+        }
+        if (previousId === bidder.id) {
+          await tx.auctionBid.updateMany({
+            where: { listingId: listing.id, bidderPlayerId: bidder.id, status: 'HOLD' },
+            data: { status: 'SUPERSEDED' },
+          });
+        }
+        const bid = await tx.auctionBid.create({
+          data: {
+            listingId: listing.id,
+            bidderPlayerId: bidder.id,
+            amount: input.amount,
+            status: 'HOLD',
+            createdAt: now,
+            requestId: input.requestId,
+          },
+        });
+        let expiresAt = listing.expiresAt;
+        let extensionCount = listing.extensionCount;
+        if (
+          listing.expiresAt.getTime() - now.getTime() <= AUCTION.antiSnipeWindowMs &&
+          listing.extensionCount < AUCTION.maxExtensions
+        ) {
+          expiresAt = new Date(listing.expiresAt.getTime() + AUCTION.antiSnipeExtendMs);
+          extensionCount += 1;
+        }
+        const updated = await tx.marketListing.update({
+          where: { id: listing.id },
+          data: {
+            currentBid: input.amount,
+            currentBidderPlayerId: bidder.id,
+            bidCount: { increment: 1 },
+            unitPrice: input.amount,
+            totalPrice: input.amount,
+            expiresAt,
+            extensionCount,
+          },
+        });
+        return { listing: mapListing(updated), bid: mapBid(bid) };
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002' && input.requestId) {
+        const existing = await this.prisma.auctionBid.findFirst({ where: { requestId: input.requestId } });
+        if (existing) {
+          const listing = await this.prisma.marketListing.findUnique({ where: { id: existing.listingId } });
+          if (listing) return { listing: mapListing(listing), bid: mapBid(existing) };
+        }
+      }
+      throw error;
+    }
+  }
+
+  async buyoutAuction(input: {
+    listingId: string;
+    buyerPlayerId: string;
+    requestId?: string;
+    now?: Date;
+  }): Promise<{ listing: MarketListingRecord; transaction: MarketTransactionRecord }> {
+    const now = input.now ?? new Date();
+    try {
+      return await this.withTx(async (tx) => {
+        if (input.requestId) {
+          const existingTx = await tx.marketTransaction.findFirst({ where: { requestId: input.requestId } });
+          if (existingTx) {
+            const listing = await tx.marketListing.findUnique({ where: { id: existingTx.listingId } });
+            return { listing: mapListing(listing!), transaction: mapMarketTx(existingTx) };
+          }
+        }
+        await lockListing(tx, input.listingId);
+        await expireDueInTx(tx, now, input.listingId);
+        const listing = await tx.marketListing.findUnique({ where: { id: input.listingId } });
+        if (!listing) throw new NotFoundError('Лот не найден.');
+        if (listing.listingType !== 'AUCTION') throw new ActionRejectedError('Это не аукцион.');
+        if (listing.status === 'SOLD' && listing.buyerPlayerId === input.buyerPlayerId) {
+          const existing = await tx.marketTransaction.findUnique({ where: { listingId: listing.id } });
+          if (existing) return { listing: mapListing(listing), transaction: mapMarketTx(existing) };
+        }
+        if (listing.status !== 'ACTIVE' || listing.expiresAt <= now) {
+          throw new ActionRejectedError('Аукцион уже закрыт.');
+        }
+        if (!listing.buyoutPrice) throw new ActionRejectedError('Выкупа нет.');
+        if (listing.sellerPlayerId === input.buyerPlayerId) {
+          throw new ActionRejectedError('Нельзя купить свой лот.');
+        }
+        const buyer = await tx.player.findUnique({ where: { id: input.buyerPlayerId } });
+        const seller = await tx.player.findUnique({ where: { id: listing.sellerPlayerId } });
+        if (!buyer || !seller) throw new NotFoundError('Игрок не найден.');
+        const buyout = listing.buyoutPrice;
+        const held = listing.currentBidderPlayerId === buyer.id ? listing.currentBid ?? 0 : 0;
+        const debit = buyout - held;
+        if (listing.currentBidderPlayerId && listing.currentBidderPlayerId !== buyer.id) {
+          const prev = await tx.player.findUnique({ where: { id: listing.currentBidderPlayerId } });
+          if (prev && listing.currentBid) {
+            await creditCoinsInTx(tx, prev, listing.currentBid, 'auction_bid_release', listing.id, now);
+            await enqueueNoticeInTx(
+              tx,
+              prev.id,
+              'outbid',
+              'Аукцион выкупили сразу. Ставка возвращена.',
+              listing.id,
+            );
+          }
+          await tx.auctionBid.updateMany({
+            where: { listingId: listing.id, status: 'HOLD' },
+            data: { status: 'REFUNDED' },
+          });
+        } else {
+          await tx.auctionBid.updateMany({
+            where: { listingId: listing.id, bidderPlayerId: buyer.id, status: 'HOLD' },
+            data: { status: 'SETTLED' },
+          });
+        }
+        await debitCoinsInTx(tx, buyer, debit, held ? 'auction_settle' : 'auction_bid_hold', listing.id, now);
+        return finishAuctionSaleInTx(tx, listing, buyer, seller, buyout, now, input.requestId, 'buyout');
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        const existingTx = input.requestId
+          ? await this.prisma.marketTransaction.findFirst({ where: { requestId: input.requestId } })
+          : await this.prisma.marketTransaction.findUnique({ where: { listingId: input.listingId } });
+        if (existingTx) {
+          const listing = await this.prisma.marketListing.findUnique({ where: { id: existingTx.listingId } });
+          if (listing) return { listing: mapListing(listing), transaction: mapMarketTx(existingTx) };
+        }
+      }
+      throw error;
+    }
+  }
+
+  async settleExpiredAuctions(now?: Date, limit = 50): Promise<number> {
+    const at = now ?? new Date();
+    return this.withTx(async (tx) => {
+      const due = await tx.marketListing.findMany({
+        where: { listingType: 'AUCTION', status: 'ACTIVE', expiresAt: { lte: at } },
+        take: Math.max(1, limit),
+      });
+      for (const listing of due) {
+        await lockListing(tx, listing.id);
+        const fresh = await tx.marketListing.findUnique({ where: { id: listing.id } });
+        if (fresh) await expireOneInTx(tx, fresh, at);
+      }
+      return due.length;
+    });
+  }
+
+  async listAuctionBids(listingId: string): Promise<AuctionBidRecord[]> {
+    const rows = await this.prisma.auctionBid.findMany({
+      where: { listingId },
+      orderBy: { createdAt: 'desc' },
+    });
+    return rows.map(mapBid);
+  }
+
+  async listPlayerBids(playerId: string, limit = 10): Promise<AuctionBidRecord[]> {
+    const rows = await this.prisma.auctionBid.findMany({
+      where: { bidderPlayerId: playerId },
+      orderBy: { createdAt: 'desc' },
+      take: clampLimit(limit, 10),
+    });
+    return rows.map(mapBid);
+  }
+
+  async enqueueNotice(input: {
+    playerId: string;
+    kind: string;
+    body: string;
+    listingId?: string | null;
+  }): Promise<void> {
+    await this.prisma.playerNotice.create({
+      data: {
+        playerId: input.playerId,
+        kind: input.kind,
+        body: input.body,
+        listingId: input.listingId ?? null,
+      },
+    });
+  }
+
+  async consumeNotices(playerId: string, limit = 5): Promise<PlayerNoticeRecord[]> {
+    const unread = await this.prisma.playerNotice.findMany({
+      where: { playerId, readAt: null },
+      orderBy: { createdAt: 'asc' },
+      take: clampLimit(limit, 5),
+    });
+    if (!unread.length) return [];
+    const now = new Date();
+    await this.prisma.playerNotice.updateMany({
+      where: { id: { in: unread.map((row) => row.id) } },
+      data: { readAt: now },
+    });
+    return unread.map((row) => ({
+      id: row.id,
+      playerId: row.playerId,
+      kind: row.kind,
+      body: row.body,
+      listingId: row.listingId,
+      createdAt: row.createdAt,
+      readAt: now,
+    }));
+  }
+
+  async averageSalePrices(
+    since: Date,
+    assetRef?: string,
+  ): Promise<Array<{ assetRef: string; avg: number; count: number }>> {
+    const rows = await this.prisma.marketTransaction.groupBy({
+      by: ['assetRef'],
+      where: { createdAt: { gte: since }, assetRef: assetRef ?? undefined },
+      _sum: { grossPrice: true, quantity: true },
+      _count: { _all: true },
+    });
+    return rows.map((row) => ({
+      assetRef: row.assetRef,
+      avg: row._sum.quantity ? Math.round((row._sum.grossPrice ?? 0) / row._sum.quantity) : 0,
+      count: row._count._all,
+    }));
+  }
+
+  async countPairTrades(sellerPlayerId: string, buyerPlayerId: string, since: Date): Promise<number> {
+    return this.prisma.marketTransaction.count({
+      where: { sellerPlayerId, buyerPlayerId, createdAt: { gte: since } },
+    });
+  }
+
+  async countSuspiciousSignals(now?: Date): Promise<number> {
+    const at = now ?? new Date();
+    return countSuspiciousInStore(this.prisma, at);
+  }
+
   async expireListing(listingId: string, now?: Date): Promise<MarketListingRecord> {
     const at = now ?? new Date();
     return this.withTx(async (tx) => {
       await lockListing(tx, listingId);
       const listing = await tx.marketListing.findUnique({ where: { id: listingId } });
       if (!listing) throw new NotFoundError('Лот не найден.');
-      if (listing.status === 'EXPIRED') return mapListing(listing);
+      if (listing.status === 'EXPIRED' || listing.status === 'SOLD') return mapListing(listing);
       if (listing.status !== 'ACTIVE') throw new ActionRejectedError('Лот уже закрыт.');
       if (listing.expiresAt > at) throw new ActionRejectedError('Срок лота ещё не вышел.');
       await expireOneInTx(tx, listing, at);
@@ -1717,12 +2010,16 @@ export class PrismaGameStore implements GameStore {
         ? [{ unitPrice: 'desc' as const }, { createdAt: 'asc' as const }]
         : query.sort === 'created_desc'
           ? [{ createdAt: 'desc' as const }]
-          : [{ unitPrice: 'asc' as const }, { createdAt: 'asc' as const }];
+          : query.sort === 'ending_soon'
+            ? [{ expiresAt: 'asc' as const }]
+            : [{ unitPrice: 'asc' as const }, { createdAt: 'asc' as const }];
     const rows = await this.prisma.marketListing.findMany({
       where: {
         status: 'ACTIVE',
         expiresAt: { gt: at },
-        assetRef: query.assetRef,
+        listingType: query.listingType && query.listingType !== 'ALL' ? query.listingType : undefined,
+        sellerPlayerId: query.sellerPlayerId,
+        assetRef: query.assetRefs?.length ? { in: [...query.assetRefs] } : query.assetRef,
         unitPrice: {
           gte: Number.isFinite(query.minPrice) ? query.minPrice : undefined,
           lte: Number.isFinite(query.maxPrice) ? query.maxPrice : undefined,
@@ -1762,32 +2059,90 @@ export class PrismaGameStore implements GameStore {
     await this.expireDueListings(at);
     const today = new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
     const d7 = new Date(at.getTime() - 7 * 86_400_000);
-    const [activeListings, listingsCreatedToday, listingsCreated7d, todayAgg, weekAgg, sellers, buyers] =
-      await Promise.all([
-        this.prisma.marketListing.count({ where: { status: 'ACTIVE', expiresAt: { gt: at } } }),
-        this.prisma.marketListing.count({ where: { createdAt: { gte: today } } }),
-        this.prisma.marketListing.count({ where: { createdAt: { gte: d7 } } }),
-        this.prisma.marketTransaction.aggregate({
-          where: { createdAt: { gte: today } },
-          _count: { _all: true },
-          _sum: { grossPrice: true, fee: true },
-        }),
-        this.prisma.marketTransaction.aggregate({
-          where: { createdAt: { gte: d7 } },
-          _count: { _all: true },
-          _sum: { grossPrice: true, fee: true },
-        }),
-        this.prisma.marketTransaction.findMany({
-          where: { createdAt: { gte: d7 } },
-          select: { sellerPlayerId: true },
-          distinct: ['sellerPlayerId'],
-        }),
-        this.prisma.marketTransaction.findMany({
-          where: { createdAt: { gte: d7 } },
-          select: { buyerPlayerId: true },
-          distinct: ['buyerPlayerId'],
-        }),
-      ]);
+    const [
+      activeListings,
+      listingsCreatedToday,
+      listingsCreated7d,
+      todayAgg,
+      weekAgg,
+      sellers,
+      buyers,
+      fixedActive,
+      auctionActive,
+      auctionsWithBids,
+      auctionsSold,
+      auctionsExpired,
+      bidsToday,
+      bids7d,
+      auctionTx,
+      buyoutListings,
+      feeAll,
+      allSellers,
+      allBuyers,
+      topRows,
+    ] = await Promise.all([
+      this.prisma.marketListing.count({ where: { status: 'ACTIVE', expiresAt: { gt: at } } }),
+      this.prisma.marketListing.count({ where: { createdAt: { gte: today } } }),
+      this.prisma.marketListing.count({ where: { createdAt: { gte: d7 } } }),
+      this.prisma.marketTransaction.aggregate({
+        where: { createdAt: { gte: today } },
+        _count: { _all: true },
+        _sum: { grossPrice: true, fee: true },
+      }),
+      this.prisma.marketTransaction.aggregate({
+        where: { createdAt: { gte: d7 } },
+        _count: { _all: true },
+        _sum: { grossPrice: true, fee: true },
+      }),
+      this.prisma.marketTransaction.findMany({
+        where: { createdAt: { gte: d7 } },
+        select: { sellerPlayerId: true },
+        distinct: ['sellerPlayerId'],
+      }),
+      this.prisma.marketTransaction.findMany({
+        where: { createdAt: { gte: d7 } },
+        select: { buyerPlayerId: true },
+        distinct: ['buyerPlayerId'],
+      }),
+      this.prisma.marketListing.count({
+        where: { listingType: 'FIXED_PRICE', status: 'ACTIVE', expiresAt: { gt: at } },
+      }),
+      this.prisma.marketListing.count({
+        where: { listingType: 'AUCTION', status: 'ACTIVE', expiresAt: { gt: at } },
+      }),
+      this.prisma.marketListing.count({
+        where: { listingType: 'AUCTION', status: 'ACTIVE', expiresAt: { gt: at }, bidCount: { gt: 0 } },
+      }),
+      this.prisma.marketListing.count({ where: { listingType: 'AUCTION', status: 'SOLD' } }),
+      this.prisma.marketListing.count({ where: { listingType: 'AUCTION', status: 'EXPIRED' } }),
+      this.prisma.auctionBid.count({ where: { createdAt: { gte: today } } }),
+      this.prisma.auctionBid.count({ where: { createdAt: { gte: d7 } } }),
+      this.prisma.marketTransaction.aggregate({
+        where: { listing: { listingType: 'AUCTION' } },
+        _sum: { grossPrice: true },
+      }),
+      this.prisma.marketTransaction.count({
+        where: { listing: { listingType: 'AUCTION', buyoutPrice: { not: null } }, grossPrice: { gt: 0 } },
+      }),
+      this.prisma.marketTransaction.aggregate({ _sum: { fee: true } }),
+      this.prisma.marketTransaction.findMany({ select: { sellerPlayerId: true }, distinct: ['sellerPlayerId'] }),
+      this.prisma.marketTransaction.findMany({ select: { buyerPlayerId: true }, distinct: ['buyerPlayerId'] }),
+      this.prisma.marketTransaction.groupBy({
+        by: ['assetRef'],
+        where: { createdAt: { gte: d7 } },
+        _sum: { grossPrice: true, quantity: true },
+        _count: { _all: true },
+      }),
+    ]);
+    const topSorted = [...topRows].sort(
+      (a, b) => (b._sum.grossPrice ?? 0) - (a._sum.grossPrice ?? 0) || b._count._all - a._count._all,
+    );
+    const buyouts = await this.prisma.marketTransaction.findMany({
+      where: { listing: { listingType: 'AUCTION', buyoutPrice: { not: null } } },
+      select: { grossPrice: true, listing: { select: { buyoutPrice: true } } },
+    });
+    const buyoutCount = buyouts.filter((row) => row.listing.buyoutPrice === row.grossPrice).length;
+    void buyoutListings;
     return {
       activeListings,
       listingsCreatedToday,
@@ -1800,6 +2155,28 @@ export class PrismaGameStore implements GameStore {
       feesBurned7d: weekAgg._sum.fee ?? 0,
       uniqueSellers7d: sellers.length,
       uniqueBuyers7d: buyers.length,
+      fixedActive,
+      auctionActive,
+      auctionsWithBids,
+      auctionsSold,
+      auctionsExpired,
+      bidsToday,
+      bids7d,
+      auctionGrossVolume: auctionTx._sum.grossPrice ?? 0,
+      buyoutCount,
+      feesBurned: feeAll._sum.fee ?? 0,
+      uniqueSellers: allSellers.length,
+      uniqueBuyers: allBuyers.length,
+      topTradedResources: topSorted.slice(0, 8).map((row) => ({
+        assetRef: row.assetRef,
+        volume: row._sum.grossPrice ?? 0,
+        count: row._count._all,
+      })),
+      averageSalePrice: topSorted.map((row) => ({
+        assetRef: row.assetRef,
+        avg: row._sum.quantity ? Math.round((row._sum.grossPrice ?? 0) / row._sum.quantity) : 0,
+      })),
+      suspiciousTradeSignals: await countSuspiciousInStore(this.prisma, at),
     };
   }
 
@@ -2044,6 +2421,12 @@ type ListingRow = {
   soldAt: Date | null;
   cancelledAt: Date | null;
   requestId: string | null;
+  startingPrice: number | null;
+  currentBid: number | null;
+  currentBidderPlayerId: string | null;
+  buyoutPrice: number | null;
+  bidCount: number;
+  extensionCount: number;
 };
 
 type MarketTxRow = {
@@ -2078,6 +2461,12 @@ function mapListing(row: ListingRow): MarketListingRecord {
     soldAt: row.soldAt,
     cancelledAt: row.cancelledAt,
     requestId: row.requestId,
+    startingPrice: row.startingPrice ?? null,
+    currentBid: row.currentBid ?? null,
+    currentBidderPlayerId: row.currentBidderPlayerId ?? null,
+    buyoutPrice: row.buyoutPrice ?? null,
+    bidCount: row.bidCount ?? 0,
+    extensionCount: row.extensionCount ?? 0,
   };
 }
 
@@ -2130,13 +2519,257 @@ async function creditResourceInTx(
 
 async function expireOneInTx(tx: Prisma.TransactionClient, listing: ListingRow, now: Date): Promise<void> {
   if (listing.status !== 'ACTIVE') return;
+  if (listing.listingType === 'AUCTION' && listing.currentBidderPlayerId && (listing.currentBid ?? 0) > 0) {
+    const buyer = await tx.player.findUnique({ where: { id: listing.currentBidderPlayerId } });
+    const seller = await tx.player.findUnique({ where: { id: listing.sellerPlayerId } });
+    if (buyer && seller) {
+      await finishAuctionSaleInTx(
+        tx,
+        listing,
+        buyer,
+        seller,
+        listing.currentBid ?? listing.unitPrice,
+        now,
+        undefined,
+        'settle',
+      );
+      return;
+    }
+  }
+  if (listing.listingType === 'AUCTION') {
+    const holds = await tx.auctionBid.findMany({ where: { listingId: listing.id, status: 'HOLD' } });
+    for (const bid of holds) {
+      const bidder = await tx.player.findUnique({ where: { id: bid.bidderPlayerId } });
+      if (bidder) await creditCoinsInTx(tx, bidder, bid.amount, 'auction_bid_release', listing.id, now);
+    }
+    await tx.auctionBid.updateMany({
+      where: { listingId: listing.id, status: 'HOLD' },
+      data: { status: 'REFUNDED' },
+    });
+    await enqueueNoticeInTx(
+      tx,
+      listing.sellerPlayerId,
+      'ended',
+      'Аукцион завершён без ставок. Товар возвращён.',
+      listing.id,
+    );
+  }
   const claimed = await tx.marketListing.updateMany({
     where: { id: listing.id, status: 'ACTIVE' },
     data: { status: 'EXPIRED' },
   });
   if (claimed.count !== 1) return;
   await creditResourceInTx(tx, listing.sellerPlayerId, listing.assetRef as ResourceType, listing.quantity);
-  void now;
+}
+
+async function finishAuctionSaleInTx(
+  tx: Prisma.TransactionClient,
+  listing: ListingRow,
+  buyer: { id: string; coins: number },
+  seller: { id: string; coins: number },
+  gross: number,
+  now: Date,
+  requestId: string | undefined,
+  kind: 'buyout' | 'settle',
+): Promise<{ listing: MarketListingRecord; transaction: MarketTransactionRecord }> {
+  const existingTx = await tx.marketTransaction.findUnique({ where: { listingId: listing.id } });
+  if (existingTx) {
+    const sold = await tx.marketListing.findUnique({ where: { id: listing.id } });
+    return { listing: mapListing(sold ?? listing), transaction: mapMarketTx(existingTx) };
+  }
+  const fee = marketFee(gross);
+  const net = gross - fee;
+  if (seller.coins + net > MARKET.intMax) throw new ActionRejectedError('Переполнение монет.');
+  await tx.player.update({ where: { id: seller.id }, data: { coins: { increment: net } } });
+  await creditResourceInTx(tx, buyer.id, listing.assetRef as ResourceType, listing.quantity);
+  const claimed = await tx.marketListing.updateMany({
+    where: { id: listing.id, status: 'ACTIVE' },
+    data: { status: 'SOLD', buyerPlayerId: buyer.id, soldAt: now, totalPrice: gross },
+  });
+  if (claimed.count !== 1) {
+    const sold = await tx.marketListing.findUnique({ where: { id: listing.id } });
+    const txRow = await tx.marketTransaction.findUnique({ where: { listingId: listing.id } });
+    if (sold && txRow) return { listing: mapListing(sold), transaction: mapMarketTx(txRow) };
+    throw new ActionRejectedError('Лот уже закрыт.');
+  }
+  const transaction = await tx.marketTransaction.create({
+    data: {
+      listingId: listing.id,
+      sellerPlayerId: seller.id,
+      buyerPlayerId: buyer.id,
+      assetKind: listing.assetKind,
+      assetRef: listing.assetRef,
+      quantity: listing.quantity,
+      grossPrice: gross,
+      fee,
+      sellerNet: net,
+      createdAt: now,
+      requestId,
+    },
+  });
+  await tx.currencyTransaction.create({
+    data: {
+      playerId: seller.id,
+      currency: 'COINS',
+      amount: net,
+      balanceBefore: seller.coins,
+      balanceAfter: seller.coins + net,
+      reason: 'auction_settle',
+      referenceId: listing.id,
+    },
+  });
+  await tx.auctionBid.updateMany({
+    where: { listingId: listing.id, bidderPlayerId: buyer.id, status: 'HOLD' },
+    data: { status: 'SETTLED' },
+  });
+  const leftover = await tx.auctionBid.findMany({ where: { listingId: listing.id, status: 'HOLD' } });
+  for (const bid of leftover) {
+    const other = await tx.player.findUnique({ where: { id: bid.bidderPlayerId } });
+    if (other) await creditCoinsInTx(tx, other, bid.amount, 'auction_bid_release', listing.id, now);
+  }
+  await tx.auctionBid.updateMany({
+    where: { listingId: listing.id, status: 'HOLD' },
+    data: { status: 'REFUNDED' },
+  });
+  await tx.playerStatistics.upsert({
+    where: { playerId: buyer.id },
+    update: { tradesCompleted: { increment: 1 }, coinsSpent: { increment: gross } },
+    create: { playerId: buyer.id, tradesCompleted: 1, coinsSpent: gross },
+  });
+  await tx.playerStatistics.upsert({
+    where: { playerId: seller.id },
+    update: { tradesCompleted: { increment: 1 }, coinsEarned: { increment: net } },
+    create: { playerId: seller.id, tradesCompleted: 1, coinsEarned: net },
+  });
+  await enqueueNoticeInTx(
+    tx,
+    seller.id,
+    'sold',
+    kind === 'buyout' ? 'Ваш аукцион выкупили сразу.' : 'Ваш аукцион завершён. Товар продан.',
+    listing.id,
+  );
+  await enqueueNoticeInTx(tx, buyer.id, 'won', 'Вы выиграли аукцион.', listing.id);
+  const sold = await tx.marketListing.findUnique({ where: { id: listing.id } });
+  return { listing: mapListing(sold!), transaction: mapMarketTx(transaction) };
+}
+
+function mapBid(row: {
+  id: string;
+  listingId: string;
+  bidderPlayerId: string;
+  amount: number;
+  status: AuctionBidRecord['status'];
+  createdAt: Date;
+  requestId: string | null;
+}): AuctionBidRecord {
+  return {
+    id: row.id,
+    listingId: row.listingId,
+    bidderPlayerId: row.bidderPlayerId,
+    amount: row.amount,
+    status: row.status,
+    createdAt: row.createdAt,
+    requestId: row.requestId,
+  };
+}
+
+async function enqueueNoticeInTx(
+  tx: Prisma.TransactionClient,
+  playerId: string,
+  kind: string,
+  body: string,
+  listingId: string | null,
+): Promise<void> {
+  await tx.playerNotice.create({ data: { playerId, kind, body, listingId } });
+}
+
+async function debitCoinsInTx(
+  tx: Prisma.TransactionClient,
+  player: { id: string; coins: number },
+  amount: number,
+  reason: string,
+  referenceId: string,
+  now: Date,
+): Promise<void> {
+  if (amount <= 0) return;
+  const paid = await tx.player.updateMany({
+    where: { id: player.id, coins: { gte: amount } },
+    data: { coins: { decrement: amount } },
+  });
+  if (paid.count !== 1) throw new InsufficientCoinsError('Не хватает монет.');
+  await tx.currencyTransaction.create({
+    data: {
+      playerId: player.id,
+      currency: 'COINS',
+      amount: -amount,
+      balanceBefore: player.coins,
+      balanceAfter: player.coins - amount,
+      reason,
+      referenceId,
+      createdAt: now,
+    },
+  });
+  player.coins -= amount;
+}
+
+async function creditCoinsInTx(
+  tx: Prisma.TransactionClient,
+  player: { id: string; coins: number },
+  amount: number,
+  reason: string,
+  referenceId: string,
+  now: Date,
+): Promise<void> {
+  if (amount <= 0) return;
+  if (player.coins + amount > MARKET.intMax) throw new ActionRejectedError('Переполнение монет.');
+  await tx.player.update({ where: { id: player.id }, data: { coins: { increment: amount } } });
+  await tx.currencyTransaction.create({
+    data: {
+      playerId: player.id,
+      currency: 'COINS',
+      amount,
+      balanceBefore: player.coins,
+      balanceAfter: player.coins + amount,
+      reason,
+      referenceId,
+      createdAt: now,
+    },
+  });
+  player.coins += amount;
+}
+
+async function countSuspiciousInStore(prisma: Client, at: Date): Promise<number> {
+  const week = new Date(at.getTime() - 7 * 86_400_000);
+  const txs = await prisma.marketTransaction.findMany({
+    where: { createdAt: { gte: week } },
+    select: { sellerPlayerId: true, buyerPlayerId: true, assetRef: true, grossPrice: true, quantity: true },
+  });
+  const groups = new Map<string, { sum: number; qty: number }>();
+  for (const tx of txs) {
+    const row = groups.get(tx.assetRef) ?? { sum: 0, qty: 0 };
+    row.sum += tx.grossPrice;
+    row.qty += tx.quantity;
+    groups.set(tx.assetRef, row);
+  }
+  const avgMap = new Map([...groups.entries()].map(([ref, row]) => [ref, row.qty ? row.sum / row.qty : 0]));
+  let signals = 0;
+  const pairs = new Map<string, number>();
+  for (const tx of txs) {
+    const key = `${tx.sellerPlayerId}:${tx.buyerPlayerId}`;
+    pairs.set(key, (pairs.get(key) ?? 0) + 1);
+    const avg = avgMap.get(tx.assetRef) ?? 0;
+    const unit = tx.quantity ? tx.grossPrice / tx.quantity : tx.grossPrice;
+    if (avg > 0 && unit > avg * 3) signals += 1;
+  }
+  for (const count of pairs.values()) if (count >= 5) signals += 1;
+  const tenMin = new Date(at.getTime() - 10 * 60_000);
+  const recent = await prisma.marketListing.groupBy({
+    by: ['sellerPlayerId'],
+    where: { createdAt: { gte: tenMin } },
+    _count: { _all: true },
+  });
+  for (const row of recent) if (row._count._all >= 5) signals += 1;
+  return signals;
 }
 
 async function expireDueInTx(tx: Prisma.TransactionClient, now: Date, listingId?: string): Promise<number> {

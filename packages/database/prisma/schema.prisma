@@ -148,6 +148,9 @@ model Player {
   listingsBought   MarketListing[]       @relation("MarketListingBuyer")
   marketSales      MarketTransaction[]   @relation("MarketTxSeller")
   marketPurchases  MarketTransaction[]   @relation("MarketTxBuyer")
+  auctionBids      AuctionBid[]
+  highBids         MarketListing[]       @relation("AuctionHighBidder")
+  notices          PlayerNotice[]
 
   @@index([createdAt])
   @@index([lastActiveAt])
@@ -683,16 +686,26 @@ model MarketListing {
   soldAt         DateTime?           @map("sold_at")
   cancelledAt    DateTime?           @map("cancelled_at")
   requestId      String?             @map("request_id")
+  startingPrice  Int?                @map("starting_price")
+  currentBid     Int?                @map("current_bid")
+  currentBidderPlayerId String?      @map("current_bidder_player_id")
+  buyoutPrice    Int?                @map("buyout_price")
+  bidCount       Int                 @default(0) @map("bid_count")
+  extensionCount Int                 @default(0) @map("extension_count")
 
   seller       Player              @relation("MarketListingSeller", fields: [sellerPlayerId], references: [id], onDelete: Cascade)
   buyer        Player?             @relation("MarketListingBuyer", fields: [buyerPlayerId], references: [id], onDelete: SetNull)
+  highBidder   Player?             @relation("AuctionHighBidder", fields: [currentBidderPlayerId], references: [id], onDelete: SetNull)
   transactions MarketTransaction[]
+  bids         AuctionBid[]
 
   @@index([status, assetRef, unitPrice])
   @@index([sellerPlayerId, status])
   @@index([expiresAt])
   @@index([status, expiresAt])
   @@index([createdAt])
+  @@index([listingType, status, expiresAt])
+  @@index([currentBidderPlayerId, status])
   @@map("market_listings")
 }
 
@@ -719,4 +732,44 @@ model MarketTransaction {
   @@index([sellerPlayerId, createdAt])
   @@index([buyerPlayerId, createdAt])
   @@map("market_transactions")
+}
+
+enum AuctionBidStatus {
+  HOLD
+  REFUNDED
+  SETTLED
+  SUPERSEDED
+}
+
+model AuctionBid {
+  id             String           @id @default(cuid())
+  listingId      String           @map("listing_id")
+  bidderPlayerId String           @map("bidder_player_id")
+  amount         Int
+  status         AuctionBidStatus @default(HOLD)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  requestId      String?          @map("request_id")
+
+  listing MarketListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  bidder  Player        @relation(fields: [bidderPlayerId], references: [id], onDelete: Cascade)
+
+  @@index([listingId, createdAt])
+  @@index([bidderPlayerId, createdAt])
+  @@map("auction_bids")
+}
+
+model PlayerNotice {
+  id        String    @id @default(cuid())
+  playerId  String    @map("player_id")
+  kind      String
+  body      String
+  listingId String?   @map("listing_id")
+  createdAt DateTime  @default(now()) @map("created_at")
+  readAt    DateTime? @map("read_at")
+
+  player Player @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@index([playerId, readAt])
+  @@index([playerId, createdAt])
+  @@map("player_notices")
 }

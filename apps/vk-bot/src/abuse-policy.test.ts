@@ -41,6 +41,17 @@ describe('command classification', () => {
     expect(classifyCommand({ type: 'START_PVP' })).toBe('PVP');
   });
 
+  it('classifies market reads, writes and bids separately', () => {
+    expect(classifyCommand({ type: 'MARKET_ACT', payload: { act: 'hub' } })).toBe('MARKET_READ');
+    expect(classifyCommand({ type: 'OPEN_MENU', payload: { menu: 'market' } })).toBe('MARKET_READ');
+    expect(classifyCommand({ type: 'MARKET_ACT', payload: { act: 'buy' } })).toBe('MARKET_WRITE');
+    expect(classifyCommand({ type: 'MARKET_ACT', payload: { act: 'confirm_sell' } })).toBe('MARKET_WRITE');
+    expect(classifyCommand({ type: 'MARKET_ACT', payload: { act: 'bid' } })).toBe('AUCTION_BID');
+    expect(commandNeedsLock({ type: 'MARKET_ACT', payload: { act: 'hub' } })).toBe(false);
+    expect(commandNeedsLock({ type: 'MARKET_ACT', payload: { act: 'buy' } })).toBe(true);
+    expect(commandNeedsLock({ type: 'MARKET_ACT', payload: { act: 'bid' } })).toBe(true);
+  });
+
   it('classifies START_GAME and unknown types as SYSTEM so they do not spend gameplay energy quota', () => {
     expect(classifyCommand({ type: 'START_GAME' })).toBe('SYSTEM');
     expect(commandNeedsLock({ type: 'OPEN_PROFILE' })).toBe(false);

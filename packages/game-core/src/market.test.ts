@@ -17,7 +17,6 @@ import { GameRuntime } from './runtime';
 import {
   buyFixedListing,
   cancelListing,
-  createAuctionListing,
   createFixedListing,
   expireListing,
   getOwnListings,
@@ -476,15 +475,8 @@ describe('player market foundation — expiry + search', () => {
   });
 });
 
-describe('player market foundation — auction + UI stay closed', () => {
-  it('does not implement auction behaviour', async () => {
-    await expect(createAuctionListing()).rejects.toBeInstanceOf(ActionRejectedError);
-    expect(ACTION_MENUS.includes('trade')).toBe(true);
-    expect((ACTION_MENUS as readonly string[]).includes('market')).toBe(false);
-    expect((GAME_COMMANDS as readonly string[]).includes('MARKET_ACT')).toBe(false);
-  });
-
-  it('does not expose a player-facing market button', async () => {
+describe('player market foundation — auction + UI stay closed until 1.0 wiring', () => {
+  it('does not expose a player-facing market button before Week 1', async () => {
     const store = new MemoryGameStore();
     const runtime = new GameRuntime(store);
     const started = await runtime.handle(event('START_GAME', 'vk-ui'));
@@ -495,8 +487,10 @@ describe('player market foundation — auction + UI stay closed', () => {
     expect(JSON.stringify(camp.buttons)).not.toMatch(/Рынок/);
   });
 
-  it('keeps prototype 0.0.6', () => {
-    expect(PROTOTYPE_VERSION).toBe('0.0.6');
-    expect(BALANCE_VERSION).toBe('0.0.6');
+  it('bumps prototype to 0.0.7', () => {
+    expect(PROTOTYPE_VERSION).toBe('0.0.7');
+    expect(BALANCE_VERSION).toBe('0.0.7');
+    expect((GAME_COMMANDS as readonly string[]).includes('MARKET_ACT')).toBe(true);
+    expect((ACTION_MENUS as readonly string[]).includes('market')).toBe(true);
   });
 });

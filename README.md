@@ -6,7 +6,7 @@
 
 Игрок взаимодействует через сообщения сообщества: текст, кнопки, callback actions и, при необходимости, карточки.
 
-Текущая версия: **Prototype 0.0.6** — Clans 1.0 поверх PvP и Недели 1–2.
+Текущая версия: **Prototype 0.0.7** — Player Market + Auction 1.0 поверх Clans, PvP и Недели 1–2.
 
 ## Архитектура
 
@@ -218,6 +218,15 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 ```
 
 Ядро **не** собирает сырой VK keyboard JSON. Это делает VK Adapter.
+
+## Prototype 0.0.7 содержит
+
+- Player Market 1.0: unlock `week_1_complete`, DM-хаб, фикс-цена, витрина продавца
+- Auction 1.0: ставки с hold монет, buyout, anti-snipe 2 мин ×5, lazy settle
+- fee 5%, allowlist ресурсов, без buy orders и без торговли экипировкой
+- additive migration `20260908180000_market_auction_1`
+- admin analytics `/v1/admin/analytics/market` расширен
+- docs: `docs/player-market-1.md`, `docs/auction-1.md`
 
 ## Prototype 0.0.6 содержит
 
