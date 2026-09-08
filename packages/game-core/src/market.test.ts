@@ -52,6 +52,9 @@ describe('player market foundation — tradeability', () => {
     expect(isTradeableAsset('RESOURCE', 'LOG')).toBe(true);
     expect(isTradeableAsset('RESOURCE', 'MIST_RESIN')).toBe(true);
     expect(isTradeableAsset('RESOURCE', 'SEAL_SHARD_6')).toBe(false);
+    expect(isTradeableAsset('RESOURCE', 'SEAL_SHARD_5')).toBe(false);
+    expect(isTradeableAsset('RESOURCE', 'ROOT_FIBER')).toBe(true);
+    expect(isTradeableAsset('RESOURCE', 'ROOT_CORE')).toBe(false);
     expect(isTradeableAsset('RESOURCE', 'BOG_CORE')).toBe(false);
     expect(isTradeableAsset('RESOURCE', 'SHINY_STONE')).toBe(false);
     expect(isTradeableAsset('ITEM', 'rusty_token')).toBe(false);
@@ -487,9 +490,9 @@ describe('player market foundation — auction + UI stay closed until 1.0 wiring
     expect(JSON.stringify(camp.buttons)).not.toMatch(/Рынок/);
   });
 
-  it('bumps prototype to 0.0.8', () => {
-    expect(PROTOTYPE_VERSION).toBe('0.0.8');
-    expect(BALANCE_VERSION).toBe('0.0.8');
+  it('bumps prototype to 0.0.9', () => {
+    expect(PROTOTYPE_VERSION).toBe('0.0.9');
+    expect(BALANCE_VERSION).toBe('0.0.9');
     expect((GAME_COMMANDS as readonly string[]).includes('MARKET_ACT')).toBe(true);
     expect((ACTION_MENUS as readonly string[]).includes('market')).toBe(true);
   });

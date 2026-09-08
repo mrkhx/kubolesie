@@ -36,6 +36,9 @@ enum ResourceType {
   MIST_RESIN
   BOG_CORE
   SEAL_SHARD_6
+  ROOT_FIBER
+  ROOT_CORE
+  SEAL_SHARD_5
 }
 
 enum Rarity {

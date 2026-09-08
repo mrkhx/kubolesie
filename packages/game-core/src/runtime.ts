@@ -114,6 +114,17 @@ import {
   WEEK2_COMMANDS,
   week2Modifiers,
 } from './week2';
+import {
+  applyWeek3Victory,
+  dispatchWeek3,
+  isWeek3Enemy,
+  isWeek3Location,
+  isWeek3Menu,
+  loadWeek3JobLevels,
+  openWeek3Menu,
+  WEEK3_COMMANDS,
+  week3Modifiers,
+} from './week3';
 import { dispatchMeta, grantMetaAchievement, isMetaMenu, META_COMMANDS, noteActivity, openMetaMenu } from './meta';
 import { AWAITING_CLAN_FLAG, handleClanTextInput } from './clans';
 import { dispatchPvp, isPvpMenu, openPvpMenu, PVP_COMMANDS } from './pvp';
@@ -374,6 +385,9 @@ export class GameRuntime {
         if ((WEEK2_COMMANDS as readonly string[]).includes(command.type)) {
           return dispatchWeek2(this.weekHost(), ctx, command, eventId);
         }
+        if ((WEEK3_COMMANDS as readonly string[]).includes(command.type)) {
+          return dispatchWeek3(this.weekHost(), ctx, command, eventId);
+        }
         throw new UnknownCommandError((command as GameCommand).type);
     }
   }
@@ -413,6 +427,13 @@ export class GameRuntime {
       'BEGIN_DAY_12',
       'BEGIN_DAY_13',
       'BEGIN_DAY_14',
+      'BEGIN_DAY_15',
+      'BEGIN_DAY_16',
+      'BEGIN_DAY_17',
+      'BEGIN_DAY_18',
+      'BEGIN_DAY_19',
+      'BEGIN_DAY_20',
+      'BEGIN_DAY_21',
       'EQUIP_ITEM',
       'USE_ITEM',
       'OPEN_PROFILE',
@@ -423,6 +444,7 @@ export class GameRuntime {
       'MARKET_ACT',
       'JOB_ACT',
       'PROD_ACT',
+      'WEEK3_ACT',
       'PROMPT_HERO_NAME',
       'CANCEL_HERO_NAME',
     ];
@@ -518,9 +540,23 @@ export class GameRuntime {
     if (loc === 'mist_lowland') return openWeek2Menu(this.weekHost(), ctx, 'lowland');
     if (loc === 'drowned_quarry') return openWeek2Menu(this.weekHost(), ctx, 'quarry');
     if (loc === 'second_seal') return openWeek2Menu(this.weekHost(), ctx, 'seal2');
+    if (loc === 'rootwood_edge' || loc === 'tangled_path' || loc === 'old_marker') {
+      return openWeek3Menu(this.weekHost(), ctx, 'rootwood');
+    }
+    if (loc === 'hollow_grove' || loc === 'root_pit') return openWeek3Menu(this.weekHost(), ctx, 'grove');
+    if (loc === 'buried_mechanism' || loc === 'root_chamber') {
+      return openWeek3Menu(this.weekHost(), ctx, 'mechanism');
+    }
+    if (loc === 'root_seal_forecourt' || loc === 'deep_root_vault') {
+      return openWeek3Menu(this.weekHost(), ctx, 'seal3');
+    }
     if (loc === 'rival_camp_edge') return this.renderNode(ctx.player, 'yara_edge');
     if (loc === 'rem_camp' && ctx.flags.met_rem) {
-      if (ctx.flags.week_2_complete) return this.renderNode(ctx.player, 'week2_complete');
+      if (ctx.flags.week_3_complete) return this.renderNode(ctx.player, 'week3_complete');
+      if (ctx.flags.week_2_complete && !ctx.flags.day_15_complete) {
+        return this.renderNode(ctx.player, 'week2_complete');
+      }
+      if (ctx.flags.week_2_complete) return openWeek3Menu(this.weekHost(), ctx, 'rootwood');
       if (ctx.flags.week_1_complete && !ctx.flags.day_8_complete) {
         return this.renderNode(ctx.player, 'week1_complete');
       }
@@ -541,7 +577,11 @@ export class GameRuntime {
     if (loc === 'node_7' && !ctx.flags.node7_gate_closed && ctx.flags.activated_node7_token) {
       return this.renderNode(ctx.player, 'rem_gate');
     }
-    if (ctx.flags.week_2_complete) return this.renderNode(ctx.player, 'week2_complete');
+    if (ctx.flags.week_3_complete) return this.renderNode(ctx.player, 'week3_complete');
+    if (ctx.flags.week_2_complete && !ctx.flags.day_15_complete) {
+      return this.renderNode(ctx.player, 'week2_complete');
+    }
+    if (ctx.flags.week_2_complete) return openWeek3Menu(this.weekHost(), ctx, 'rootwood');
     if (ctx.flags.week_1_complete && !ctx.flags.day_8_complete) {
       return this.renderNode(ctx.player, 'week1_complete');
     }
@@ -621,6 +661,9 @@ export class GameRuntime {
     if (buttons.length < 5 && ctx.flags.day_2_complete && !ctx.flags.week_1_complete) {
       buttons.push({ label: '🌲 Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
     }
+    if (buttons.length < 5 && ctx.flags.week_2_complete && !ctx.flags.week_3_complete) {
+      buttons.push({ label: '🌿 Чаща', action: 'WEEK3_ACT', payload: { act: 'open' } });
+    }
     if (buttons.length < 5 && ctx.flags.week_1_complete && !ctx.flags.week_2_complete) {
       if (ctx.flags.farming_unlocked) {
         buttons.push({ label: '🌾 Грядка', action: 'FARM_ACT', payload: { act: 'open' } });
@@ -645,6 +688,7 @@ export class GameRuntime {
     if (isMarketMenu(menu)) return openMarketMenu(this.store, ctx.player, menu, this.now());
     if (isWorkMenu(menu)) return openWorkMenu(this.store, ctx.player, menu, this.now());
     if (isMetaMenu(menu)) return openMetaMenu(this.store, ctx.player, menu, this.now());
+    if (isWeek3Menu(menu)) return openWeek3Menu(this.weekHost(), ctx, menu);
     if (isWeek2Menu(menu)) return openWeek2Menu(this.weekHost(), ctx, menu);
     if (isWeekMenu(menu)) return openWeekMenu(this.weekHost(), ctx, menu);
     const built = buildActionMenu(menu, this.snapshot(ctx));
@@ -1037,7 +1081,11 @@ export class GameRuntime {
     if (ctx.flags.day_1_complete) {
       ctx.player.currentLocation = 'rem_camp';
       await this.store.savePlayer(ctx.player);
-      if (ctx.flags.week_2_complete) return this.renderNode(ctx.player, 'week2_complete');
+      if (ctx.flags.week_3_complete) return this.renderNode(ctx.player, 'week3_complete');
+      if (ctx.flags.week_2_complete && !ctx.flags.day_15_complete) {
+        return this.renderNode(ctx.player, 'week2_complete');
+      }
+      if (ctx.flags.week_2_complete) return openWeek3Menu(this.weekHost(), ctx, 'rootwood');
       if (ctx.flags.week_1_complete && !ctx.flags.day_8_complete) {
         return this.renderNode(ctx.player, 'week1_complete');
       }
@@ -1348,8 +1396,21 @@ export class GameRuntime {
         ctx.flags.used_bucket_on_warden = '1';
       }
     }
+    if (isWeek3Enemy(enemyId)) {
+      if (enemyId === 'vyazen') ctx.player.currentLocation = 'deep_root_vault';
+      else if (enemyId === 'rootlasher' || enemyId === 'sap_stinger') {
+        ctx.player.currentLocation = 'root_pit';
+      } else if (!isWeek3Location(ctx.player.currentLocation)) {
+        ctx.player.currentLocation = 'hollow_grove';
+      }
+      await this.store.savePlayer(ctx.player);
+    }
     const stats = await this.effectiveStats(ctx);
-    const weekMods = isWeek2Enemy(enemyId) ? week2Modifiers(ctx, enemyId, payload) : null;
+    const week2Mods = isWeek2Enemy(enemyId) ? week2Modifiers(ctx, enemyId, payload) : null;
+    const week3Mods = isWeek3Enemy(enemyId)
+      ? week3Modifiers(ctx, enemyId, payload, await loadWeek3JobLevels(this.weekHost(), ctx))
+      : null;
+    const weekMods = week2Mods ?? week3Mods;
     const mods = enemyId === 'wenzel_warden' ? wenzelModifiers(ctx, String(payload.move ?? 'hinge')) : weekMods;
     const playerSnap: CombatantSnapshot = {
       id: ctx.player.id,
@@ -1456,6 +1517,17 @@ export class GameRuntime {
           buttons.unshift({ label: 'Карьер', action: 'WEEK2_ACT', payload: { act: 'quarry' } });
         }
       }
+      if (isWeek3Enemy(enemyId)) {
+        const winNotes = await applyWeek3Victory(this.weekHost(), ctx, enemyId);
+        if (winNotes.length) extra += `\n${winNotes.join(' ')}`;
+        if (enemyId === 'rootlasher') {
+          buttons.unshift({ label: 'Следы', action: 'WEEK3_ACT', payload: { act: 'social' } });
+        } else if (enemyId === 'vyazen') {
+          buttons.unshift({ label: 'К карте', action: 'COMPLETE_DAY_21' });
+        } else {
+          buttons.unshift({ label: 'Роща', action: 'WEEK3_ACT', payload: { act: 'grove' } });
+        }
+      }
       if (enemyId === 'stumpfang' || enemyId === 'moss_boar' || enemyId === 'resin_brute') {
         buttons.unshift({ label: 'Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
       }
@@ -1477,6 +1549,14 @@ export class GameRuntime {
       if (enemyId === 'mist_warden') {
         await this.store.setFlag(ctx.player.id, 'mist_warden_failed', '1');
         buttons.unshift({ label: 'Подготовиться', action: 'WEEK2_ACT', payload: { act: 'prep' } });
+      }
+      if (enemyId === 'rootlasher') {
+        await this.store.setFlag(ctx.player.id, 'rootlasher_failed', '1');
+        buttons.unshift({ label: 'Ещё раз', action: 'WEEK3_ACT', payload: { act: 'rootlasher' } });
+      }
+      if (enemyId === 'vyazen') {
+        await this.store.setFlag(ctx.player.id, 'vyazen_failed', '1');
+        buttons.unshift({ label: 'Подготовиться', action: 'WEEK3_ACT', payload: { act: 'prep' } });
       }
     }
     return this.respond(ctx.player, `${log}${extra}`, buttons);
@@ -1541,6 +1621,11 @@ export class GameRuntime {
         await this.store.setFlag(ctx.player.id, 'first_string', '1');
         ctx.flags.first_string = '1';
       }
+    }
+    if (isWeek3Enemy(enemyId)) {
+      const first = await this.store.tryClaimReward(ctx.player.id, 'combat_loot', `${enemyId}:first`);
+      const weekNotes = await applyWeekLoot(this.weekHost(), ctx, enemyId, eventId, first);
+      notes.push(...weekNotes);
     }
     return notes.length ? `\n${notes.filter(Boolean).join(' ')}` : '';
   }

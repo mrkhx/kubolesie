@@ -188,6 +188,7 @@ export const WEEK2_NODES: Record<string, DialogueNode> = {
       'Осталось: 5.',
     ].join('\n'),
     choices: [
+      { id: 'day15', label: 'Начать День 15', command: 'BEGIN_DAY_15' },
       { id: 'camp', label: 'К стану', command: 'OPEN_CAMP' },
       { id: 'look', label: 'Осмотреться', command: 'EXPLORE' },
     ],

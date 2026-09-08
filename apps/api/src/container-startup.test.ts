@@ -101,7 +101,7 @@ describe('container production startup', () => {
       version: string;
       scripts: Record<string, string>;
     };
-    expect(pkg.version).toBe('0.0.8');
+    expect(pkg.version).toBe('0.0.9');
     expect(pkg.scripts['start:api']).toBe(
       'npm run prisma:generate && npm run start --workspace=@kubolesie/api',
     );

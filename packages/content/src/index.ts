@@ -10,6 +10,7 @@ import { DAY5_NODES } from './dialogues-day5';
 import { DAY6_NODES } from './dialogues-day6';
 import { DAY7_NODES } from './dialogues-day7';
 import { WEEK2_NODES } from './dialogues-week2';
+import { WEEK3_NODES } from './dialogues-week3';
 import type { DialogueNode } from './dialogue-types';
 
 export * from './flags';
@@ -30,6 +31,7 @@ export * from './jobs';
 export * from './production';
 
 export { WEEK2_NODES } from './dialogues-week2';
+export { WEEK3_NODES } from './dialogues-week3';
 
 export const DIALOGUE_NODES: Record<string, DialogueNode> = {
   ...FOREST_NODES,
@@ -43,6 +45,7 @@ export const DIALOGUE_NODES: Record<string, DialogueNode> = {
   ...DAY6_NODES,
   ...DAY7_NODES,
   ...WEEK2_NODES,
+  ...WEEK3_NODES,
 };
 
 export function getDialogueNode(id: string): DialogueNode | undefined {
@@ -78,6 +81,9 @@ export function resourceLabel(resource: ResourceType): string {
     MIST_RESIN: '🌫 Туманная смола',
     BOG_CORE: '💚 Сердцевина топи',
     SEAL_SHARD_6: '🔷 Осколок второй печати',
+    ROOT_FIBER: '🌿 Корневое волокно',
+    ROOT_CORE: '🤎 Сердцевина корня',
+    SEAL_SHARD_5: '🔷 Осколок третьей печати',
   };
   return labels[resource];
 }

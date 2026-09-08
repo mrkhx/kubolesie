@@ -49,11 +49,14 @@ export const TRADEABLE_RESOURCES = [
   'SEED',
   'WHEAT',
   'STRING',
+  'ROOT_FIBER',
 ] as const satisfies readonly ResourceType[];
 
 export const NON_TRADEABLE_RESOURCES = [
   'SEAL_SHARD_6',
+  'SEAL_SHARD_5',
   'BOG_CORE',
+  'ROOT_CORE',
   'SHINY_STONE',
 ] as const satisfies readonly ResourceType[];
 

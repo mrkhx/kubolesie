@@ -100,6 +100,9 @@ const TEXT_MENU_ALIASES: Record<string, string> = {
   низина: 'lowland',
   карьер: 'quarry',
   кромка: 'mist',
+  чаща: 'rootwood',
+  корни: 'rootwood',
+  роща: 'grove',
 };
 
 export function normalizeCommandText(text: string): string {

@@ -206,6 +206,8 @@ export function afterCraftFlags(recipeId: string, flags: Record<string, string>)
   if (recipeId === 'bow') extra.push('has_bow', 'first_bow');
   if (recipeId === 'shield') extra.push('has_shield');
   if (recipeId === 'bucket') extra.push('has_bucket');
+  if (recipeId === 'root_rope') extra.push('has_root_rope');
+  if (recipeId === 'root_brace') extra.push('root_barricade');
   return extra;
 }
 

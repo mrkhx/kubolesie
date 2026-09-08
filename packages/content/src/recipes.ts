@@ -176,6 +176,19 @@ export const CRAFT_RECIPES: Record<string, CraftRecipe> = {
     cost: { WHEAT: 3 },
     output: { kind: 'item', templateId: 'bread' },
   },
+  root_rope: {
+    id: 'root_rope',
+    name: 'Корневая верёвка',
+    cost: { ROOT_FIBER: 4, FIBER: 2 },
+    output: { kind: 'item', templateId: 'root_rope' },
+  },
+  root_brace: {
+    id: 'root_brace',
+    name: 'Укреплённый настил',
+    cost: { LOG: 6, COBBLESTONE: 4, IRON_INGOT: 1 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'root_brace' },
+  },
 };
 
 export const CRAFT_PIPELINE = [

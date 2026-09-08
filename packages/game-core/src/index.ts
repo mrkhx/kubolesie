@@ -12,3 +12,4 @@ export * from './market-ui';
 export * from './jobs';
 export * from './production';
 export * from './work-ui';
+export * from './week3';

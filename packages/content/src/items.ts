@@ -345,6 +345,35 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
     slot: 'RING',
     dodgeBonus: 3,
   },
+  root_rope: {
+    id: 'root_rope',
+    name: 'Корневая верёвка',
+    description: 'Живое волокно. Короткий путь через завал. Не инструмент нового яруса.',
+    rarity: 'UNCOMMON',
+  },
+  root_brace: {
+    id: 'root_brace',
+    name: 'Укреплённый настил',
+    description: 'Брёвна, камень, слиток. Держит удар Корнеплёта и Вязеня.',
+    rarity: 'UNCOMMON',
+    defenseBonus: 2,
+  },
+  root_charm: {
+    id: 'root_charm',
+    name: 'Корневой оберег',
+    description: 'Уникальный. Чаща чуть реже хватает за щиколотку.',
+    rarity: 'RARE',
+    slot: 'AMULET',
+    defenseBonus: 2,
+    dodgeBonus: 4,
+  },
+  seal_shard_5: {
+    id: 'seal_shard_5',
+    name: 'Осколок третьей печати',
+    description: 'Сюжетный ключ. Третий из семи.',
+    rarity: 'EPIC',
+    questItem: true,
+  },
 };
 
 export const STONE_SALVAGE_TOOLS = ['stone_pickaxe', 'stone_axe', 'stone_sword'] as const;

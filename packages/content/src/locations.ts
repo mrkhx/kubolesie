@@ -80,6 +80,51 @@ export const LOCATIONS: Record<string, LocationTemplate> = {
     name: 'Вторая печать',
     text: 'Глубокая впадина. Туман не выходит — втягивается внутрь.',
   },
+  rootwood_edge: {
+    id: 'rootwood_edge',
+    name: 'Край Корневой чащи',
+    text: 'Густой старый лес. Корни перекрывают тропы. Почва местами дышит.',
+  },
+  tangled_path: {
+    id: 'tangled_path',
+    name: 'Спутанная тропа',
+    text: 'Завал из живых корней и камня. Без подготовки не пройти.',
+  },
+  old_marker: {
+    id: 'old_marker',
+    name: 'Старый маркер',
+    text: 'Деревянный столб. Тот же знак печатей. Часть символа перечёркнута корнями.',
+  },
+  hollow_grove: {
+    id: 'hollow_grove',
+    name: 'Полая роща',
+    text: 'Деревья внутри пустые. Оттуда тянет смолой и шкурой.',
+  },
+  root_pit: {
+    id: 'root_pit',
+    name: 'Корневая яма',
+    text: 'Провал. Ползуны спускаются по жилам. Дно дышит.',
+  },
+  buried_mechanism: {
+    id: 'buried_mechanism',
+    name: 'Заброшенный узел',
+    text: 'Камень и дерево срослись. Не современная машина. Древняя клетка мира.',
+  },
+  root_chamber: {
+    id: 'root_chamber',
+    name: 'Корневая камера',
+    text: 'Камера под узлом. На своде — нити между знаками печатей.',
+  },
+  root_seal_forecourt: {
+    id: 'root_seal_forecourt',
+    name: 'Преддверие третьей печати',
+    text: 'Корни расступаются кольцом. В центре — щель глубже низины.',
+  },
+  deep_root_vault: {
+    id: 'deep_root_vault',
+    name: 'Глубокий свод',
+    text: 'Третья печать. Не Вензель. Не сторож. Что-то старше держит сеть.',
+  },
 };
 
 export const DEFAULT_LOCATION = 'forest_clearing';

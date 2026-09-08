@@ -383,7 +383,7 @@ describe('monetization foundation', () => {
       expect(ITEM_TEMPLATES[product.id]).toBeUndefined();
       expect(JSON.stringify(product).toLowerCase()).not.toMatch(/"attack"|"defense"|"hp"|"damage"/);
     }
-    expect(Object.keys(ACHIEVEMENTS)).toHaveLength(10);
+    expect(Object.keys(ACHIEVEMENTS)).toHaveLength(11);
   });
 
   it('keeps entitlements unique and blocks unequipped cosmetics', async () => {
@@ -404,7 +404,7 @@ describe('monetization foundation', () => {
     expect(GAME_COMMANDS).not.toContain('GRANT_PREMIUM');
     expect(GAME_COMMANDS).not.toContain('SET_RATING');
     expect(GAME_COMMANDS).not.toContain('SET_STATS');
-    expect(GAME_COMMANDS).not.toContain('BEGIN_DAY_15');
+    expect(GAME_COMMANDS).not.toContain('BEGIN_DAY_22');
     const { store, runtime, player, vkUserId } = await boot();
     const before = await reload(store, player.id);
     await act(runtime, vkUserId, 'START_PVE', { enemyId: 'wild_shrew' });

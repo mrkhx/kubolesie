@@ -24,8 +24,26 @@ const FUNNEL_FLAGS = [
   'day_13_complete',
   'day_14_complete',
   'week_2_complete',
+  'day_15_complete',
+  'day_16_complete',
+  'day_17_complete',
+  'day_18_complete',
+  'day_19_complete',
+  'day_20_complete',
+  'day_21_complete',
+  'week_3_complete',
   'wenzel_defeated',
   'mist_warden_defeated',
+  'rootlasher_failed',
+  'defeated_rootlasher',
+  'vyazen_defeated',
+  'root_path_logger',
+  'root_path_miner',
+  'root_path_crafter',
+  'root_social_pvp',
+  'root_social_negotiate',
+  'root_social_sneak',
+  'root_pack_ready',
   'emberkit_bonded',
   'scavenger_bonded',
 ] as const;
@@ -100,6 +118,7 @@ export class AnalyticsService {
       pvpToday,
       week1,
       week2,
+      week3,
     ] = await Promise.all([
       this.store.countPlayers(),
       this.store.countPlayers({ createdSince: today }),
@@ -115,6 +134,7 @@ export class AnalyticsService {
       this.store.countCombatMatches({ mode: 'PVP', since: today }),
       this.store.countFlags(['week_1_complete']),
       this.store.countFlags(['week_2_complete']),
+      this.store.countFlags(['week_3_complete']),
     ]);
     return {
       totalPlayers,
@@ -131,6 +151,7 @@ export class AnalyticsService {
       pvpBattlesToday: pvpToday,
       week1Completed: week1[0]?.count ?? 0,
       week2Completed: week2[0]?.count ?? 0,
+      week3Completed: week3[0]?.count ?? 0,
       totalClans: await this.store.countClans(),
       clanMembers: await this.store.countClanMembers(),
       activeClans7d: await this.store.countActiveClans(d7),
@@ -156,7 +177,7 @@ export class AnalyticsService {
       this.store.countReturning(yesterday, today, today),
       this.store.countReturning(d7ago, addUtcDays(d7ago, 1), addUtcDays(today, -7)),
       this.store.levelDistribution(),
-      this.store.countFlags(['week_1_complete', 'week_2_complete']),
+      this.store.countFlags(['week_1_complete', 'week_2_complete', 'week_3_complete']),
     ]);
     const avgLevel =
       total === 0 ? 0 : levels.reduce((sum, row) => sum + row.level * row.count, 0) / total;
@@ -174,6 +195,7 @@ export class AnalyticsService {
       distributionByLevel: levels,
       week1Complete: week1.find((row) => row.flag === 'week_1_complete')?.count ?? 0,
       week2Complete: week1.find((row) => row.flag === 'week_2_complete')?.count ?? 0,
+      week3Complete: week1.find((row) => row.flag === 'week_3_complete')?.count ?? 0,
       playersInClan: await this.store.countClanMembers(),
       clanParticipationRate: pct(await this.store.countClanMembers(), total),
     };
@@ -193,19 +215,33 @@ export class AnalyticsService {
       registered: step(total),
       startedGame: step(total),
       days: Object.fromEntries(
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map((day) => [
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21].map((day) => [
           `day${day}`,
           step(flagMap[`day_${day}_complete`] ?? 0),
         ]),
       ),
       week1Complete: step(flagMap.week_1_complete ?? 0),
       week2Complete: step(flagMap.week_2_complete ?? 0),
+      week3Complete: step(flagMap.week_3_complete ?? 0),
       pvpUnlocked: step(pvpUnlocked),
       firstPvp: step(Math.max(firstPvp, firstPvpLoss)),
       firstBoss: step(firstBoss),
       petAcquired: step(pet),
       wenzelWins: step(flagMap.wenzel_defeated ?? 0),
       mistWardenWins: step(flagMap.mist_warden_defeated ?? 0),
+      rootlasherWins: step(flagMap.defeated_rootlasher ?? 0),
+      vyazenWins: step(flagMap.vyazen_defeated ?? 0),
+      week3Paths: {
+        logger: step(flagMap.root_path_logger ?? 0),
+        miner: step(flagMap.root_path_miner ?? 0),
+        crafter: step(flagMap.root_path_crafter ?? 0),
+      },
+      week3Social: {
+        sneak: step(flagMap.root_social_sneak ?? 0),
+        negotiate: step(flagMap.root_social_negotiate ?? 0),
+        pvp: step(flagMap.root_social_pvp ?? 0),
+      },
+      week3Packed: step(flagMap.root_pack_ready ?? 0),
       clansCreatedToday: await this.store.countClans({ createdSince: utcDayStart(new Date()) }),
       clansCreated7d: await this.store.countClans({ createdSince: ago(new Date(), 7 * DAY_MS) }),
     };

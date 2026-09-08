@@ -6,7 +6,7 @@
 
 Игрок взаимодействует через сообщения сообщества: текст, кнопки, callback actions и, при необходимости, карточки.
 
-Текущая версия: **Prototype 0.0.8** — Jobs + Auto Farms 1.0 поверх рынка, кланов, PvP и Недели 1–2.
+Текущая версия: **Prototype 0.0.9** — Week 3 «Корневая чаща» поверх Jobs, дворов, рынка, кланов, PvP и Недели 1–2.
 
 ## Архитектура
 
@@ -218,6 +218,14 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 ```
 
 Ядро **не** собирает сырой VK keyboard JSON. Это делает VK Adapter.
+
+## Prototype 0.0.9 содержит
+
+- Week 3 «Корневая чаща»: дни 15–21, третья печать, Вязень
+- мини-босс Корнеплёт, optional Jobs/Production/Market/Clan/PvP слой
+- `SEAL_SHARD_5`, корневой оберег, «Осталось: 4»
+- additive migration `20260908210000_week_three`
+- docs: `docs/gdd/week-3.md`
 
 ## Prototype 0.0.8 содержит
 

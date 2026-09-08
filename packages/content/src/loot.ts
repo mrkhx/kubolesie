@@ -92,6 +92,33 @@ export const COMBAT_LOOT: Record<string, CombatLootSpec> = {
     firstItems: ['mist_charm', 'seal_shard_6'],
     firstFlags: ['mist_warden_defeated'],
   },
+  root_crawler: {
+    xp: 18,
+    xpRepeat: 9,
+    resources: { ROOT_FIBER: [1, 2], FIBER: [0, 1] },
+  },
+  bark_hound: {
+    xp: 24,
+    xpRepeat: 12,
+    resources: { HIDE: [1, 2], ROOT_FIBER: [0, 1] },
+  },
+  sap_stinger: {
+    xp: 26,
+    xpRepeat: 12,
+    resources: { HERBS: [1, 1], MIST_RESIN: [0, 1] },
+  },
+  rootlasher: {
+    xp: 55,
+    xpRepeat: 18,
+    resources: { ROOT_FIBER: [2, 3] },
+    firstFlags: ['defeated_rootlasher'],
+  },
+  vyazen: {
+    xp: 100,
+    xpRepeat: 24,
+    firstItems: ['root_charm', 'seal_shard_5'],
+    firstFlags: ['vyazen_defeated'],
+  },
 };
 
 export const WEDGE_STAGE_ENEMIES: Record<string, string> = {

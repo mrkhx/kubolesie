@@ -125,6 +125,48 @@ export const QUEST_TEMPLATES: QuestTemplateContent[] = [
     description: 'Туманный сторож. Печать удерживает, не создаёт туман.',
     defaultStatus: 'LOCKED',
   },
+  {
+    id: 'enter_rootwood',
+    title: 'Вход в чащу',
+    description: 'Выйти к Корневой чаще и прочитать перечёркнутый знак.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'clear_the_tangle',
+    title: 'Расчистить завал',
+    description: 'Три пути подготовки. Профессия помогает, не запирает.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'hollow_grove',
+    title: 'Полая роща',
+    description: 'Первый конфликт. Ползун, гончий, жалец. Повторно, без бесконечного гринда.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'buried_network',
+    title: 'Заброшенный узел',
+    description: 'Древняя клетка между печатями. Не говорить, кто её ставил.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'prepare_for_depths',
+    title: 'Припасы вглубь',
+    description: 'Еда, дерево, камень, уголь. Собрать, дворы, рынок, Вел или помощь.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'rootlasher_hunt',
+    title: 'Охота на Корнеплёта',
+    description: 'Мини-босс чащи. Не хранитель печати. Сердцевина корня — ключ к своду.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'third_seal',
+    title: 'Третья печать',
+    description: 'Вязень. Сеть печатей держится. Осталось: 4.',
+    defaultStatus: 'LOCKED',
+  },
 ];
 
 export const IRON_FOR_GATE_TARGET = 8;
@@ -142,4 +184,15 @@ export const WEEK2_DAY_XP = {
   12: 35,
   13: 40,
   14: 20,
+} as const;
+export const VYAZEN_QUEST_XP = 100;
+export const ROOTLASHER_QUEST_XP = 55;
+export const WEEK3_DAY_XP = {
+  15: 25,
+  16: 25,
+  17: 30,
+  18: 30,
+  19: 30,
+  20: 40,
+  21: 20,
 } as const;
