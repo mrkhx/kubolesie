@@ -106,6 +106,9 @@ const TEXT_MENU_ALIASES: Record<string, string> = {
   тропа: 'trail',
   гниль: 'trail',
   гнилая: 'hollow',
+  топь: 'marsh',
+  камыш: 'marsh',
+  чаша: 'basin',
 };
 
 export function normalizeCommandText(text: string): string {

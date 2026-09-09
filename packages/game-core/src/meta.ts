@@ -293,7 +293,7 @@ export async function backfillMeta(store: GameStore, player: PlayerRecord): Prom
   const flags = await store.getFlags(player.id);
   const stats = await store.getStatistics(player.id);
   let days = 0;
-  for (let day = 1; day <= 28; day += 1) {
+  for (let day = 1; day <= 35; day += 1) {
     if (flags[`day_${day}_complete`]) {
       days += 1;
       await store.tryClaimReward(player.id, 'meta_day', String(day));
@@ -303,6 +303,7 @@ export async function backfillMeta(store: GameStore, player: PlayerRecord): Prom
   if (flags.week_2_complete) await store.tryClaimReward(player.id, 'meta_week', '2');
   if (flags.week_3_complete) await store.tryClaimReward(player.id, 'meta_week', '3');
   if (flags.week_4_complete) await store.tryClaimReward(player.id, 'meta_week', '4');
+  if (flags.week_5_complete) await store.tryClaimReward(player.id, 'meta_week', '5');
   if (stats.daysCompleted < days) {
     await store.incrementStatistics(player.id, { daysCompleted: days - stats.daysCompleted });
   }
@@ -313,6 +314,7 @@ export async function backfillMeta(store: GameStore, player: PlayerRecord): Prom
   if (flags.week_2_complete) await maybeGrant(store, player.id, 'WEEK_TWO_COMPLETE');
   if (flags.week_3_complete) await maybeGrant(store, player.id, 'WEEK_THREE_COMPLETE');
   if (flags.week_4_complete) await maybeGrant(store, player.id, 'WEEK_FOUR_COMPLETE');
+  if (flags.week_5_complete) await maybeGrant(store, player.id, 'WEEK_FIVE_COMPLETE');
   if (flags.first_bow) await maybeGrant(store, player.id, 'FIRST_BOW');
   const fresh = await store.getStatistics(player.id);
   if (fresh.pvpWins >= 1) await maybeGrant(store, player.id, 'FIRST_PVP_WIN');
@@ -405,8 +407,10 @@ async function profileScreen(store: GameStore, player: PlayerRecord): Promise<Ga
   ]);
   const title = cosmetics.title ? getProduct(cosmetics.title)?.name : null;
   const clan = membership ? `${membership.clan.name} [${membership.clan.tag}]` : 'нет';
-  const week = flags.week_4_complete
-    ? 'Неделя 4 закрыта'
+  const week = flags.week_5_complete
+    ? 'Неделя 5 закрыта'
+    : flags.week_4_complete
+    ? currentDayLabel(flags)
     : flags.week_3_complete
     ? currentDayLabel(flags)
     : flags.week_2_complete
@@ -434,6 +438,10 @@ async function profileScreen(store: GameStore, player: PlayerRecord): Promise<Ga
 }
 
 function currentDayLabel(flags: Record<string, string>): string {
+  if (flags.week_5_complete) return 'Неделя 5 закрыта';
+  for (let day = 35; day >= 29; day -= 1) {
+    if (flags[`day_${day}_complete`]) return `День ${day} закрыт`;
+  }
   if (flags.week_4_complete) return 'Неделя 4 закрыта';
   for (let day = 28; day >= 22; day -= 1) {
     if (flags[`day_${day}_complete`]) return `День ${day} закрыт`;

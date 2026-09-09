@@ -298,9 +298,9 @@ describe('week 2 content canon', () => {
     expect(LOCATIONS.drowned_quarry.name).toBe('Утонувший карьер');
     expect(ITEM_TEMPLATES.mist_charm.name).toBe('Туманный оберег');
     expect(QUEST_TEMPLATES.some((quest) => quest.id === 'second_seal')).toBe(true);
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_29')).toBe(false);
-    expect(PROTOTYPE_VERSION).toBe('0.0.10');
-    expect(BALANCE_VERSION).toBe('0.0.10');
+    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_36')).toBe(false);
+    expect(PROTOTYPE_VERSION).toBe('0.0.11');
+    expect(BALANCE_VERSION).toBe('0.0.11');
   });
 });
 
@@ -768,7 +768,7 @@ describe('week 2 security and menus', () => {
   });
 
   it('does not start day 22 or mention payments', async () => {
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_29')).toBe(false);
+    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_36')).toBe(false);
     const { runtime, vkUserId } = await seedWeek1Done();
     const started = await act(runtime, vkUserId, 'BEGIN_DAY_8');
     expect(started.text).not.toMatch(/donat|premium|mini app/i);
@@ -999,7 +999,7 @@ describe('week 2 recovery, security, localization', () => {
     expect(labels(profile).some((label) => /COMMON|UNCOMMON|BACK/.test(label))).toBe(false);
     expect((GAME_COMMANDS as readonly string[]).includes('CLAN_ACT')).toBe(true);
     expect((GAME_COMMANDS as readonly string[]).includes('CLAN_WAR')).toBe(false);
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_29')).toBe(false);
+    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_36')).toBe(false);
     const camp = await act(runtime, vkUserId, 'OPEN_CAMP');
     expect(camp.buttons.length).toBeLessThanOrEqual(5);
     const { runtime: rt, vkUserId: vk } = await boot();

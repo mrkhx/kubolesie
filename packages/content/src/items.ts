@@ -402,6 +402,34 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
     rarity: 'EPIC',
     questItem: true,
   },
+  reed_rope: {
+    id: 'reed_rope',
+    name: 'Камышовая связка',
+    description: 'Чёрный камыш, волокно и палка. Короткий угол против Топежора. Не новый ярус инструмента.',
+    rarity: 'UNCOMMON',
+  },
+  marsh_platform: {
+    id: 'marsh_platform',
+    name: 'Топяной настил',
+    description: 'Доски, камыш и слиток. Держит ногу над чёрной водой. Не ломает сеть.',
+    rarity: 'UNCOMMON',
+  },
+  mire_charm: {
+    id: 'mire_charm',
+    name: 'Оберег топи',
+    description: 'Уникальный. Топь чуть реже хватает за щиколотку.',
+    rarity: 'RARE',
+    slot: 'AMULET',
+    defenseBonus: 1,
+    dodgeBonus: 5,
+  },
+  seal_shard_3: {
+    id: 'seal_shard_3',
+    name: 'Осколок пятой печати',
+    description: 'Сюжетный ключ. Пятый найденный. Identifier = 3.',
+    rarity: 'EPIC',
+    questItem: true,
+  },
 };
 
 export const STONE_SALVAGE_TOOLS = ['stone_pickaxe', 'stone_axe', 'stone_sword'] as const;

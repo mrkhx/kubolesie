@@ -42,6 +42,9 @@ enum ResourceType {
   ROT_RESIN
   BLACKROOT_CORE
   SEAL_SHARD_4
+  BLACK_REED
+  MARSH_HEART
+  SEAL_SHARD_3
 }
 
 enum Rarity {

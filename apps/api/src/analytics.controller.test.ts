@@ -110,13 +110,18 @@ describe('admin analytics payloads', () => {
     expect(funnel.week1Complete.count).toBe(1);
     expect(funnel.week3Complete.count).toBe(0);
     expect(funnel.week4Complete.count).toBe(0);
+    expect(funnel.week5Complete.count).toBe(0);
     expect(funnel.days.day15.count).toBe(0);
     expect(funnel.days.day22.count).toBe(0);
+    expect(funnel.days.day29.count).toBe(0);
     expect(funnel.rootlasherWins.count).toBe(0);
     expect(funnel.week3Paths.logger.count).toBe(0);
     expect(funnel.blackrootWins.count).toBe(0);
     expect(funnel.tlennikWins.count).toBe(0);
     expect(funnel.week4Paths.beast.count).toBe(0);
+    expect(funnel.miremawWins.count).toBe(0);
+    expect(funnel.bezdonnikWins.count).toBe(0);
+    expect(funnel.week5Paths.reed.count).toBe(0);
     expect(funnel.pvpUnlocked.count).toBe(1);
   });
 

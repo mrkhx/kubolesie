@@ -202,6 +202,19 @@ export const CRAFT_RECIPES: Record<string, CraftRecipe> = {
     station: 'crafting_table',
     output: { kind: 'item', templateId: 'path_marker' },
   },
+  reed_rope: {
+    id: 'reed_rope',
+    name: 'Камышовая связка',
+    cost: { BLACK_REED: 3, FIBER: 2, STICK: 2 },
+    output: { kind: 'item', templateId: 'reed_rope' },
+  },
+  marsh_platform: {
+    id: 'marsh_platform',
+    name: 'Топяной настил',
+    cost: { PLANK: 4, BLACK_REED: 3, IRON_INGOT: 1 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'marsh_platform' },
+  },
 };
 
 export const CRAFT_PIPELINE = [

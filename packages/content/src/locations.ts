@@ -190,6 +190,76 @@ export const LOCATIONS: Record<string, LocationTemplate> = {
     name: 'Четвёртая печать',
     text: 'Печать стихает не в тишину. В ощущение, что путь вчера шёл иначе.',
   },
+  black_marsh_edge: {
+    id: 'black_marsh_edge',
+    name: 'Край Чёрной топи',
+    text: 'Вода стоит. Деревья по пояс. Старый столб несёт знак четвёртой территории — и стёртую стрелку.',
+  },
+  sunken_boardwalk: {
+    id: 'sunken_boardwalk',
+    name: 'Затонувший настил',
+    text: 'Доски проседают. Следы в воде не держатся. Три пути сходятся дальше.',
+  },
+  reed_crossing: {
+    id: 'reed_crossing',
+    name: 'Камышовая переправа',
+    text: 'Настил, каменные островки, камыш по грудь. Профессия короче, не запирает.',
+  },
+  black_reed_basin: {
+    id: 'black_reed_basin',
+    name: 'Чаша чёрного камыша',
+    text: 'Камышники, топеклыки, илистые панцирники. Камыш жёсткий и чёрный.',
+  },
+  drowned_stones: {
+    id: 'drowned_stones',
+    name: 'Утонувшие камни',
+    text: 'Опоры под водой. Шаг надо выбирать, не бежать.',
+  },
+  deep_mire: {
+    id: 'deep_mire',
+    name: 'Глубокая топь',
+    text: 'Ил по колено. Дно врёт. Дышать можно — стоять нельзя.',
+  },
+  sunken_outpost: {
+    id: 'sunken_outpost',
+    name: 'Затопленный стан',
+    text: 'Крыша в воде. На стене старая схема к пятой печати. Свежие метки ведут иначе.',
+  },
+  miremaw_lair: {
+    id: 'miremaw_lair',
+    name: 'Логово Топежора',
+    text: 'Корни и ил в одной пасти. Не страж печати. Страж воды.',
+  },
+  moving_marker: {
+    id: 'moving_marker',
+    name: 'Живой знак',
+    text: 'Утром линия уходила влево. Теперь вырезана вправо. Срез свежий. Пыль ещё светлая.',
+  },
+  submerged_node: {
+    id: 'submerged_node',
+    name: 'Затопленный узел',
+    text: 'Нити сети уходят в воду. Поверх них — чужой рез, сделанный сегодня.',
+  },
+  black_water_crossing: {
+    id: 'black_water_crossing',
+    name: 'Чёрный брод',
+    text: 'Старый путь влево. Свежие метки вправо. Кто-то правит сеть на ходу.',
+  },
+  fifth_seal_approach: {
+    id: 'fifth_seal_approach',
+    name: 'Подход к пятой печати',
+    text: 'Вода неподвижная, как глаз. Свод уже слышен.',
+  },
+  sunken_seal_forecourt: {
+    id: 'sunken_seal_forecourt',
+    name: 'Преддверие пятой печати',
+    text: 'Камень, корень и глубина. Бездонник держит ядро — не правит сеть.',
+  },
+  seal_3_vault: {
+    id: 'seal_3_vault',
+    name: 'Свод пятой печати',
+    text: 'Пятая печать. Identifier = 3. Бездонник. Не Тленник. Не Вязень.',
+  },
 };
 
 export const DEFAULT_LOCATION = 'forest_clearing';

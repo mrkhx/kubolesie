@@ -146,6 +146,33 @@ export const COMBAT_LOOT: Record<string, CombatLootSpec> = {
     firstItems: ['path_charm', 'seal_shard_4'],
     firstFlags: ['tlennik_defeated'],
   },
+  reed_lurker: {
+    xp: 22,
+    xpRepeat: 11,
+    resources: { HIDE: [1, 1], BLACK_REED: [0, 1] },
+  },
+  mire_claw: {
+    xp: 28,
+    xpRepeat: 12,
+    resources: { HIDE: [1, 2], RAW_FISH: [0, 1] },
+  },
+  drowned_shell: {
+    xp: 30,
+    xpRepeat: 14,
+    resources: { FIBER: [1, 1], BLACK_REED: [1, 2] },
+  },
+  miremaw: {
+    xp: 65,
+    xpRepeat: 22,
+    resources: { BLACK_REED: [2, 3] },
+    firstFlags: ['defeated_miremaw'],
+  },
+  bezdonnik: {
+    xp: 120,
+    xpRepeat: 28,
+    firstItems: ['mire_charm', 'seal_shard_3'],
+    firstFlags: ['bezdonnik_defeated'],
+  },
 };
 
 export const WEDGE_STAGE_ENEMIES: Record<string, string> = {

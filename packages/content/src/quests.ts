@@ -209,6 +209,48 @@ export const QUEST_TEMPLATES: QuestTemplateContent[] = [
     description: 'Тленник. Путь вчера шёл иначе. Осталось: 3.',
     defaultStatus: 'LOCKED',
   },
+  {
+    id: 'enter_black_marsh',
+    title: 'Вход в Чёрную топь',
+    description: 'Выйти к Чёрной топи и прочитать свежие царапины.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'cross_the_marsh',
+    title: 'Три переправы',
+    description: 'Настил, камень, камыш. Профессия помогает, не запирает.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'black_reed_hunt',
+    title: 'Чаша камыша',
+    description: 'Камышник, топеклык, панцирник. Повторно, без бесконечного гринда.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'sunken_outpost',
+    title: 'Затопленный стан',
+    description: 'Старая схема и свежие метки не одно. Кто-то уводит путь.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'miremaw_hunt',
+    title: 'Охота на Топежора',
+    description: 'Мини-босс топи. Не хранитель печати. Сердце — shortcut, не ключ.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'follow_changed_marks',
+    title: 'Правка на глазах',
+    description: 'Знак изменился, пока ты ходил. Тот, кто правит сеть, ещё здесь.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'fifth_seal',
+    title: 'Пятая печать',
+    description: 'Бездонник. Кто-то прошёл недавно. Осталось: 2.',
+    defaultStatus: 'LOCKED',
+  },
 ];
 
 export const IRON_FOR_GATE_TARGET = 8;
@@ -246,4 +288,13 @@ export const WEEK4_DAY_XP = {
   26: 40,
   27: 30,
   28: 20,
+} as const;
+export const WEEK5_DAY_XP = {
+  29: 25,
+  30: 25,
+  31: 30,
+  32: 30,
+  33: 40,
+  34: 30,
+  35: 20,
 } as const;

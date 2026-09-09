@@ -162,9 +162,10 @@ export const WEEK4_NODES: Record<string, DialogueNode> = {
     text: [
       'Четыре печати молчат. Три всё ещё зовут.',
       'Осталось: 3',
-      'Продолжение скоро.',
+      'Чёрная топь уже слышна.',
     ].join('\n'),
     choices: [
+      { id: 'day29', label: 'Начать День 29', command: 'BEGIN_DAY_29' },
       { id: 'camp', label: 'К стану', command: 'OPEN_CAMP' },
       { id: 'look', label: 'Осмотреться', command: 'EXPLORE' },
     ],
