@@ -186,7 +186,7 @@ describe('callback anti-abuse', () => {
     expect(again.id).toBe(player.id);
     expect(again.energy).toBe(energy);
     expect(abuse.metrics.duplicateCallback).toBe(5);
-    expect(client.sent.length).toBeGreaterThan(1);
+    expect(client.sent).toHaveLength(1);
     expect(client.sent.every((m) => m.text !== THROTTLE_TEXT)).toBe(true);
   });
 

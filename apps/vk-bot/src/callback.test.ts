@@ -429,13 +429,162 @@ describe('vk duplicate delivery and races', () => {
     const second = await adapter.handleCallback(body);
     expect(first.body).toBe('ok');
     expect(second.body).toBe('ok');
-    expect(client.sent).toHaveLength(2);
-    expect(client.sent[0]!.randomId).toBe(client.sent[1]!.randomId);
+    expect(client.sent).toHaveLength(1);
     const again = (await store.findPlayerByVkUserId('9001'))!;
     expect(again.id).toBe(player.id);
     expect(again.energy).toBe(energy);
     expect(await store.findProcessedEvent('vk:message_new:dup-1')).not.toBeNull();
   });
+
+  it('does not send a second VK message for the same message_event event_id', async () => {
+    const { adapter, client } = boot();
+    await adapter.handleCallback(messageNew({ text: 'начать', eventId: 's-dup-evt' }));
+    client.sent.length = 0;
+    const click = messageEvent({
+      eventId: 'click-dup',
+      clickId: 'click-dup-1',
+      payload: { action: 'OPEN_PROFILE' },
+    });
+    expect(await adapter.handleCallback(click)).toEqual({ status: 200, body: 'ok' });
+    expect(await adapter.handleCallback(click)).toEqual({ status: 200, body: 'ok' });
+    expect(client.sent).toHaveLength(1);
+    expect(client.answers.length).toBeGreaterThanOrEqual(1);
+    expect(client.answers[0]!.eventId).toBe('click-dup-1');
+  });
+
+  it('message_new with the same payload does not double a message_event action', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(messageNew({ text: 'начать', eventId: 's-cross' }));
+    const player = (await store.findPlayerByVkUserId('9001'))!;
+    const energy = player.energy;
+    client.sent.length = 0;
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'btn-profile',
+        clickId: 'c-profile',
+        payload: { action: 'OPEN_PROFILE' },
+      }),
+    );
+    await adapter.handleCallback(
+      messageNew({
+        eventId: 'txt-profile',
+        payload: JSON.stringify({ action: 'OPEN_PROFILE' }),
+        text: '👤 Профиль',
+      }),
+    );
+    expect(client.sent.length).toBeGreaterThanOrEqual(1);
+    expect(client.sent.length).toBeLessThanOrEqual(2);
+    const again = (await store.findPlayerByVkUserId('9001'))!;
+    expect(again.energy).toBe(energy);
+    expect(await store.findProcessedEvent('vk:message_event:btn-profile')).not.toBeNull();
+    expect(await store.findProcessedEvent('vk:message_new:txt-profile')).not.toBeNull();
+  });
+});
+
+describe('vk rem dialogue duplicate and stale buttons', () => {
+  async function seedRemDay2(store: MemoryGameStore) {
+    const player = (await store.findPlayerByVkUserId('9001'))!;
+    for (const flag of [
+      'day_1_complete',
+      'met_rem',
+      'showed_token_to_rem',
+      'found_broken_lantern',
+      'node7_gate_closed',
+      'activated_node7_token',
+    ]) {
+      await store.setFlag(player.id, flag, '1');
+    }
+    await store.createItem({ playerId: player.id, templateId: 'broken_lantern', rarity: 'COMMON' });
+    player.currentState = 'rem_day2';
+    player.currentLocation = 'rem_camp';
+    await store.savePlayer(player);
+    return player;
+  }
+
+  it('does not send «Кивок» twice for a duplicate Node 7 callback', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(messageNew({ text: 'начать', eventId: 's-rem' }));
+    await seedRemDay2(store);
+    client.sent.length = 0;
+    const click = messageEvent({
+      eventId: 'node7-dup',
+      clickId: 'node7-click',
+      payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2', choiceId: 'what7_shown' },
+    });
+    await adapter.handleCallback(click);
+    await adapter.handleCallback(click);
+    const nods = client.sent.filter((row) => row.text.includes('Кивок'));
+    expect(nods).toHaveLength(1);
+    expect(client.answers[0]!.eventId).toBe('node7-click');
+  });
+
+  it('second click of the same Node 7 button does not duplicate the line', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(messageNew({ text: 'начать', eventId: 's-rem2' }));
+    await seedRemDay2(store);
+    client.sent.length = 0;
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'node7-a',
+        clickId: 'n7a',
+        payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2', choiceId: 'what7_shown' },
+      }),
+    );
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'node7-b',
+        clickId: 'n7b',
+        payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2', choiceId: 'what7_shown' },
+      }),
+    );
+    expect(client.sent.filter((row) => row.text.includes('Кивок'))).toHaveLength(1);
+  });
+
+  it('showing the lantern then a duplicate callback does not roll back the screen', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(messageNew({ text: 'начать', eventId: 's-lantern' }));
+    await seedRemDay2(store);
+    client.sent.length = 0;
+    const show = messageEvent({
+      eventId: 'lantern-show',
+      clickId: 'lantern-1',
+      payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2', choiceId: 'lantern' },
+    });
+    await adapter.handleCallback(show);
+    expect(client.sent[0]!.text).toMatch(/Вел носит стёкла/i);
+    expect(client.sent[0]!.keyboard?.buttons.flat().some((btn) => btn.action.label.includes('Убрать'))).toBe(
+      true,
+    );
+    const after = (await store.findPlayerByVkUserId('9001'))!;
+    expect(after.currentState).toBe('rem_day2_lantern');
+    await adapter.handleCallback(show);
+    expect((await store.findPlayerByVkUserId('9001'))!.currentState).toBe('rem_day2_lantern');
+    expect(client.sent.filter((row) => /Вел носит стёкла/i.test(row.text))).toHaveLength(1);
+  });
+
+  it('a stale Rem button after the lantern does not restore the old hub', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(messageNew({ text: 'начать', eventId: 's-stale' }));
+    await seedRemDay2(store);
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'lantern-go',
+        payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2', choiceId: 'lantern' },
+      }),
+    );
+    client.sent.length = 0;
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'stale-node7',
+        payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2', choiceId: 'what7_shown' },
+      }),
+    );
+    expect((await store.findPlayerByVkUserId('9001'))!.currentState).toBe('rem_day2_lantern');
+    expect(client.sent).toHaveLength(0);
+  });
+});
+
+describe('vk payload allowlist', () => {
 
   it('creates only one player when two first messages race', async () => {
     const { adapter, store } = boot();

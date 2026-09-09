@@ -332,10 +332,10 @@ describe('duplicate group events', () => {
     const second = await adapter.handleCallback(body);
     expect(first.body).toBe('ok');
     expect(second.body).toBe('ok');
-    expect(groupSent(client)).toHaveLength(2);
-    expect(dmSent(client, 77)).toHaveLength(2);
-    expect(groupSent(client)[1]!.randomId).toBe(groupRandom);
-    expect(dmSent(client, 77)[1]!.randomId).toBe(dmRandom);
+    expect(groupSent(client)).toHaveLength(1);
+    expect(dmSent(client, 77)).toHaveLength(1);
+    expect(groupSent(client)[0]!.randomId).toBe(groupRandom);
+    expect(dmSent(client, 77)[0]!.randomId).toBe(dmRandom);
     const again = (await store.findPlayerByVkUserId('77'))!;
     expect(again.id).toBe(player.id);
     expect(again.energy).toBe(energy);

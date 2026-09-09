@@ -777,3 +777,77 @@ describe('day 2 mock playthrough', () => {
     expect(done.buttons.length).toBeGreaterThan(0);
   });
 });
+
+describe('day 2 rem dialogue is not replayed from stale buttons', () => {
+  it('duplicate Node 7 event_id does not change state twice', async () => {
+    const { store, runtime, player, vkUserId } = await seedDay1Complete({ showToken: true, lantern: true });
+    await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    const first = await act(
+      runtime,
+      vkUserId,
+      'DIALOGUE_CHOICE',
+      { nodeId: 'rem_day2', choiceId: 'what7_shown' },
+      'node7-once',
+    );
+    expect(first.text).toContain('Кивок');
+    expect(first.skipSend).toBeUndefined();
+    const second = await act(
+      runtime,
+      vkUserId,
+      'DIALOGUE_CHOICE',
+      { nodeId: 'rem_day2', choiceId: 'what7_shown' },
+      'node7-once',
+    );
+    expect(second.text).toBe(first.text);
+    expect((await reload(store, player.id)).currentState).toBe('rem_day2_node7_shown');
+  });
+
+  it('a second Node 7 click after the first is a no-op send', async () => {
+    const { runtime, player, store, vkUserId } = await seedDay1Complete({ showToken: true, lantern: true });
+    await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    await act(runtime, vkUserId, 'DIALOGUE_CHOICE', { nodeId: 'rem_day2', choiceId: 'what7_shown' });
+    const again = await act(runtime, vkUserId, 'DIALOGUE_CHOICE', {
+      nodeId: 'rem_day2',
+      choiceId: 'what7_shown',
+    });
+    expect(again.skipSend).toBe(true);
+    expect(again.text).toContain('Кивок');
+    expect((await reload(store, player.id)).currentState).toBe('rem_day2_node7_shown');
+  });
+
+  it('showing the lantern then a stale Node 7 payload stays on the lantern', async () => {
+    const { runtime, player, store, vkUserId } = await seedDay1Complete({ showToken: true, lantern: true });
+    await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    const shown = await act(runtime, vkUserId, 'DIALOGUE_CHOICE', {
+      nodeId: 'rem_day2',
+      choiceId: 'lantern',
+    });
+    expect(shown.text).toMatch(/Вел/i);
+    expect(hasLabel(shown, 'Убрать')).toBe(true);
+    expect((await reload(store, player.id)).currentState).toBe('rem_day2_lantern');
+    const stale = await act(runtime, vkUserId, 'DIALOGUE_CHOICE', {
+      nodeId: 'rem_day2',
+      choiceId: 'what7_shown',
+    });
+    expect(stale.skipSend).toBe(true);
+    expect((await reload(store, player.id)).currentState).toBe('rem_day2_lantern');
+    const hide = await act(runtime, vkUserId, 'DIALOGUE_CHOICE', {
+      nodeId: 'rem_day2_lantern',
+      choiceId: 'back',
+    });
+    expect(hide.skipSend).toBeUndefined();
+    expect(hide.text).toMatch(/затвора/i);
+    expect((await reload(store, player.id)).currentState).toBe('rem_day2');
+  });
+
+  it('inventory and explore still work from Rem', async () => {
+    const { runtime, vkUserId } = await seedDay1Complete({ showToken: true, lantern: true });
+    await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    await act(runtime, vkUserId, 'DIALOGUE_CHOICE', { nodeId: 'rem_day2', choiceId: 'lantern' });
+    const inv = await act(runtime, vkUserId, 'OPEN_INVENTORY');
+    expect(inv.text).toMatch(/инвентар|сломанный фонарь/i);
+    expect(inv.skipSend).toBeUndefined();
+    const look = await act(runtime, vkUserId, 'EXPLORE');
+    expect(look.buttons.length).toBeGreaterThan(0);
+  });
+});

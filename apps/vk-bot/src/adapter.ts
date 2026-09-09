@@ -50,6 +50,9 @@ export interface VkLogEntry {
   reason?: string;
   category?: string;
   durationMs?: number;
+  command?: string;
+  duplicate?: boolean;
+  skipSend?: boolean;
 }
 
 export interface VkAdapterDeps {
@@ -68,6 +71,8 @@ const SAFE_TEXT = 'Сейчас это сделать нельзя.';
 type Deliverable = Extract<ParsedGameplay, { kind: 'command' | 'tampered' | 'help' }>;
 
 export class VkAdapter {
+  private readonly delivered = new Set<string>();
+
   constructor(
     private readonly runtime: GameRuntime,
     private readonly deps: VkAdapterDeps = {},
@@ -152,6 +157,13 @@ export class VkAdapter {
         return { status: 200, body: 'ok' };
       }
 
+      // Dismiss the callback spinner before Game Core so a slow send does not
+      // look like a missed tap. VK retries of the same event_id still share
+      // this callbackEventId; answerEvent is idempotent enough (errors swallowed).
+      if (type === 'message_event' && parsed.callbackEventId) {
+        await this.answerSafe(parsed.callbackEventId, Number(parsed.userId), parsed.peerId);
+      }
+
       if (abuse?.enabled) {
         if (ctx.ip) {
           const ipDecision = await abuse.allowIp(ctx.ip);
@@ -211,9 +223,6 @@ export class VkAdapter {
           peerId: parsed.peerId,
         });
         await this.deliverSafeReject(parsed);
-        if (type === 'message_event' && parsed.callbackEventId) {
-          await this.answerSafe(parsed.callbackEventId, Number(parsed.userId), parsed.peerId);
-        }
         return { status: 200, body: 'ok' };
       }
 
@@ -227,17 +236,13 @@ export class VkAdapter {
             status: 'duplicate',
             eventId: parsed.eventId,
             peerId: parsed.peerId,
+            command: parsed.command.type,
+            duplicate: true,
+            skipSend: Boolean(replay.skipSend) || this.delivered.has(parsed.eventId),
             durationMs: Date.now() - started,
           });
           try {
-            await this.deliverGame(parsed, replay, config);
-            if (type === 'message_event' && parsed.callbackEventId) {
-              await this.deps.client?.answerEvent({
-                eventId: parsed.callbackEventId,
-                userId: Number(parsed.userId),
-                peerId: parsed.peerId,
-              });
-            }
+            await this.deliverIfNeeded(parsed, replay, config);
           } catch (error) {
             log({
               msg: 'vk.callback',
@@ -247,6 +252,7 @@ export class VkAdapter {
               peerId: parsed.peerId,
               method: 'messages.send',
               errorCode: error instanceof VkApiError ? error.code : 'send',
+              duplicate: true,
             });
             if (parsed.chat === 'direct_message') return { status: 503, body: 'retry' };
           }
@@ -277,6 +283,7 @@ export class VkAdapter {
         status: 'handle',
         eventId: parsed.eventId,
         peerId: parsed.peerId,
+        command: parsed.command.type,
       });
 
       let lockToken: string | null = null;
@@ -325,15 +332,9 @@ export class VkAdapter {
           game = { text: SAFE_TEXT, buttons: [] };
         }
         const playerId = game.state?.playerId;
+        const skipSend = Boolean(game.skipSend) || this.delivered.has(parsed.eventId);
         try {
-          await this.deliverGame(parsed, game, config);
-          if (type === 'message_event' && parsed.callbackEventId) {
-            await this.deps.client?.answerEvent({
-              eventId: parsed.callbackEventId,
-              userId: Number(parsed.userId),
-              peerId: parsed.peerId,
-            });
-          }
+          await this.deliverIfNeeded(parsed, game, config);
         } catch (error) {
           log({
             msg: 'vk.callback',
@@ -344,6 +345,7 @@ export class VkAdapter {
             peerId: parsed.peerId,
             method: 'messages.send',
             errorCode: error instanceof VkApiError ? error.code : 'send',
+            command: parsed.command.type,
           });
           if (parsed.chat === 'direct_message') return { status: 503, body: 'retry' };
           return { status: 200, body: 'ok' };
@@ -351,11 +353,14 @@ export class VkAdapter {
         log({
           msg: 'vk.callback',
           type,
-          status: 'ok',
+          status: skipSend ? 'duplicate' : 'ok',
           eventId: parsed.eventId,
           playerId,
           peerId: parsed.peerId,
-          method: 'messages.send',
+          method: skipSend ? undefined : 'messages.send',
+          command: parsed.command.type,
+          duplicate: skipSend,
+          skipSend,
           durationMs: Date.now() - started,
         });
         return { status: 200, body: 'ok' };
@@ -368,6 +373,34 @@ export class VkAdapter {
       log({ msg: 'vk.callback', type: 'error', status: 'crash' });
       return { status: 200, body: 'ok' };
     }
+  }
+
+  private markDelivered(eventId: string): void {
+    this.delivered.add(eventId);
+    if (this.delivered.size <= 4000) return;
+    const iter = this.delivered.values();
+    for (let i = 0; i < 1000; i += 1) {
+      const next = iter.next();
+      if (next.done) break;
+      this.delivered.delete(next.value);
+    }
+  }
+
+  /**
+   * One outbound gameplay send per accepted event_id.
+   * In-flight / stale dialogue sets skipSend. After a successful send,
+   * retries of the same event_id are ACKed without a second messages.send.
+   * Send-failure retries (503) are not in `delivered`, so they still send.
+   */
+  private async deliverIfNeeded(
+    parsed: Extract<ParsedGameplay, { kind: 'command' }>,
+    game: GameResponse,
+    config: VkConfig,
+  ): Promise<void> {
+    if (game.skipSend || !game.text) return;
+    if (this.delivered.has(parsed.eventId)) return;
+    await this.deliverGame(parsed, game, config);
+    this.markDelivered(parsed.eventId);
   }
 
   private async deliverGame(

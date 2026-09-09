@@ -92,6 +92,9 @@ describe('rarity localization', () => {
     expect(dumped.text).not.toMatch(/COMMON|UNCOMMON|RARE|EPIC|LEGENDARY|BACK/);
     expect(dumped.text).toContain('Обычный');
     expect(dumped.buttons[0]!.label).toBe(BACK_LABEL);
+    expect(
+      presentGameResponse({ text: 'Кивок.', buttons: [], skipSend: true }).skipSend,
+    ).toBe(true);
     expect(scrubTechnicalText('ACTIVE COMMON')).toContain('Обычный');
   });
 });

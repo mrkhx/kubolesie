@@ -132,7 +132,8 @@ describe('event idempotency', () => {
       createdAt: new Date(),
     });
     const denied = await act(runtime, vkUserId, 'GATHER_WOOD', {}, 'stub-empty');
-    expect(denied.text).toMatch(/нельзя/i);
+    expect(denied.skipSend).toBe(true);
+    expect(denied.text).toBe('');
     expect((await store.getResources((await store.findPlayerByVkUserId(vkUserId))!.id)).LOG ?? 0).toBe(0);
   });
 

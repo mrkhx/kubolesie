@@ -427,6 +427,7 @@ export function presentGameResponse(response: GameResponse): GameResponse {
     ...response,
     text: scrubTechnicalText(response.text ?? ''),
     buttons: presentButtons(response.buttons ?? []),
+    skipSend: response.skipSend,
   };
 }
 

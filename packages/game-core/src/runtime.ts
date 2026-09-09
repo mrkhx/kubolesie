@@ -200,7 +200,7 @@ export class GameRuntime {
       const existing = await this.store.findProcessedEvent(event.eventId);
       if (existing?.response?.text) return presentGameResponse(existing.response);
       if (existing) {
-        return presentGameResponse({ text: 'Сейчас это сделать нельзя.', buttons: NAV });
+        return presentGameResponse({ text: '', buttons: [], skipSend: true });
       }
       return this.serialize(`player:${event.identity.providerUserId}`, async () => {
         const again = await this.store.findProcessedEvent(event.eventId);
@@ -214,7 +214,7 @@ export class GameRuntime {
         if (!claimed) {
           const won = await this.store.findProcessedEvent(event.eventId);
           if (won?.response?.text) return presentGameResponse(won.response);
-          return presentGameResponse({ text: 'Сейчас это сделать нельзя.', buttons: NAV });
+          return presentGameResponse({ text: '', buttons: [], skipSend: true });
         }
         try {
           const response = presentGameResponse(await this.execute(event));
@@ -2180,11 +2180,24 @@ export class GameRuntime {
   }
 
   private async dialogueChoice(ctx: Ctx, nodeId: string, choiceId: string): Promise<GameResponse> {
+    const current = ctx.player.currentState || 'start';
     const node = getDialogueNode(nodeId);
     const choice = node?.choices.find((entry) => entry.id === choiceId);
-    if (!choice) return this.renderNode(ctx.player, ctx.player.currentState || 'start');
+    if (!choice) return this.renderNode(ctx.player, current);
     if (!this.matchesCondition(choice.condition, ctx)) {
       throw new ActionRejectedError('Этот выбор уже недоступен.');
+    }
+    const dest = choice.nextNode ?? nodeId;
+    const isPureNav = !choice.command && !(choice.actions && choice.actions.length > 0);
+    if (isPureNav) {
+      if (current === dest) {
+        const live = await this.renderNode(ctx.player, current);
+        return { ...live, skipSend: true };
+      }
+      if (nodeId !== current && getDialogueNode(current)) {
+        const live = await this.renderNode(ctx.player, current);
+        return { ...live, skipSend: true };
+      }
     }
     const applied = await this.applyActions(ctx.player, choice.actions, ctx);
     const fresh = (await this.store.findPlayerById(ctx.player.id)) ?? ctx.player;

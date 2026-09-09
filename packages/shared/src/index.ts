@@ -193,6 +193,8 @@ export interface GameResponse {
   buttons: GameButton[];
   attachments?: GameAttachment[];
   state?: GameStateView;
+  /** Adapter skips VK messages.send. Event already delivered or a no-op (stale/in-flight). */
+  skipSend?: boolean;
 }
 
 export type ResourceType =
