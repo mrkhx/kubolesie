@@ -260,6 +260,96 @@ export const LOCATIONS: Record<string, LocationTemplate> = {
     name: 'Свод пятой печати',
     text: 'Пятая печать. Identifier = 3. Бездонник. Не Тленник. Не Вязень.',
   },
+  abandoned_station_edge: {
+    id: 'abandoned_station_edge',
+    name: 'Край заброшенного стана',
+    text: 'Деревянные платформы. Каменные основания. Пыль. И свежая стружка на рычаге.',
+  },
+  collapsed_yard: {
+    id: 'collapsed_yard',
+    name: 'Обвалившийся двор',
+    text: 'Ящик сдвинут недавно. След на пыли ещё не затёрт.',
+  },
+  old_loading_platform: {
+    id: 'old_loading_platform',
+    name: 'Старая погрузочная',
+    text: 'Канат натянут. Рычаг тёплый. Здесь кто-то был совсем недавно.',
+  },
+  sorting_yard: {
+    id: 'sorting_yard',
+    name: 'Сортировочный двор',
+    text: 'Завал, противовес, обходные мостки. Три способа пройти. Ни один не запирает.',
+  },
+  broken_railway: {
+    id: 'broken_railway',
+    name: 'Сломанный путь',
+    text: 'Тележечные направляющие. Дерево и камень. Не рельсы поезда — путь груза.',
+  },
+  counterweight_pass: {
+    id: 'counterweight_pass',
+    name: 'Проход противовеса',
+    text: 'Камень на канате. Если вернуть груз — мост опустится.',
+  },
+  lower_gallery: {
+    id: 'lower_gallery',
+    name: 'Нижние галереи',
+    text: 'Шпальники, пыльники, железоспины. Повторно, без бесконечного гринда.',
+  },
+  crushed_storage: {
+    id: 'crushed_storage',
+    name: 'Смятый склад',
+    text: 'Крепёж и лом. Потолок держит — пока.',
+  },
+  dark_haulway: {
+    id: 'dark_haulway',
+    name: 'Тёмная откатка',
+    text: 'Узкий ход. Пыль стоит столбом. Шаг слышно далеко.',
+  },
+  switching_chamber: {
+    id: 'switching_chamber',
+    name: 'Комната переключений',
+    text: 'Каменные каналы. Рычаги. Пазы. Указатели из дерева и железа. Не пульт.',
+  },
+  route_control_room: {
+    id: 'route_control_room',
+    name: 'Зал маршрутов',
+    text: 'Старые указатели сети. Стан обслуживал узлы. Теория Миры держится.',
+  },
+  skrezhetnik_lair: {
+    id: 'skrezhetnik_lair',
+    name: 'Логово Скрежетника',
+    text: 'На панцире застряли скобы и пластины. Не механизм. Не страж печати.',
+  },
+  upper_switchyard: {
+    id: 'upper_switchyard',
+    name: 'Верхняя сортировка',
+    text: 'Мост. Решётка. На той стороне — силуэт. Лица нет.',
+  },
+  signal_bridge: {
+    id: 'signal_bridge',
+    name: 'Сигнальный мост',
+    text: 'Он заканчивает ход. Противовес падает. Указатель сети сдвигается.',
+  },
+  sealed_service_pass: {
+    id: 'sealed_service_pass',
+    name: 'Служебный затвор',
+    text: 'Проход разделяет вас. Он уходит. Имя не сказано.',
+  },
+  sixth_seal_approach: {
+    id: 'sixth_seal_approach',
+    name: 'Подход к шестой печати',
+    text: 'Глубина стана. Затвор уже слышен. Слова незнакомца не уходят.',
+  },
+  station_depths: {
+    id: 'station_depths',
+    name: 'Глубина стана',
+    text: 'Каменные затворы. Старые крепления. Живое держит печать — не правит сеть.',
+  },
+  seal_2_chamber: {
+    id: 'seal_2_chamber',
+    name: 'Свод шестой печати',
+    text: 'Шестая печать. Identifier = 2. Затворник. Не Бездонник. Не тот, кто говорит.',
+  },
 };
 
 export const DEFAULT_LOCATION = 'forest_clearing';

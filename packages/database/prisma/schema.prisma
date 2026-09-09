@@ -45,6 +45,9 @@ enum ResourceType {
   BLACK_REED
   MARSH_HEART
   SEAL_SHARD_3
+  GEAR_SCRAP
+  STATION_CORE
+  SEAL_SHARD_2
 }
 
 enum Rarity {

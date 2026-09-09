@@ -63,9 +63,9 @@ async function act(
 }
 
 describe('clans 1.0', () => {
-  it('keeps prototype 0.0.11', () => {
-    expect(PROTOTYPE_VERSION).toBe('0.0.11');
-    expect(BALANCE_VERSION).toBe('0.0.11');
+  it('keeps prototype 0.0.12', () => {
+    expect(PROTOTYPE_VERSION).toBe('0.0.12');
+    expect(BALANCE_VERSION).toBe('0.0.12');
   });
 
   it('locks the clan hub before week 1 and opens after', async () => {

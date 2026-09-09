@@ -109,6 +109,13 @@ const TEXT_MENU_ALIASES: Record<string, string> = {
   топь: 'marsh',
   камыш: 'marsh',
   чаша: 'basin',
+  пост: 'station',
+  двор: 'station',
+  рельс: 'station',
+  сортировка: 'station',
+  галерея: 'gallery',
+  рычаг: 'switch',
+  затвор: 'seal6',
 };
 
 export function normalizeCommandText(text: string): string {

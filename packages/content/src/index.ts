@@ -13,6 +13,7 @@ import { WEEK2_NODES } from './dialogues-week2';
 import { WEEK3_NODES } from './dialogues-week3';
 import { WEEK4_NODES } from './dialogues-week4';
 import { WEEK5_NODES } from './dialogues-week5';
+import { WEEK6_NODES } from './dialogues-week6';
 import type { DialogueNode } from './dialogue-types';
 
 export * from './flags';
@@ -36,6 +37,7 @@ export { WEEK2_NODES } from './dialogues-week2';
 export { WEEK3_NODES } from './dialogues-week3';
 export { WEEK4_NODES } from './dialogues-week4';
 export { WEEK5_NODES } from './dialogues-week5';
+export { WEEK6_NODES } from './dialogues-week6';
 
 export const DIALOGUE_NODES: Record<string, DialogueNode> = {
   ...FOREST_NODES,
@@ -52,6 +54,7 @@ export const DIALOGUE_NODES: Record<string, DialogueNode> = {
   ...WEEK3_NODES,
   ...WEEK4_NODES,
   ...WEEK5_NODES,
+  ...WEEK6_NODES,
 };
 
 export function getDialogueNode(id: string): DialogueNode | undefined {
@@ -96,6 +99,9 @@ export function resourceLabel(resource: ResourceType): string {
     BLACK_REED: '🌾 Чёрный камыш',
     MARSH_HEART: '🖤 Сердце топи',
     SEAL_SHARD_3: '🔷 Осколок пятой печати',
+    GEAR_SCRAP: '⚙ Механический лом',
+    STATION_CORE: '⚙ Сердечник стана',
+    SEAL_SHARD_2: '🔷 Осколок шестой печати',
   };
   return labels[resource];
 }

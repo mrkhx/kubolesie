@@ -430,6 +430,34 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
     rarity: 'EPIC',
     questItem: true,
   },
+  haul_line: {
+    id: 'haul_line',
+    name: 'Тяговый канат',
+    description: 'Волокно, палка и механический лом. Короткий угол против Скрежетника. Не новый ярус инструмента.',
+    rarity: 'UNCOMMON',
+  },
+  mechanical_brace: {
+    id: 'mechanical_brace',
+    name: 'Механическая распорка',
+    description: 'Доски, лом и слиток. Держит площадку над затвором. Не ломает сеть.',
+    rarity: 'UNCOMMON',
+  },
+  lock_charm: {
+    id: 'lock_charm',
+    name: 'Оберег затвора',
+    description: 'Уникальный. Старые крепления чуть реже срываются.',
+    rarity: 'RARE',
+    slot: 'AMULET',
+    defenseBonus: 1,
+    dodgeBonus: 5,
+  },
+  seal_shard_2: {
+    id: 'seal_shard_2',
+    name: 'Осколок шестой печати',
+    description: 'Сюжетный ключ. Шестой найденный. Identifier = 2.',
+    rarity: 'EPIC',
+    questItem: true,
+  },
 };
 
 export const STONE_SALVAGE_TOOLS = ['stone_pickaxe', 'stone_axe', 'stone_sword'] as const;

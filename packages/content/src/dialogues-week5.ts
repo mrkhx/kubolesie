@@ -170,11 +170,12 @@ export const WEEK5_NODES: Record<string, DialogueNode> = {
     text: [
       'Пять печатей молчат. Две всё ещё зовут.',
       'Осталось: 2',
-      'Продолжение скоро.',
+      'За топью — заброшенный стан. Рычаги ещё тёплые.',
+      'Продолжение открыто.',
     ].join('\n'),
     choices: [
+      { id: 'day36', label: 'Начать День 36', command: 'BEGIN_DAY_36' },
       { id: 'camp', label: 'К стану', command: 'OPEN_CAMP' },
-      { id: 'look', label: 'Осмотреться', command: 'EXPLORE' },
     ],
   },
 };

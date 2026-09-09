@@ -1,8 +1,8 @@
 {
   "name": "kubolesie",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "private": true,
-  "description": "Куболесье — чат-RPG для сообщества ВКонтакте. Prototype 0.0.11.",
+  "description": "Куболесье — чат-RPG для сообщества ВКонтакте. Prototype 0.0.12.",
   "workspaces": [
     "apps/*",
     "packages/*"

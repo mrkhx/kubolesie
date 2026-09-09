@@ -52,6 +52,7 @@ export const TRADEABLE_RESOURCES = [
   'ROOT_FIBER',
   'ROT_RESIN',
   'BLACK_REED',
+  'GEAR_SCRAP',
 ] as const satisfies readonly ResourceType[];
 
 export const NON_TRADEABLE_RESOURCES = [
@@ -64,6 +65,8 @@ export const NON_TRADEABLE_RESOURCES = [
   'SHINY_STONE',
   'MARSH_HEART',
   'SEAL_SHARD_3',
+  'STATION_CORE',
+  'SEAL_SHARD_2',
 ] as const satisfies readonly ResourceType[];
 
 export type TradeableResource = (typeof TRADEABLE_RESOURCES)[number];
@@ -121,7 +124,7 @@ export const MARKET_CATEGORIES: Record<string, readonly TradeableResource[]> = {
   wood: ['LOG', 'PLANK', 'STICK', 'WOOD'],
   stone: ['COBBLESTONE', 'STONE', 'COAL', 'IRON_ORE', 'IRON_INGOT'],
   food: ['RAW_FISH', 'COOKED_FISH', 'RAW_MEAT', 'FOOD', 'WHEAT', 'SEED'],
-  mats: ['HIDE', 'REED', 'CLAY', 'FIBER', 'HERBS', 'SHREW_FUR', 'CHITIN_PLATE', 'MIST_RESIN', 'STRING', 'ROOT_FIBER', 'ROT_RESIN', 'BLACK_REED'],
+  mats: ['HIDE', 'REED', 'CLAY', 'FIBER', 'HERBS', 'SHREW_FUR', 'CHITIN_PLATE', 'MIST_RESIN', 'STRING', 'ROOT_FIBER', 'ROT_RESIN', 'BLACK_REED', 'GEAR_SCRAP'],
 };
 
 export const MARKET_CATEGORY_LABELS: Record<string, string> = {

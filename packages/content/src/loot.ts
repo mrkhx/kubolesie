@@ -173,6 +173,33 @@ export const COMBAT_LOOT: Record<string, CombatLootSpec> = {
     firstItems: ['mire_charm', 'seal_shard_3'],
     firstFlags: ['bezdonnik_defeated'],
   },
+  rail_scuttler: {
+    xp: 24,
+    xpRepeat: 12,
+    resources: { COBBLESTONE: [1, 1], GEAR_SCRAP: [0, 1] },
+  },
+  dust_hound: {
+    xp: 28,
+    xpRepeat: 13,
+    resources: { HIDE: [1, 1], COAL: [0, 1] },
+  },
+  ironback_brute: {
+    xp: 32,
+    xpRepeat: 14,
+    resources: { IRON_ORE: [0, 1], GEAR_SCRAP: [1, 2] },
+  },
+  skrezhetnik: {
+    xp: 70,
+    xpRepeat: 24,
+    resources: { GEAR_SCRAP: [2, 3] },
+    firstFlags: ['defeated_skrezhetnik'],
+  },
+  zatvornik: {
+    xp: 125,
+    xpRepeat: 30,
+    firstItems: ['lock_charm', 'seal_shard_2'],
+    firstFlags: ['zatvornik_defeated'],
+  },
 };
 
 export const WEDGE_STAGE_ENEMIES: Record<string, string> = {

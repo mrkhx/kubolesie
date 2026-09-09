@@ -212,6 +212,8 @@ export function afterCraftFlags(recipeId: string, flags: Record<string, string>)
   if (recipeId === 'path_marker') extra.push('has_path_marker');
   if (recipeId === 'reed_rope') extra.push('has_reed_rope');
   if (recipeId === 'marsh_platform') extra.push('has_marsh_platform');
+  if (recipeId === 'haul_line') extra.push('has_haul_line');
+  if (recipeId === 'mechanical_brace') extra.push('has_mechanical_brace');
   return extra;
 }
 

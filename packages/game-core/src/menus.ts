@@ -12,7 +12,7 @@ import type {
 } from '@kubolesie/shared';
 import { BACK_LABEL } from '@kubolesie/shared';
 
-export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'clan_home' | 'clan_tasks' | 'clan_donate' | 'cosmetics' | 'achievements' | 'farm' | 'quarry' | 'mist' | 'lowland' | 'seal2' | 'pvp_hub' | 'pvp_history' | 'pvp_rewards' | 'market' | 'market_buy' | 'market_sell' | 'market_mine' | 'market_auc' | 'work' | 'jobs' | 'production' | 'rootwood' | 'grove' | 'mechanism' | 'seal3' | 'trail' | 'hollow' | 'warped' | 'seal4' | 'marsh' | 'basin' | 'outpost' | 'seal5';
+export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'clan_home' | 'clan_tasks' | 'clan_donate' | 'cosmetics' | 'achievements' | 'farm' | 'quarry' | 'mist' | 'lowland' | 'seal2' | 'pvp_hub' | 'pvp_history' | 'pvp_rewards' | 'market' | 'market_buy' | 'market_sell' | 'market_mine' | 'market_auc' | 'work' | 'jobs' | 'production' | 'rootwood' | 'grove' | 'mechanism' | 'seal3' | 'trail' | 'hollow' | 'warped' | 'seal4' | 'marsh' | 'basin' | 'outpost' | 'seal5' | 'station' | 'gallery' | 'switch' | 'seal6';
 
 export const ACTION_MENUS: readonly ActionMenuId[] = [
   'hub',
@@ -73,6 +73,10 @@ export const ACTION_MENUS: readonly ActionMenuId[] = [
   'basin',
   'outpost',
   'seal5',
+  'station',
+  'gallery',
+  'switch',
+  'seal6',
 ];
 
 export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly string[]> = {
@@ -106,6 +110,8 @@ export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly s
     'path_marker',
     'reed_rope',
     'marsh_platform',
+    'haul_line',
+    'mechanical_brace',
   ],
 };
 
@@ -141,6 +147,8 @@ const RECIPE_LABELS: Record<string, string> = {
   path_marker: '📍 Метка пути',
   reed_rope: '🪢 Камышовая связка',
   marsh_platform: '🪵 Топяной настил',
+  haul_line: '🪢 Тяговый канат',
+  mechanical_brace: '⚙ Механическая распорка',
 };
 
 const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
@@ -202,6 +210,10 @@ const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
   basin: 'hub',
   outpost: 'hub',
   seal5: 'hub',
+  station: 'hub',
+  gallery: 'hub',
+  switch: 'hub',
+  seal6: 'hub',
 };
 
 export interface MenuSnapshot {
@@ -329,6 +341,7 @@ export function visibleRecipeButtons(group: 'tools' | 'weapons' | 'items', ctx: 
     if ((recipeId === 'root_rope' || recipeId === 'root_brace') && !ctx.flags.week_2_complete) continue;
     if ((recipeId === 'rot_binding' || recipeId === 'path_marker') && !ctx.flags.week_3_complete) continue;
     if ((recipeId === 'reed_rope' || recipeId === 'marsh_platform') && !ctx.flags.week_4_complete) continue;
+    if ((recipeId === 'haul_line' || recipeId === 'mechanical_brace') && !ctx.flags.week_5_complete) continue;
     if (!canAffordRecipe(recipe, ctx)) continue;
     const button = recipeButton(recipeId);
     if (button) buttons.push(button);
@@ -420,7 +433,9 @@ export function campButtons(ctx: MenuSnapshot): GameButton[] {
   if (ctx.flags.week_1_complete && buttons.length < 4) {
     buttons.push({ label: '⚒ Хозяйство', action: 'OPEN_MENU', payload: { menu: 'work' } });
   }
-  if (ctx.flags.week_4_complete && !ctx.flags.week_5_complete && buttons.length < 4) {
+  if (ctx.flags.week_5_complete && !ctx.flags.week_6_complete && buttons.length < 4) {
+    buttons.push({ label: '⛓ Пост', action: 'WEEK6_ACT', payload: { act: 'open' } });
+  } else if (ctx.flags.week_4_complete && !ctx.flags.week_5_complete && buttons.length < 4) {
     buttons.push({ label: '💧 Топь', action: 'WEEK5_ACT', payload: { act: 'open' } });
   } else if (ctx.flags.week_3_complete && !ctx.flags.week_4_complete && buttons.length < 4) {
     buttons.push({ label: '🍂 Тропа', action: 'WEEK4_ACT', payload: { act: 'open' } });

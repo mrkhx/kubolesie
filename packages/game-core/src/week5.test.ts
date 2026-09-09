@@ -371,10 +371,10 @@ describe('week 5 content canon', () => {
     expect(ITEM_TEMPLATES.seal_shard_3.questItem).toBe(true);
     expect(QUEST_TEMPLATES.some((quest) => quest.id === 'fifth_seal')).toBe(true);
     expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_29')).toBe(true);
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_36')).toBe(false);
+    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_43')).toBe(false);
     expect((GAME_COMMANDS as readonly string[]).includes('WEEK5_ACT')).toBe(true);
-    expect(PROTOTYPE_VERSION).toBe('0.0.11');
-    expect(BALANCE_VERSION).toBe('0.0.11');
+    expect(PROTOTYPE_VERSION).toBe('0.0.12');
+    expect(BALANCE_VERSION).toBe('0.0.12');
   });
 });
 
@@ -608,7 +608,8 @@ describe('day 35 bezdonnik', () => {
     expect(flags.marsh_heart_used).toBe('1');
     const again = await act(runtime, vkUserId, 'BEGIN_DAY_35');
     expect(again.text).toContain('Осталось: 2');
-    expect(again.text).toMatch(/Продолжение скоро/);
+    expect(again.text).toMatch(/Продолжение открыто/);
+    expect(again.buttons.some((row) => row.action === 'BEGIN_DAY_36')).toBe(true);
     const ach = (await store.listAchievements(player.id)).map((row) => row.achievementId);
     expect(ach).toContain('WEEK_FIVE_COMPLETE');
   });
@@ -803,7 +804,7 @@ describe('week 5 systems', () => {
     const { runtime, vkUserId } = await seedWeek4Done();
     const hero = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'hero' });
     expect(hero.buttons.map((row) => row.label)).toEqual(['👤 Профиль', '⚔ PvP', '🛒 Рынок', '🏕 Клан', '⬅ Назад']);
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_36')).toBe(false);
+    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_43')).toBe(false);
     const started = await act(runtime, vkUserId, 'BEGIN_DAY_29');
     expect(started.text).not.toMatch(/donat|premium|mini app|minecraft/i);
     expect(started.buttons.length).toBeLessThanOrEqual(5);

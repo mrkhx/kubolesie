@@ -215,6 +215,19 @@ export const CRAFT_RECIPES: Record<string, CraftRecipe> = {
     station: 'crafting_table',
     output: { kind: 'item', templateId: 'marsh_platform' },
   },
+  haul_line: {
+    id: 'haul_line',
+    name: 'Тяговый канат',
+    cost: { FIBER: 3, STICK: 2, GEAR_SCRAP: 2 },
+    output: { kind: 'item', templateId: 'haul_line' },
+  },
+  mechanical_brace: {
+    id: 'mechanical_brace',
+    name: 'Механическая распорка',
+    cost: { GEAR_SCRAP: 3, PLANK: 3, IRON_INGOT: 1 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'mechanical_brace' },
+  },
 };
 
 export const CRAFT_PIPELINE = [

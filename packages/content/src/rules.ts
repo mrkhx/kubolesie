@@ -179,6 +179,21 @@ export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequir
   COMPLETE_DAY_34: { flagsAll: ['network_changed_during_week5'] },
   COMPLETE_DAY_35: { flagsAll: ['bezdonnik_defeated'] },
   WEEK5_ACT: { flagsAll: ['week_4_complete'] },
+  BEGIN_DAY_36: { flagsAll: ['week_5_complete'] },
+  BEGIN_DAY_37: { flagsAll: ['day_36_complete'] },
+  BEGIN_DAY_38: { flagsAll: ['day_37_complete'] },
+  BEGIN_DAY_39: { flagsAll: ['day_38_complete'] },
+  BEGIN_DAY_40: { flagsAll: ['day_39_complete'] },
+  BEGIN_DAY_41: { flagsAll: ['day_40_complete'] },
+  BEGIN_DAY_42: { flagsAll: ['day_41_complete'] },
+  COMPLETE_DAY_36: { flagsAll: ['week6_recent_presence'] },
+  COMPLETE_DAY_37: { flagsAny: ['week6_path_clear', 'week6_path_weight', 'week6_path_catwalk'] },
+  COMPLETE_DAY_38: { flagsAll: ['visited_lower_gallery'] },
+  COMPLETE_DAY_39: { flagsAny: ['week6_switch_restored', 'week6_switch_left'] },
+  COMPLETE_DAY_40: { flagsAll: ['defeated_skrezhetnik'] },
+  COMPLETE_DAY_41: { flagsAll: ['week6_direct_contact'] },
+  COMPLETE_DAY_42: { flagsAll: ['zatvornik_defeated'] },
+  WEEK6_ACT: { flagsAll: ['week_5_complete'] },
   FURNACE_ACT: { flagsAny: ['furnace_placed', 'furnace_built'] },
   TRADE_ACT: { flagsAll: ['met_vel'] },
   PAY_TRIBUTE: { flagsAll: ['yara_claim_seen'] },
@@ -243,5 +258,20 @@ export const COMBAT_REQUIREMENTS: Record<string, CommandRequirement> = {
   },
   bezdonnik: {
     flagsAny: ['day_34_complete', 'bezdonnik_seen', 'bezdonnik_failed', 'bezdonnik_defeated'],
+  },
+  rail_scuttler: {
+    flagsAny: ['visited_lower_gallery', 'day_37_complete', 'week6_path_clear', 'week6_path_weight', 'week6_path_catwalk'],
+  },
+  dust_hound: {
+    flagsAny: ['visited_lower_gallery', 'day_37_complete', 'week6_path_clear', 'week6_path_weight', 'week6_path_catwalk'],
+  },
+  ironback_brute: {
+    flagsAny: ['visited_lower_gallery', 'day_37_complete', 'week6_path_clear', 'week6_path_weight', 'week6_path_catwalk'],
+  },
+  skrezhetnik: {
+    flagsAny: ['day_39_complete', 'skrezhetnik_failed', 'defeated_skrezhetnik'],
+  },
+  zatvornik: {
+    flagsAny: ['day_41_complete', 'zatvornik_seen', 'zatvornik_failed', 'zatvornik_defeated'],
   },
 };

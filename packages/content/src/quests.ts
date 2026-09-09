@@ -251,6 +251,48 @@ export const QUEST_TEMPLATES: QuestTemplateContent[] = [
     description: 'Бездонник. Кто-то прошёл недавно. Осталось: 2.',
     defaultStatus: 'LOCKED',
   },
+  {
+    id: 'enter_abandoned_station',
+    title: 'Заброшенный стан',
+    description: 'Стан должен был быть мёртв. Рычаг тёплый.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'restore_the_yard',
+    title: 'Старая сортировка',
+    description: 'Завал, противовес, мостки. Профессия помогает, не запирает.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'lower_gallery_hunt',
+    title: 'Нижние галереи',
+    description: 'Шпальник, пыльник, железоспин. Повторно, без бесконечного гринда.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'switching_chamber',
+    title: 'Комната переключений',
+    description: 'Стан обслуживал маршруты сети. Изучить, вернуть, не трогать.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'skrezhetnik_hunt',
+    title: 'Охота на Скрежетника',
+    description: 'Мини-босс стана. Не хранитель печати. Сердечник — shortcut, не ключ.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'unknown_contact',
+    title: 'Прямой контакт',
+    description: 'Силуэт на мосту. Две реплики. Имени нет. Он знает, что ты закрываешь печати.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'sixth_seal',
+    title: 'Шестая печать',
+    description: 'Затворник. Слова незнакомца не уходят. Осталось: 1.',
+    defaultStatus: 'LOCKED',
+  },
 ];
 
 export const IRON_FOR_GATE_TARGET = 8;
@@ -297,4 +339,13 @@ export const WEEK5_DAY_XP = {
   33: 40,
   34: 30,
   35: 20,
+} as const;
+export const WEEK6_DAY_XP = {
+  36: 25,
+  37: 25,
+  38: 30,
+  39: 30,
+  40: 40,
+  41: 30,
+  42: 20,
 } as const;
