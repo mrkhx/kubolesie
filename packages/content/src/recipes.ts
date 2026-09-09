@@ -189,6 +189,19 @@ export const CRAFT_RECIPES: Record<string, CraftRecipe> = {
     station: 'crafting_table',
     output: { kind: 'item', templateId: 'root_brace' },
   },
+  rot_binding: {
+    id: 'rot_binding',
+    name: 'Гнилая связка',
+    cost: { ROT_RESIN: 3, FIBER: 2, STICK: 2 },
+    output: { kind: 'item', templateId: 'rot_binding' },
+  },
+  path_marker: {
+    id: 'path_marker',
+    name: 'Метка пути',
+    cost: { PLANK: 4, COAL: 2, ROT_RESIN: 2 },
+    station: 'crafting_table',
+    output: { kind: 'item', templateId: 'path_marker' },
+  },
 };
 
 export const CRAFT_PIPELINE = [

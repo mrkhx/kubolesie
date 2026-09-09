@@ -119,6 +119,33 @@ export const COMBAT_LOOT: Record<string, CombatLootSpec> = {
     firstItems: ['root_charm', 'seal_shard_5'],
     firstFlags: ['vyazen_defeated'],
   },
+  rot_scuttler: {
+    xp: 20,
+    xpRepeat: 10,
+    resources: { HIDE: [1, 1], ROT_RESIN: [0, 1] },
+  },
+  mire_stalker: {
+    xp: 26,
+    xpRepeat: 12,
+    resources: { HIDE: [1, 2], HERBS: [0, 1] },
+  },
+  bark_reaper: {
+    xp: 28,
+    xpRepeat: 12,
+    resources: { FIBER: [1, 1], ROT_RESIN: [1, 2] },
+  },
+  blackroot: {
+    xp: 60,
+    xpRepeat: 20,
+    resources: { ROT_RESIN: [2, 3] },
+    firstFlags: ['defeated_blackroot'],
+  },
+  tlennik: {
+    xp: 110,
+    xpRepeat: 26,
+    firstItems: ['path_charm', 'seal_shard_4'],
+    firstFlags: ['tlennik_defeated'],
+  },
 };
 
 export const WEDGE_STAGE_ENEMIES: Record<string, string> = {

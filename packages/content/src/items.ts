@@ -374,6 +374,34 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
     rarity: 'EPIC',
     questItem: true,
   },
+  rot_binding: {
+    id: 'rot_binding',
+    name: 'Гнилая связка',
+    description: 'Смола, волокно и палка. Короткий угол против Чернокорня. Не новый ярус инструмента.',
+    rarity: 'UNCOMMON',
+  },
+  path_marker: {
+    id: 'path_marker',
+    name: 'Метка пути',
+    description: 'Доски, уголь и гнилая смола. Кладётся у ядра. Не ломает сеть — читает правку.',
+    rarity: 'UNCOMMON',
+  },
+  path_charm: {
+    id: 'path_charm',
+    name: 'Оберег тропы',
+    description: 'Уникальный. Тропа чуть реже врёт под ногой.',
+    rarity: 'RARE',
+    slot: 'AMULET',
+    defenseBonus: 1,
+    dodgeBonus: 5,
+  },
+  seal_shard_4: {
+    id: 'seal_shard_4',
+    name: 'Осколок четвёртой печати',
+    description: 'Сюжетный ключ. Четвёртый из семи.',
+    rarity: 'EPIC',
+    questItem: true,
+  },
 };
 
 export const STONE_SALVAGE_TOOLS = ['stone_pickaxe', 'stone_axe', 'stone_sword'] as const;

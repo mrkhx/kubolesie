@@ -300,10 +300,10 @@ describe('week 3 content canon', () => {
     expect(ITEM_TEMPLATES.seal_shard_5.questItem).toBe(true);
     expect(QUEST_TEMPLATES.some((quest) => quest.id === 'third_seal')).toBe(true);
     expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_15')).toBe(true);
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_22')).toBe(false);
+    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_29')).toBe(false);
     expect((GAME_COMMANDS as readonly string[]).includes('WEEK3_ACT')).toBe(true);
-    expect(PROTOTYPE_VERSION).toBe('0.0.9');
-    expect(BALANCE_VERSION).toBe('0.0.9');
+    expect(PROTOTYPE_VERSION).toBe('0.0.10');
+    expect(BALANCE_VERSION).toBe('0.0.10');
   });
 });
 
@@ -728,7 +728,7 @@ describe('week 3 systems', () => {
     const { runtime, vkUserId } = await seedWeek2Done();
     const hero = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'hero' });
     expect(hero.buttons.map((row) => row.label)).toEqual(['👤 Профиль', '⚔ PvP', '🛒 Рынок', '🏕 Клан', '⬅ Назад']);
-    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_22')).toBe(false);
+    expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_29')).toBe(false);
     const started = await act(runtime, vkUserId, 'BEGIN_DAY_15');
     expect(started.text).not.toMatch(/donat|premium|mini app|minecraft/i);
     expect(started.buttons.length).toBeLessThanOrEqual(5);

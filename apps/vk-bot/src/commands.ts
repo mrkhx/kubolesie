@@ -103,6 +103,9 @@ const TEXT_MENU_ALIASES: Record<string, string> = {
   чаща: 'rootwood',
   корни: 'rootwood',
   роща: 'grove',
+  тропа: 'trail',
+  гниль: 'trail',
+  гнилая: 'hollow',
 };
 
 export function normalizeCommandText(text: string): string {

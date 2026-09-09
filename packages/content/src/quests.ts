@@ -167,6 +167,48 @@ export const QUEST_TEMPLATES: QuestTemplateContent[] = [
     description: 'Вязень. Сеть печатей держится. Осталось: 4.',
     defaultStatus: 'LOCKED',
   },
+  {
+    id: 'enter_rotten_trail',
+    title: 'Вход на гнилую тропу',
+    description: 'Выйти к Гнилой тропе и прочитать правленый знак.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'follow_false_marks',
+    title: 'Ложные следы',
+    description: 'Три тропы. Профессия помогает, не запирает.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'rot_hollow_hunt',
+    title: 'Гнилая низина',
+    description: 'Гнилуш, топник, короедник. Повторно, без бесконечного гринда.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'missing_camp',
+    title: 'Пропавший лагерь',
+    description: 'Кострище есть. Людей нет. Группа свернула разом.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'blackroot_hunt',
+    title: 'Охота на Чернокорня',
+    description: 'Мини-босс кольца. Не хранитель печати. Сердцевина — shortcut, не ключ.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'warped_network',
+    title: 'Искажённый узел',
+    description: 'Не трещина. Правка. Кто-то перенастраивает сеть.',
+    defaultStatus: 'LOCKED',
+  },
+  {
+    id: 'fourth_seal',
+    title: 'Четвёртая печать',
+    description: 'Тленник. Путь вчера шёл иначе. Осталось: 3.',
+    defaultStatus: 'LOCKED',
+  },
 ];
 
 export const IRON_FOR_GATE_TARGET = 8;
@@ -195,4 +237,13 @@ export const WEEK3_DAY_XP = {
   19: 30,
   20: 40,
   21: 20,
+} as const;
+export const WEEK4_DAY_XP = {
+  22: 25,
+  23: 25,
+  24: 30,
+  25: 30,
+  26: 40,
+  27: 30,
+  28: 20,
 } as const;

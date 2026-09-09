@@ -163,9 +163,10 @@ export const WEEK3_NODES: Record<string, DialogueNode> = {
     text: [
       'Три печати молчат. Четыре всё ещё зовут.',
       'Осталось: 4',
-      'Продолжение скоро.',
+      'Гнилая тропа уже слышна.',
     ].join('\n'),
     choices: [
+      { id: 'day22', label: 'Начать День 22', command: 'BEGIN_DAY_22' },
       { id: 'camp', label: 'К стану', command: 'OPEN_CAMP' },
       { id: 'look', label: 'Осмотреться', command: 'EXPLORE' },
     ],

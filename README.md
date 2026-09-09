@@ -6,7 +6,7 @@
 
 Игрок взаимодействует через сообщения сообщества: текст, кнопки, callback actions и, при необходимости, карточки.
 
-Текущая версия: **Prototype 0.0.9** — Week 3 «Корневая чаща» поверх Jobs, дворов, рынка, кланов, PvP и Недели 1–2.
+Текущая версия: **Prototype 0.0.10** — Week 4 «Гнилая тропа» поверх Week 3, Jobs, дворов, рынка, кланов, PvP и Недели 1–2.
 
 ## Архитектура
 
@@ -218,6 +218,14 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 ```
 
 Ядро **не** собирает сырой VK keyboard JSON. Это делает VK Adapter.
+
+## Prototype 0.0.10 содержит
+
+- Week 4 «Гнилая тропа»: дни 22–28, четвёртая печать, Тленник
+- мини-босс Чернокорень, optional Jobs/Production/Market/Clan/PvP слой
+- `SEAL_SHARD_4`, оберег тропы, «Осталось: 3»
+- additive migration `20260909120000_week_four`
+- docs: `docs/gdd/week-4.md`
 
 ## Prototype 0.0.9 содержит
 

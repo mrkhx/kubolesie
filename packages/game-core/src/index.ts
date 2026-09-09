@@ -13,3 +13,4 @@ export * from './jobs';
 export * from './production';
 export * from './work-ui';
 export * from './week3';
+export * from './week4';

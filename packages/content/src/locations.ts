@@ -125,6 +125,71 @@ export const LOCATIONS: Record<string, LocationTemplate> = {
     name: 'Глубокий свод',
     text: 'Третья печать. Не Вензель. Не сторож. Что-то старше держит сеть.',
   },
+  rotten_trail_edge: {
+    id: 'rotten_trail_edge',
+    name: 'Край гнилой тропы',
+    text: 'Деревья в тёмных прожилках. Следы зверей обрываются. Старый знак несут свежим резом.',
+  },
+  split_path: {
+    id: 'split_path',
+    name: 'Развилка ложных следов',
+    text: 'Три тропы. Звериная, овраг, настилка. Все сходятся. Одна врёт меньше.',
+  },
+  black_bark_marker: {
+    id: 'black_bark_marker',
+    name: 'Чёрный маркер',
+    text: 'Знак печати. Поверх — свежий рез. Направление сдвинуто на палец.',
+  },
+  rot_hollow: {
+    id: 'rot_hollow',
+    name: 'Гнилая низина',
+    text: 'Почва проседает. Гнилуши, топники, короедники. Смола тёплая.',
+  },
+  sinking_ground: {
+    id: 'sinking_ground',
+    name: 'Провальная почва',
+    text: 'Грунт дышит и садится. Шаг надо выбирать, не бежать.',
+  },
+  deadwood_ring: {
+    id: 'deadwood_ring',
+    name: 'Кольцо мёртвой коры',
+    text: 'Кора и корни срослись. Здесь стоит Чернокорень.',
+  },
+  missing_camp: {
+    id: 'missing_camp',
+    name: 'Пропавший лагерь',
+    text: 'Кострище есть. Вещи есть. Людей нет. Стрелка к печати перечёркнута.',
+  },
+  warped_marker_field: {
+    id: 'warped_marker_field',
+    name: 'Поле правленого знака',
+    text: 'Старые метки и новые поверх. Путь к печати сдвинут руками.',
+  },
+  buried_crossing: {
+    id: 'buried_crossing',
+    name: 'Зарытый перекрёсток',
+    text: 'Нити сети уходят в почву. Поверх них — чужой рез.',
+  },
+  corrupted_node: {
+    id: 'corrupted_node',
+    name: 'Искажённый узел',
+    text: 'Не трещина. Правка. Кто-то знает, как сеть держит путь.',
+  },
+  rotten_seal_forecourt: {
+    id: 'rotten_seal_forecourt',
+    name: 'Преддверие четвёртой печати',
+    text: 'Почва пахнет тленом. Путь под ногами врёт на палец.',
+  },
+  black_root_vault: {
+    id: 'black_root_vault',
+    name: 'Чёрный свод',
+    text: 'Четвёртая печать. Тленник держит ядро пути, не кору.',
+  },
+  seal_4: {
+    id: 'seal_4',
+    name: 'Четвёртая печать',
+    text: 'Печать стихает не в тишину. В ощущение, что путь вчера шёл иначе.',
+  },
 };
 
 export const DEFAULT_LOCATION = 'forest_clearing';

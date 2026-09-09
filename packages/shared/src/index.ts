@@ -1,5 +1,5 @@
-export const BALANCE_VERSION = '0.0.9';
-export const PROTOTYPE_VERSION = '0.0.9';
+export const BALANCE_VERSION = '0.0.10';
+export const PROTOTYPE_VERSION = '0.0.10';
 
 export const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
 export const ENERGY_PER_INTERVAL = 1;
@@ -108,6 +108,21 @@ export const GAME_COMMANDS = [
   'COMPLETE_DAY_20',
   'COMPLETE_DAY_21',
   'WEEK3_ACT',
+  'BEGIN_DAY_22',
+  'BEGIN_DAY_23',
+  'BEGIN_DAY_24',
+  'BEGIN_DAY_25',
+  'BEGIN_DAY_26',
+  'BEGIN_DAY_27',
+  'BEGIN_DAY_28',
+  'COMPLETE_DAY_22',
+  'COMPLETE_DAY_23',
+  'COMPLETE_DAY_24',
+  'COMPLETE_DAY_25',
+  'COMPLETE_DAY_26',
+  'COMPLETE_DAY_27',
+  'COMPLETE_DAY_28',
+  'WEEK4_ACT',
 ] as const;
 
 export type GameCommandType = (typeof GAME_COMMANDS)[number];
@@ -180,7 +195,10 @@ export type ResourceType =
   | 'SEAL_SHARD_6'
   | 'ROOT_FIBER'
   | 'ROOT_CORE'
-  | 'SEAL_SHARD_5';
+  | 'SEAL_SHARD_5'
+  | 'ROT_RESIN'
+  | 'BLACKROOT_CORE'
+  | 'SEAL_SHARD_4';
 
 export const RESOURCE_TYPES: ResourceType[] = [
   'WOOD',
@@ -213,6 +231,9 @@ export const RESOURCE_TYPES: ResourceType[] = [
   'ROOT_FIBER',
   'ROOT_CORE',
   'SEAL_SHARD_5',
+  'ROT_RESIN',
+  'BLACKROOT_CORE',
+  'SEAL_SHARD_4',
 ];
 
 export type Rarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' | 'MYTHIC';

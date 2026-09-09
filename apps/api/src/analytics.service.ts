@@ -32,6 +32,14 @@ const FUNNEL_FLAGS = [
   'day_20_complete',
   'day_21_complete',
   'week_3_complete',
+  'day_22_complete',
+  'day_23_complete',
+  'day_24_complete',
+  'day_25_complete',
+  'day_26_complete',
+  'day_27_complete',
+  'day_28_complete',
+  'week_4_complete',
   'wenzel_defeated',
   'mist_warden_defeated',
   'rootlasher_failed',
@@ -44,6 +52,21 @@ const FUNNEL_FLAGS = [
   'root_social_negotiate',
   'root_social_sneak',
   'root_pack_ready',
+  'defeated_blackroot',
+  'blackroot_failed',
+  'tlennik_defeated',
+  'tlennik_failed',
+  'week4_path_beast',
+  'week4_path_ravine',
+  'week4_path_plank',
+  'week4_path_adv',
+  'week4_social_help',
+  'week4_social_talk',
+  'week4_social_pass',
+  'week4_social_pvp',
+  'missing_camp_examined',
+  'missing_camp_skipped',
+  'warped_network_seen',
   'emberkit_bonded',
   'scavenger_bonded',
 ] as const;
@@ -119,6 +142,7 @@ export class AnalyticsService {
       week1,
       week2,
       week3,
+      week4,
     ] = await Promise.all([
       this.store.countPlayers(),
       this.store.countPlayers({ createdSince: today }),
@@ -135,6 +159,7 @@ export class AnalyticsService {
       this.store.countFlags(['week_1_complete']),
       this.store.countFlags(['week_2_complete']),
       this.store.countFlags(['week_3_complete']),
+      this.store.countFlags(['week_4_complete']),
     ]);
     return {
       totalPlayers,
@@ -152,6 +177,7 @@ export class AnalyticsService {
       week1Completed: week1[0]?.count ?? 0,
       week2Completed: week2[0]?.count ?? 0,
       week3Completed: week3[0]?.count ?? 0,
+      week4Completed: week4[0]?.count ?? 0,
       totalClans: await this.store.countClans(),
       clanMembers: await this.store.countClanMembers(),
       activeClans7d: await this.store.countActiveClans(d7),
@@ -177,7 +203,7 @@ export class AnalyticsService {
       this.store.countReturning(yesterday, today, today),
       this.store.countReturning(d7ago, addUtcDays(d7ago, 1), addUtcDays(today, -7)),
       this.store.levelDistribution(),
-      this.store.countFlags(['week_1_complete', 'week_2_complete', 'week_3_complete']),
+      this.store.countFlags(['week_1_complete', 'week_2_complete', 'week_3_complete', 'week_4_complete']),
     ]);
     const avgLevel =
       total === 0 ? 0 : levels.reduce((sum, row) => sum + row.level * row.count, 0) / total;
@@ -196,6 +222,7 @@ export class AnalyticsService {
       week1Complete: week1.find((row) => row.flag === 'week_1_complete')?.count ?? 0,
       week2Complete: week1.find((row) => row.flag === 'week_2_complete')?.count ?? 0,
       week3Complete: week1.find((row) => row.flag === 'week_3_complete')?.count ?? 0,
+      week4Complete: week1.find((row) => row.flag === 'week_4_complete')?.count ?? 0,
       playersInClan: await this.store.countClanMembers(),
       clanParticipationRate: pct(await this.store.countClanMembers(), total),
     };
@@ -215,7 +242,7 @@ export class AnalyticsService {
       registered: step(total),
       startedGame: step(total),
       days: Object.fromEntries(
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21].map((day) => [
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28].map((day) => [
           `day${day}`,
           step(flagMap[`day_${day}_complete`] ?? 0),
         ]),
@@ -223,6 +250,7 @@ export class AnalyticsService {
       week1Complete: step(flagMap.week_1_complete ?? 0),
       week2Complete: step(flagMap.week_2_complete ?? 0),
       week3Complete: step(flagMap.week_3_complete ?? 0),
+      week4Complete: step(flagMap.week_4_complete ?? 0),
       pvpUnlocked: step(pvpUnlocked),
       firstPvp: step(Math.max(firstPvp, firstPvpLoss)),
       firstBoss: step(firstBoss),
@@ -231,6 +259,9 @@ export class AnalyticsService {
       mistWardenWins: step(flagMap.mist_warden_defeated ?? 0),
       rootlasherWins: step(flagMap.defeated_rootlasher ?? 0),
       vyazenWins: step(flagMap.vyazen_defeated ?? 0),
+      blackrootWins: step(flagMap.defeated_blackroot ?? 0),
+      tlennikWins: step(flagMap.tlennik_defeated ?? 0),
+      guardianAttempts: step((flagMap.tlennik_defeated ?? 0) + (flagMap.tlennik_failed ?? 0)),
       week3Paths: {
         logger: step(flagMap.root_path_logger ?? 0),
         miner: step(flagMap.root_path_miner ?? 0),
@@ -242,6 +273,23 @@ export class AnalyticsService {
         pvp: step(flagMap.root_social_pvp ?? 0),
       },
       week3Packed: step(flagMap.root_pack_ready ?? 0),
+      week4Paths: {
+        beast: step(flagMap.week4_path_beast ?? 0),
+        ravine: step(flagMap.week4_path_ravine ?? 0),
+        plank: step(flagMap.week4_path_plank ?? 0),
+        advantage: step(flagMap.week4_path_adv ?? 0),
+      },
+      week4Social: {
+        help: step(flagMap.week4_social_help ?? 0),
+        talk: step(flagMap.week4_social_talk ?? 0),
+        pass: step(flagMap.week4_social_pass ?? 0),
+        pvp: step(flagMap.week4_social_pvp ?? 0),
+      },
+      week4Camp: {
+        examined: step(flagMap.missing_camp_examined ?? 0),
+        skipped: step(flagMap.missing_camp_skipped ?? 0),
+      },
+      warpedNetworkSeen: step(flagMap.warped_network_seen ?? 0),
       clansCreatedToday: await this.store.countClans({ createdSince: utcDayStart(new Date()) }),
       clansCreated7d: await this.store.countClans({ createdSince: ago(new Date(), 7 * DAY_MS) }),
     };
