@@ -546,7 +546,13 @@ export class GameRuntime {
     };
   }
 
+  private isRemDay2State(state: string): boolean {
+    return state === 'rem_day2' || state.startsWith('rem_day2_');
+  }
+
   private async startGame(ctx: Ctx): Promise<GameResponse> {
+    const recovered = await this.recoverDay2Progression(ctx);
+    if (recovered) return recovered;
     const nodeId = ctx.player.currentState || 'start';
     const rendered = await this.renderNode(ctx.player, nodeId === 'gather_wood' ? 'forest_hub' : nodeId);
     if (nodeId === 'start' || getDialogueNode(nodeId)?.id === 'start') {
@@ -559,6 +565,25 @@ export class GameRuntime {
       }
     }
     return rendered;
+  }
+
+  private async recoverDay2Progression(ctx: Ctx): Promise<GameResponse | null> {
+    if (!ctx.flags.day_1_complete) return null;
+    const state = ctx.player.currentState || '';
+    if (!this.isRemDay2State(state)) return null;
+    if (ctx.flags.day_2_complete) {
+      if (ctx.flags.player_camp_founded) ctx.player.currentLocation = 'player_camp';
+      await this.store.savePlayer(ctx.player);
+      return this.renderNode(ctx.player, 'day2_complete');
+    }
+    if (ctx.flags.player_camp_founded) {
+      ctx.player.currentLocation = 'player_camp';
+      await this.store.savePlayer(ctx.player);
+      return this.exploreCamp(await this.load(ctx.player));
+    }
+    ctx.player.currentState = 'day2_start';
+    await this.store.savePlayer(ctx.player);
+    return this.renderNode(ctx.player, 'day2_start');
   }
 
   private hud(ctx: Ctx): string {
@@ -710,7 +735,12 @@ export class GameRuntime {
       }
       if (ctx.flags.week_1_complete) return openWeek2Menu(this.weekHost(), ctx, 'mist');
       if (ctx.flags.day_1_complete && !ctx.flags.day_2_complete) {
-        return this.renderNode(ctx.player, 'rem_day2');
+        if (!ctx.flags.player_camp_founded) {
+          return this.renderNode(ctx.player, 'day2_start');
+        }
+        ctx.player.currentLocation = 'player_camp';
+        await this.store.savePlayer(ctx.player);
+        return this.exploreCamp(await this.load(ctx.player));
       }
       return this.renderNode(ctx.player, 'rem_camp');
     }
@@ -1276,7 +1306,7 @@ export class GameRuntime {
       if (ctx.flags.week_1_complete) return openWeek2Menu(this.weekHost(), ctx, 'mist');
       if (ctx.flags.day_6_complete) return this.renderNode(ctx.player, 'day7_start');
       if (!ctx.flags.day_2_complete) return this.renderNode(ctx.player, 'rem_day2');
-      return this.renderNode(ctx.player, 'rem_day2');
+      return this.renderNode(ctx.player, 'rem_camp');
     }
     if (!ctx.flags.activated_node7_token) return this.renderNode(ctx.player, 'abandoned_camp');
     if (!ctx.flags.node7_gate_closed) {
@@ -2069,7 +2099,7 @@ export class GameRuntime {
 
   private choicesToButtons(nodeId: string, choices: DialogueChoice[]): GameButton[] {
     return choices.map((choice) => {
-      if (choice.command) {
+      if (choice.command && !(choice.actions && choice.actions.length > 0)) {
         return { label: choice.label, action: choice.command, payload: choice.commandPayload };
       }
       return { label: choice.label, action: 'DIALOGUE_CHOICE', payload: { nodeId, choiceId: choice.id } };
@@ -2189,6 +2219,10 @@ export class GameRuntime {
     }
     const dest = choice.nextNode ?? nodeId;
     const isPureNav = !choice.command && !(choice.actions && choice.actions.length > 0);
+    if (this.isRemDay2State(nodeId) && nodeId !== current && getDialogueNode(current)) {
+      const live = await this.renderNode(ctx.player, current);
+      return { ...live, skipSend: true };
+    }
     if (isPureNav) {
       if (current === dest) {
         const live = await this.renderNode(ctx.player, current);
@@ -2200,14 +2234,17 @@ export class GameRuntime {
       }
     }
     const applied = await this.applyActions(ctx.player, choice.actions, ctx);
-    const fresh = (await this.store.findPlayerById(ctx.player.id)) ?? ctx.player;
     if (choice.command) {
-      const inner = await this.dispatch(fresh, { type: choice.command, payload: choice.commandPayload }, `inner:${randomUUID()}`);
+      const inner = await this.dispatch(
+        ctx.player,
+        { type: choice.command, payload: choice.commandPayload },
+        `inner:${randomUUID()}`,
+      );
       if (applied.notes.length) inner.text = `${inner.text}\n\n${applied.notes.join('\n')}`;
       return inner;
     }
     const nextId = applied.nextOverride ?? choice.nextNode ?? nodeId;
-    const rendered = await this.renderNode(fresh, nextId);
+    const rendered = await this.renderNode(ctx.player, nextId);
     if (applied.notes.length) rendered.text = `${rendered.text}\n\n${applied.notes.join('\n')}`;
     return rendered;
   }

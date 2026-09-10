@@ -156,6 +156,12 @@ export const DAY2_NODES: Record<string, DialogueNode> = {
         actions: [{ type: 'set_location', locationId: 'player_camp' }],
         condition: { type: 'flag', flag: 'player_camp_founded', exists: true },
       },
+      {
+        id: 'found',
+        label: 'Поставить стан',
+        nextNode: 'day2_start',
+        condition: { type: 'flag', flag: 'player_camp_founded', exists: false },
+      },
     ],
   },
   rem_day2_node7: {

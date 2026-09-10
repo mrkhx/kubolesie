@@ -582,6 +582,75 @@ describe('vk rem dialogue duplicate and stale buttons', () => {
     expect((await store.findPlayerByVkUserId('9001'))!.currentState).toBe('rem_day2_lantern');
     expect(client.sent).toHaveLength(0);
   });
+
+  it('«К стану» leaves rem_day2 and «Начать» resumes camp', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(messageNew({ text: 'начать', eventId: 's-camp' }));
+    const player = await seedRemDay2(store);
+    await store.setFlag(player.id, 'player_camp_founded', '1');
+    client.sent.length = 0;
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'node7',
+        payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2', choiceId: 'what7_shown' },
+      }),
+    );
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'node7-back',
+        payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2_node7_shown', choiceId: 'back' },
+      }),
+    );
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'lantern',
+        payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2', choiceId: 'lantern' },
+      }),
+    );
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'lantern-back',
+        payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2_lantern', choiceId: 'back' },
+      }),
+    );
+    client.sent.length = 0;
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'to-camp',
+        payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2', choiceId: 'camp' },
+      }),
+    );
+    expect(client.sent[0]!.text).not.toMatch(/ковыряет клин/);
+    const left = (await store.findPlayerByVkUserId('9001'))!;
+    expect(left.currentState).not.toMatch(/^rem_day2/);
+    expect(left.currentLocation).toBe('player_camp');
+
+    client.sent.length = 0;
+    await adapter.handleCallback(messageNew({ text: 'начать', eventId: 's-resume' }));
+    expect(client.sent[0]!.text).not.toMatch(/ковыряет клин/);
+    expect((await store.findPlayerByVkUserId('9001'))!.currentState).not.toMatch(/^rem_day2/);
+
+    client.sent.length = 0;
+    await adapter.handleCallback(
+      messageEvent({
+        eventId: 'stale-camp',
+        payload: { action: 'DIALOGUE_CHOICE', nodeId: 'rem_day2', choiceId: 'camp' },
+      }),
+    );
+    expect(client.sent).toHaveLength(0);
+    expect((await store.findPlayerByVkUserId('9001'))!.currentState).not.toMatch(/^rem_day2/);
+  });
+
+  it('legacy EXPLORE payload from Rem no longer loops rem_day2 when camp exists', async () => {
+    const { adapter, store, client } = boot();
+    await adapter.handleCallback(messageNew({ text: 'начать', eventId: 's-explore' }));
+    const player = await seedRemDay2(store);
+    await store.setFlag(player.id, 'player_camp_founded', '1');
+    client.sent.length = 0;
+    await adapter.handleCallback(messageEvent({ eventId: 'old-explore', payload: { action: 'EXPLORE' } }));
+    expect(client.sent[0]!.text).not.toMatch(/ковыряет клин/);
+    expect((await store.findPlayerByVkUserId('9001'))!.currentLocation).toBe('player_camp');
+  });
 });
 
 describe('vk payload allowlist', () => {

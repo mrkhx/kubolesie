@@ -841,7 +841,9 @@ describe('day 2 rem dialogue is not replayed from stale buttons', () => {
   });
 
   it('inventory and explore still work from Rem', async () => {
-    const { runtime, vkUserId } = await seedDay1Complete({ showToken: true, lantern: true });
+    const { runtime, vkUserId, player, store } = await seedDay1Complete({ showToken: true, lantern: true });
+    await act(runtime, vkUserId, 'BEGIN_DAY_2');
+    await act(runtime, vkUserId, 'FOUND_CAMP');
     await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
     await act(runtime, vkUserId, 'DIALOGUE_CHOICE', { nodeId: 'rem_day2', choiceId: 'lantern' });
     const inv = await act(runtime, vkUserId, 'OPEN_INVENTORY');
@@ -849,5 +851,151 @@ describe('day 2 rem dialogue is not replayed from stale buttons', () => {
     expect(inv.skipSend).toBeUndefined();
     const look = await act(runtime, vkUserId, 'EXPLORE');
     expect(look.buttons.length).toBeGreaterThan(0);
+    expect((await reload(store, player.id)).currentState).not.toMatch(/^rem_day2/);
+    expect(look.text).not.toMatch(/ковыряет клин/);
+  });
+});
+
+describe('day 2 rem softlock recovery', () => {
+  it('renders «К стану» as a dialogue choice so location actually changes', async () => {
+    const { runtime, vkUserId } = await startCamp({ showToken: true, lantern: true });
+    const rem = await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    const camp = rem.buttons.find((button) => /стан|лагер/i.test(button.label));
+    expect(camp).toBeDefined();
+    expect(camp!.action).toBe('DIALOGUE_CHOICE');
+    expect(camp!.payload).toEqual({ nodeId: 'rem_day2', choiceId: 'camp' });
+    expect(hasLabel(rem, 'галере')).toBe(false);
+  });
+
+  it('Node 7 → lantern → hide → current camp button leaves rem_day2', async () => {
+    const { store, runtime, player, vkUserId } = await startCamp({ showToken: true, lantern: true });
+    const rem = await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    expect(rem.text).toMatch(/ковыряет клин/);
+    expect(hasLabel(rem, 'Узел 7')).toBe(true);
+    expect(hasLabel(rem, 'внутри')).toBe(true);
+    expect(hasLabel(rem, 'фонарь')).toBe(true);
+    expect(hasLabel(rem, 'стан') || hasLabel(rem, 'лагер')).toBe(true);
+
+    const asked = await choice(runtime, vkUserId, 'rem_day2', 'what7_shown');
+    expect(asked.text).toContain('Кивок');
+    const back = await choice(runtime, vkUserId, 'rem_day2_node7_shown', 'back');
+    expect(back.text).toMatch(/затвора/);
+    expect((await reload(store, player.id)).currentState).toBe('rem_day2');
+
+    const shown = await choice(runtime, vkUserId, 'rem_day2', 'lantern');
+    expect(shown.text).toMatch(/Вел/);
+    expect(hasLabel(shown, 'Убрать')).toBe(true);
+    const hide = await choice(runtime, vkUserId, 'rem_day2_lantern', 'back');
+    expect(hide.skipSend).toBeUndefined();
+    expect(hide.text).toMatch(/затвора/);
+    expect((await reload(store, player.id)).currentState).toBe('rem_day2');
+
+    const left = await choice(runtime, vkUserId, 'rem_day2', 'camp');
+    expect(left.skipSend).toBeUndefined();
+    expect(left.text).not.toMatch(/ковыряет клин/);
+    const after = await reload(store, player.id);
+    expect(after.currentState).not.toMatch(/^rem_day2/);
+    expect(after.currentLocation).toBe('player_camp');
+    expect(left.text).toMatch(/стан/i);
+
+    const resumed = await act(runtime, vkUserId, 'START_GAME');
+    expect(resumed.text).not.toMatch(/ковыряет клин/);
+    expect((await reload(store, player.id)).currentState).not.toMatch(/^rem_day2/);
+    expect((await reload(store, player.id)).currentLocation).toBe('player_camp');
+  });
+
+  it('legacy EXPLORE from rem_camp with a founded camp leaves Rem', async () => {
+    const { store, runtime, player, vkUserId } = await startCamp({ lantern: true });
+    await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    expect((await reload(store, player.id)).currentLocation).toBe('rem_camp');
+    const look = await act(runtime, vkUserId, 'EXPLORE');
+    expect(look.text).not.toMatch(/ковыряет клин/);
+    const after = await reload(store, player.id);
+    expect(after.currentLocation).toBe('player_camp');
+    expect(after.currentState).toBe('camp_look');
+  });
+
+  it('START_GAME recovers a stuck rem_day2 player into camp', async () => {
+    const { store, runtime, player, vkUserId } = await startCamp({ lantern: true });
+    await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    const stuck = await reload(store, player.id);
+    expect(stuck.currentState).toBe('rem_day2');
+    const start = await act(runtime, vkUserId, 'START_GAME');
+    expect(start.text).not.toMatch(/ковыряет клин/);
+    expect((await reload(store, player.id)).currentState).toBe('camp_look');
+    expect((await reload(store, player.id)).currentLocation).toBe('player_camp');
+  });
+
+  it('START_GAME recovers rem_day2 without a camp back to day2_start', async () => {
+    const { store, runtime, player, vkUserId } = await seedDay1Complete({ lantern: true });
+    await act(runtime, vkUserId, 'BEGIN_DAY_2');
+    player.currentState = 'rem_day2';
+    player.currentLocation = 'rem_camp';
+    await store.savePlayer(player);
+    const start = await act(runtime, vkUserId, 'START_GAME');
+    expect(start.text).toMatch(/Затвор держит|стан/i);
+    expect(hasLabel(start, 'клетку') || start.buttons.some((button) => button.action === 'FOUND_CAMP')).toBe(
+      true,
+    );
+    expect((await reload(store, player.id)).currentState).toBe('day2_start');
+  });
+
+  it('rem_day2 without a camp offers a found-camp exit', async () => {
+    const { store, runtime, player, vkUserId } = await seedDay1Complete({ lantern: true });
+    await act(runtime, vkUserId, 'BEGIN_DAY_2');
+    player.currentState = 'rem_day2';
+    player.currentLocation = 'rem_camp';
+    await store.savePlayer(player);
+    const rem = await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    expect(hasLabel(rem, 'Поставить стан')).toBe(true);
+    expect(hasLabel(rem, 'лагер') || hasLabel(rem, 'стану')).toBe(false);
+    const found = await choice(runtime, vkUserId, 'rem_day2', 'found');
+    expect(found.text).toMatch(/Затвор держит|стан/i);
+    expect((await reload(store, player.id)).currentState).toBe('day2_start');
+  });
+
+  it('current rem_day2 camp button transitions; stale rem buttons after leaving are no-ops', async () => {
+    const { store, runtime, player, vkUserId } = await startCamp({ showToken: true, lantern: true });
+    await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    const left = await choice(runtime, vkUserId, 'rem_day2', 'camp');
+    expect(left.skipSend).toBeUndefined();
+    expect((await reload(store, player.id)).currentState).toBe('camp_look');
+
+    const staleCamp = await choice(runtime, vkUserId, 'rem_day2', 'camp');
+    expect(staleCamp.skipSend).toBe(true);
+    expect((await reload(store, player.id)).currentState).toBe('camp_look');
+
+    const staleNode7 = await choice(runtime, vkUserId, 'rem_day2', 'what7_shown');
+    expect(staleNode7.skipSend).toBe(true);
+    expect((await reload(store, player.id)).currentState).toBe('camp_look');
+
+    const staleLantern = await choice(runtime, vkUserId, 'rem_day2', 'lantern');
+    expect(staleLantern.skipSend).toBe(true);
+    expect((await reload(store, player.id)).currentLocation).toBe('player_camp');
+    expect((await reload(store, player.id)).currentState).toBe('camp_look');
+  });
+
+  it('rem_day2_lantern + stale rem_day2 camp payload stays on the lantern', async () => {
+    const { store, runtime, player, vkUserId } = await startCamp({ showToken: true, lantern: true });
+    await act(runtime, vkUserId, 'TALK_NPC', { npcId: 'rem' });
+    await choice(runtime, vkUserId, 'rem_day2', 'lantern');
+    expect((await reload(store, player.id)).currentState).toBe('rem_day2_lantern');
+    const stale = await choice(runtime, vkUserId, 'rem_day2', 'camp');
+    expect(stale.skipSend).toBe(true);
+    expect((await reload(store, player.id)).currentState).toBe('rem_day2_lantern');
+  });
+
+  it('START_GAME after day 2 complete does not reopen rem_day2', async () => {
+    const { store, runtime, player, vkUserId } = await startCamp({ log: 3, stick: 3, coal: 1 });
+    await act(runtime, vkUserId, 'PLACE_CAMP_TABLE');
+    await act(runtime, vkUserId, 'CRAFT_ITEM', { recipeId: 'campfire' });
+    await act(runtime, vkUserId, 'COMPLETE_DAY_2');
+    const row = await reload(store, player.id);
+    row.currentState = 'rem_day2';
+    row.currentLocation = 'rem_camp';
+    await store.savePlayer(row);
+    const start = await act(runtime, vkUserId, 'START_GAME');
+    expect(start.text).toMatch(/Продолжение скоро будет доступно|Стан стоит/);
+    expect((await reload(store, player.id)).currentState).toBe('day2_complete');
   });
 });
