@@ -8,8 +8,9 @@ import {
   type NormalizedIncomingEvent,
   type ResourceType,
 } from '@kubolesie/shared';
-import { LOCATIONS, MINING_SITES, getLocation } from '@kubolesie/content';
+import { CRAFT_RECIPES, LOCATIONS, MINING_SITES, getLocation } from '@kubolesie/content';
 import { MemoryGameStore } from './memory-store';
+import { CRAFT_MENU_GROUPS } from './menus';
 import { GameRuntime } from './runtime';
 import type { PlayerRecord } from './store';
 
@@ -325,6 +326,45 @@ export class SimSession {
       throw new Error(`no button matching "${part}". have: ${labelsOf(this.last).join(', ')}`);
     }
     return this.act(button.action as GameCommandType, button.payload ?? {});
+  }
+
+  async collectPagedLabels(maxPages = 8): Promise<string[]> {
+    const seen = new Set(labelsOf(this.last));
+    for (let page = 0; page < maxPages && this.last.buttons.some((button) => button.label.includes('Ещё')); page += 1) {
+      await this.press('Ещё');
+      for (const label of labelsOf(this.last)) seen.add(label);
+    }
+    return [...seen];
+  }
+
+  async pressOnPages(part: string, maxPages = 8): Promise<GameResponse> {
+    for (let page = 0; page < maxPages; page += 1) {
+      if (this.last.buttons.some((button) => button.label.includes(part))) {
+        return this.press(part);
+      }
+      if (!this.last.buttons.some((button) => button.label.includes('Ещё'))) break;
+      await this.press('Ещё');
+    }
+    throw new Error(`no button matching "${part}" across pages. have: ${labelsOf(this.last).join(', ')}`);
+  }
+
+  async openCraftGroup(group: 'items' | 'tools' | 'weapons' | 'materials'): Promise<GameResponse> {
+    return this.act('OPEN_MENU', { menu: group });
+  }
+
+  async craftViaUi(part: string): Promise<GameResponse> {
+    const groups = ['items', 'tools', 'weapons', 'materials'] as const;
+    for (const group of groups) {
+      await this.openCraftGroup(group);
+      for (let page = 0; page < 8; page += 1) {
+        if (this.last.buttons.some((button) => button.label.includes(part))) {
+          return this.press(part);
+        }
+        if (!this.last.buttons.some((button) => button.label.includes('Ещё'))) break;
+        await this.press('Ещё');
+      }
+    }
+    throw new Error(`recipe "${part}" is not visible in craft UI`);
   }
 
   async mine(site: string): Promise<GameResponse> {
@@ -683,3 +723,142 @@ export async function randomWalk(session: SimSession, seed: number, steps: numbe
 }
 
 export { ENERGY_PER_INTERVAL, ENERGY_REGEN_INTERVAL_MS };
+
+const SKIP_CRAWL_ACTIONS = new Set([
+  'PROMPT_HERO_NAME',
+  'CANCEL_HERO_NAME',
+  'START_PVE',
+  'START_PVP',
+  'COMPLETE_DAY_2',
+  'COMPLETE_DAY_3',
+  'COMPLETE_DAY_7',
+  'COMPLETE_DAY_14',
+  'COMPLETE_DAY_21',
+  'COMPLETE_DAY_28',
+  'COMPLETE_DAY_35',
+  'COMPLETE_DAY_42',
+  'BEGIN_DAY_2',
+  'BEGIN_DAY_3',
+  'BEGIN_DAY_8',
+  'BEGIN_DAY_15',
+  'BEGIN_DAY_22',
+  'BEGIN_DAY_29',
+  'BEGIN_DAY_36',
+  'FOUND_CAMP',
+  'REST_NIGHT',
+]);
+
+function crawlSkip(button: GameButton): boolean {
+  if (SKIP_CRAWL_ACTIONS.has(button.action)) return true;
+  if (TEXT_INPUT_ACTIONS.has(button.action)) return true;
+  const act = String(button.payload?.act ?? '');
+  if (button.action === 'MARKET_ACT' && ['sell', 'price', 'auc_new', 'confirm_sell', 'auc_res', 'bid'].includes(act)) {
+    return true;
+  }
+  if (button.action === 'CLAN_ACT' && ['create', 'rename', 'disband', 'leave'].includes(act)) return true;
+  return false;
+}
+
+export interface CrawlReport {
+  screens: number;
+  presses: number;
+  errors: string[];
+  overflows: number;
+  empty: number;
+}
+
+export async function crawlButtons(session: SimSession, maxScreens = 40): Promise<CrawlReport> {
+  const seen = new Set<string>();
+  const errors: string[] = [];
+  let screens = 0;
+  let presses = 0;
+  let empty = 0;
+  await session.act('OPEN_CAMP');
+  const queue: Array<{ type: GameCommandType; payload: Record<string, unknown> }> = [
+    { type: 'OPEN_CAMP', payload: {} },
+    { type: 'OPEN_MENU', payload: { menu: 'hub' } },
+    { type: 'OPEN_MENU', payload: { menu: 'gather' } },
+    { type: 'OPEN_MENU', payload: { menu: 'craft' } },
+    { type: 'OPEN_MENU', payload: { menu: 'items' } },
+    { type: 'OPEN_MENU', payload: { menu: 'tools' } },
+    { type: 'OPEN_MENU', payload: { menu: 'weapons' } },
+    { type: 'OPEN_MENU', payload: { menu: 'materials' } },
+    { type: 'OPEN_INVENTORY', payload: {} },
+    { type: 'OPEN_MENU', payload: { menu: 'hero' } },
+    { type: 'OPEN_PROFILE', payload: {} },
+    { type: 'EXPLORE', payload: {} },
+  ];
+  while (queue.length && screens < maxScreens) {
+    const next = queue.shift()!;
+    try {
+      await session.act(next.type, next.payload);
+    } catch (error) {
+      errors.push(`${next.type}: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+    screens += 1;
+    if (session.last.buttons.length === 0) empty += 1;
+    if (session.last.buttons.length > 5) {
+      errors.push(formatButtonOverflow(session.buttonOverflows.at(-1) ?? {
+        reason: 'overflow',
+        location: '',
+        currentState: '',
+        step: session.history.length,
+        count: session.last.buttons.length,
+        labels: labelsOf(session.last),
+      }));
+    }
+    const fp = fingerprint(
+      (await session.reload().catch(() => null))?.currentLocation ?? '',
+      (await session.reload().catch(() => null))?.currentState ?? '',
+      session.last.buttons,
+    );
+    if (seen.has(fp)) continue;
+    seen.add(fp);
+    const buttons = [...session.last.buttons];
+    for (const button of buttons) {
+      if (crawlSkip(button)) continue;
+      presses += 1;
+      try {
+        await session.act(button.action as GameCommandType, button.payload ?? {});
+        session.assertHealthy();
+        if (
+          !SKIP_CRAWL_ACTIONS.has(button.action) &&
+          session.last.buttons.length > 0 &&
+          session.last.buttons.length <= 5
+        ) {
+          const child = fingerprint(
+            (await session.reload().catch(() => null))?.currentLocation ?? '',
+            (await session.reload().catch(() => null))?.currentState ?? '',
+            session.last.buttons,
+          );
+          if (!seen.has(child) && queue.length < maxScreens * 3) {
+            queue.push({ type: 'OPEN_MENU', payload: { menu: 'hub' } });
+          }
+        }
+      } catch (error) {
+        errors.push(
+          `${button.action}/${button.label}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+  return {
+    screens,
+    presses,
+    errors,
+    overflows: session.buttonOverflows.length,
+    empty,
+  };
+}
+
+export function deadRecipeIds(): string[] {
+  const grouped = new Set<string>([
+    ...CRAFT_MENU_GROUPS.tools,
+    ...CRAFT_MENU_GROUPS.weapons,
+    ...CRAFT_MENU_GROUPS.items,
+    ...CRAFT_MENU_GROUPS.materials,
+    'campfire',
+  ]);
+  return Object.keys(CRAFT_RECIPES).filter((id) => !grouped.has(id));
+}

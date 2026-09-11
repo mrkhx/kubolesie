@@ -51,6 +51,7 @@ import {
   craftUnlockFlags,
   craftUnlockNote,
   type CommandRequirement,
+  type CraftRecipe,
   type DialogueAction,
   type DialogueChoice,
   type DialogueCondition,
@@ -908,7 +909,7 @@ export class GameRuntime {
     if (isWeek4Menu(menu)) return openWeek4Menu(this.weekHost(), ctx, menu);
     if (isWeek3Menu(menu)) return openWeek3Menu(this.weekHost(), ctx, menu);
     if (isWeek2Menu(menu)) return openWeek2Menu(this.weekHost(), ctx, menu);
-    if (isWeekMenu(menu)) return openWeekMenu(this.weekHost(), ctx, menu);
+    if (isWeekMenu(menu)) return openWeekMenu(this.weekHost(), ctx, menu, page);
     const built = buildActionMenu(menu, this.snapshot(ctx), extraText ?? '', page);
     const text = extraText ?? (menu === 'hub' ? this.hubCampText(ctx) : built.text);
     return this.respond(ctx.player, text, built.buttons);
@@ -1098,80 +1099,95 @@ export class GameRuntime {
     );
   }
 
+  private async craftFail(ctx: Ctx, recipe: CraftRecipe, message: string): Promise<GameResponse> {
+    const group = recipeGroup(recipe.id);
+    if (group) {
+      const menu = buildActionMenu(group, this.snapshot(ctx));
+      return this.respond(ctx.player, message, menu.buttons.length >= 2 ? menu.buttons : NAV);
+    }
+    if (recipe.id === 'campfire') {
+      const menu = buildActionMenu('camp', this.snapshot(ctx));
+      return this.respond(ctx.player, message, menu.buttons.length >= 2 ? menu.buttons : NAV);
+    }
+    return this.respond(ctx.player, message, NAV);
+  }
+
   private async craftItem(ctx: Ctx, recipeId: string): Promise<GameResponse> {
     const recipe = getRecipe(recipeId);
     if (!recipe) return this.respond(ctx.player, 'Такого рецепта нет.', NAV);
     if (recipe.station === 'crafting_table' && !this.hasCraftingTable(ctx)) {
-      throw new ActionRejectedError('Нужен верстак.');
+      return this.craftFail(ctx, recipe, 'Нужен верстак.');
     }
     if (recipe.id === 'crafting_table' && this.hasCraftingTable(ctx)) {
-      throw new ActionRejectedError('Верстак уже есть. Поставь его на стан, не делай второй.');
+      return this.craftFail(ctx, recipe, 'Верстак уже есть. Поставь его на стан, не делай второй.');
     }
     if (recipe.id === 'campfire' || recipe.id === 'chest') {
       if (ctx.player.currentLocation !== 'player_camp' || !ctx.flags.player_camp_founded) {
-        throw new ActionRejectedError('Это ставится на своём стане.');
+        return this.craftFail(ctx, recipe, 'Это ставится на своём стане.');
       }
     }
     if (recipe.id === 'campfire' && ctx.flags.camp_fire_built) {
-      throw new ActionRejectedError('Костёр уже стоит.');
+      return this.craftFail(ctx, recipe, 'Костёр уже стоит.');
     }
     if (recipe.id === 'chest' && ctx.flags.camp_chest_built) {
-      throw new ActionRejectedError('Сундук уже есть.');
+      return this.craftFail(ctx, recipe, 'Сундук уже есть.');
     }
     if (recipe.id === 'furnace') {
       if (!ctx.flags.day_3_complete) {
-        throw new ActionRejectedError('Печь — после Сизого клина. Сначала День 3.');
+        return this.craftFail(ctx, recipe, 'Печь — после Сизого клина. Сначала День 3.');
       }
       if (!furnaceCraftLocationOk(ctx)) {
-        throw new ActionRejectedError('Печь ставится на своём стане. Или у костра Рема, если стана нет.');
+        return this.craftFail(ctx, recipe, 'Печь ставится на своём стане. Или у костра Рема, если стана нет.');
       }
       if (ctx.flags.furnace_placed || ctx.flags.furnace_built) {
-        throw new ActionRejectedError('Печь уже стоит.');
+        return this.craftFail(ctx, recipe, 'Печь уже стоит.');
       }
     }
     if (
       (recipe.id === 'wooden_sword' || recipe.id === 'stone_sword' || recipe.id === 'hide_tunic') &&
       !ctx.flags.day_2_complete
     ) {
-      throw new ActionRejectedError('Это оружие — после стана. Сначала День 2.');
+      return this.craftFail(ctx, recipe, 'Это оружие — после стана. Сначала День 2.');
     }
     if (
       (recipe.id === 'iron_pickaxe' || recipe.id === 'iron_axe' || recipe.id === 'iron_sword') &&
       !ctx.flags.first_ingot
     ) {
-      throw new ActionRejectedError('Сначала выплави слиток в печи.');
+      return this.craftFail(ctx, recipe, 'Сначала выплави слиток в печи.');
     }
     if ((recipe.id === 'stone_hoe' || recipe.id === 'iron_hoe') && !ctx.flags.farming_unlocked) {
-      throw new ActionRejectedError('Грядка ещё не открыта.');
+      return this.craftFail(ctx, recipe, 'Грядка ещё не открыта.');
     }
     if (recipe.id === 'bow' && !ctx.flags.first_string && !(ctx.resources.STRING ?? 0)) {
-      throw new ActionRejectedError('Сначала добудь нить в низине.');
+      return this.craftFail(ctx, recipe, 'Сначала добудь нить в низине.');
     }
     if (recipe.id === 'bucket' && !ctx.flags.day_10_complete) {
-      throw new ActionRejectedError('Ведро — когда вода станет дорогой.');
+      return this.craftFail(ctx, recipe, 'Ведро — когда вода станет дорогой.');
     }
     if (recipe.id === 'shield' && !ctx.flags.day_12_complete && !ctx.flags.quarry_chamber) {
-      throw new ActionRejectedError('Щит — к Смольнику.');
+      return this.craftFail(ctx, recipe, 'Щит — к Смольнику.');
     }
     if (recipe.id === 'bread' && !ctx.flags.first_harvest && !(ctx.resources.WHEAT ?? 0)) {
-      throw new ActionRejectedError('Сначала урожай.');
+      return this.craftFail(ctx, recipe, 'Сначала урожай.');
     }
     const cost = effectiveRecipeCost(recipe, this.snapshot(ctx));
     for (const [resource, need] of Object.entries(cost)) {
       const have = ctx.resources[resource as ResourceType] ?? 0;
       if (have < (need ?? 0)) {
-        throw new InsufficientResourcesError(
+        return this.craftFail(
+          ctx,
+          recipe,
           `Не хватает ${resourceLabel(resource as ResourceType)}: нужно ${need}, есть ${have}.`,
         );
       }
     }
     if (recipe.id === 'campfire') {
       const ok = await this.store.tryClaimReward(ctx.player.id, 'structure', 'campfire');
-      if (!ok) throw new RewardAlreadyClaimedError('Костёр уже стоит.');
+      if (!ok) return this.craftFail(ctx, recipe, 'Костёр уже стоит.');
     }
     if (recipe.id === 'chest') {
       const ok = await this.store.tryClaimReward(ctx.player.id, 'structure', 'camp_chest');
-      if (!ok) throw new RewardAlreadyClaimedError('Сундук уже есть.');
+      if (!ok) return this.craftFail(ctx, recipe, 'Сундук уже есть.');
     }
     for (const [resource, need] of Object.entries(cost)) {
       await this.store.addResource(ctx.player.id, resource as ResourceType, -(need ?? 0));

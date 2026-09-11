@@ -44,6 +44,7 @@ import { formatCombatLog } from './combat-log';
 import type { GameStore, InventoryItemRecord, PlayerQuestRecord, PlayerRecord } from './store';
 import { grantMetaAchievement, noteActivity } from './meta';
 import { noteSmelt } from './mining-metrics';
+import { pagedButtons } from './paging';
 
 export const WEEK_MENUS = ['wedge', 'daily', 'furnace', 'trade', 'pvp', 'prep'] as const;
 export type WeekMenuId = (typeof WEEK_MENUS)[number];
@@ -518,7 +519,12 @@ async function completeDay7(host: WeekHost, ctx: WeekCtx): Promise<GameResponse>
   return host.renderNode(ctx.player, 'seven_seals');
 }
 
-export async function openWeekMenu(host: WeekHost, ctx: WeekCtx, menu: WeekMenuId): Promise<GameResponse> {
+export async function openWeekMenu(
+  host: WeekHost,
+  ctx: WeekCtx,
+  menu: WeekMenuId,
+  page = 0,
+): Promise<GameResponse> {
   if (menu === 'wedge' || menu === 'daily') {
     if (!ctx.flags.day_2_complete) throw new ActionRejectedError('Сейчас это сделать нельзя.');
   }
@@ -543,7 +549,7 @@ export async function openWeekMenu(host: WeekHost, ctx: WeekCtx, menu: WeekMenuI
       ctx.player.currentLocation = 'ashen_wedge';
       await host.store.savePlayer(ctx.player);
     }
-    return wedgeMenu(host, ctx);
+    return wedgeMenu(host, ctx, page);
   }
   if (menu === 'daily') return dailyMenu(host, ctx);
   if (menu === 'furnace') return furnaceAct(host, ctx, { act: 'open' });
@@ -562,39 +568,42 @@ export async function openWeekMenu(host: WeekHost, ctx: WeekCtx, menu: WeekMenuI
   return prepMenu(host, ctx);
 }
 
-function wedgeMenu(_host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
-  const buttons: GameButton[] = [];
+function wedgeMenu(_host: WeekHost, ctx: WeekCtx, page = 0): Promise<GameResponse> {
+  const items: GameButton[] = [];
   if (!ctx.flags.wedge_path_cleared) {
-    buttons.push({ label: 'На тропу', action: 'START_PVE', payload: { enemyId: 'moss_boar' } });
+    items.push({ label: 'На тропу', action: 'START_PVE', payload: { enemyId: 'moss_boar' } });
   } else {
-    buttons.push({ label: 'Тропа ещё', action: 'START_PVE', payload: { enemyId: 'needle_runner' } });
+    items.push({ label: 'Тропа ещё', action: 'START_PVE', payload: { enemyId: 'needle_runner' } });
   }
   if (ctx.flags.wedge_path_cleared && !ctx.flags.wedge_pitch_cleared) {
-    buttons.push({ label: 'Глубже', action: 'START_PVE', payload: { enemyId: 'pitch_mite' } });
+    items.push({ label: 'Глубже', action: 'START_PVE', payload: { enemyId: 'pitch_mite' } });
   } else if (ctx.flags.wedge_pitch_cleared && !ctx.flags.wedge_roots_cleared) {
-    buttons.push({ label: 'Корневая яма', action: 'START_PVE', payload: { enemyId: 'resin_brute' } });
+    items.push({ label: 'Корневая яма', action: 'START_PVE', payload: { enemyId: 'resin_brute' } });
   } else if (ctx.flags.wedge_roots_cleared) {
-    buttons.push({ label: 'Элита ещё', action: 'START_PVE', payload: { enemyId: 'resin_brute' } });
+    items.push({ label: 'Элита ещё', action: 'START_PVE', payload: { enemyId: 'resin_brute' } });
   }
   if (ctx.flags.wedge_pitch_cleared || ctx.flags.stumpfang_failed || ctx.flags.defeated_stumpfang) {
-    buttons.push({ label: 'Пнеклык', action: 'DIALOGUE_CHOICE', payload: { nodeId: 'stumpfang_gate', choiceId: 'fight' } });
+    items.push({
+      label: 'Пнеклык',
+      action: 'DIALOGUE_CHOICE',
+      payload: { nodeId: 'stumpfang_gate', choiceId: 'fight' },
+    });
   }
-  if (buttons.length < 4) {
-    buttons.push({ label: 'Ежедневки', action: 'OPEN_MENU', payload: { menu: 'daily' } });
+  items.push({ label: 'Ежедневки', action: 'OPEN_MENU', payload: { menu: 'daily' } });
+  if (ctx.flags.wedge_path_cleared && !ctx.flags.day_3_complete) {
+    items.push({ label: 'Завершить День 3', action: 'COMPLETE_DAY_3' });
   }
-  if (
-    ctx.flags.wedge_path_cleared &&
-    !ctx.flags.day_3_complete &&
-    buttons.length < 5
-  ) {
-    buttons.push({ label: 'Завершить День 3', action: 'COMPLETE_DAY_3' });
-  }
-  buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
+  const buttons = pagedButtons(
+    items,
+    page,
+    (next) => ({ label: '➡ Ещё', action: 'OPEN_MENU', payload: { menu: 'wedge', page: next } }),
+    { label: BACK_LABEL, action: 'OPEN_CAMP' },
+  );
   const text = [
     'Сизый клин. Хвоя кубами. Смола пахнет железом.',
     ctx.flags.defeated_stumpfang ? 'Пнеклык повержен. Фарм открыт.' : 'Пнеклык ждёт в котловине.',
   ].join('\n');
-  return _host.respond(ctx.player, text, buttons.slice(0, 5));
+  return _host.respond(ctx.player, text, buttons);
 }
 
 function dailyMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {

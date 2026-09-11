@@ -97,7 +97,7 @@ function siteButton(site: MiningSite, ctx: MiningMenuView, rank: number): GameBu
   return { label: site.lockedLabel, action: 'MINE_ACT', payload: { act: 'info', site: site.id } };
 }
 
-export function miningGatherButtons(ctx: MiningMenuView): GameButton[] {
+export function miningGatherBody(ctx: MiningMenuView): GameButton[] {
   const shortcuts: GameButton[] = [];
   const loc = ctx.currentLocation;
   if (
@@ -134,17 +134,16 @@ export function miningGatherButtons(ctx: MiningMenuView): GameButton[] {
   } else {
     nested.push({ label: '📖 Добыча и руды', action: 'MINE_ACT', payload: { act: 'help' } });
   }
-  const merged = [...shortcuts, ...nested];
-  const out: GameButton[] = [];
-  for (const button of merged) {
-    if (out.length >= 4) break;
-    out.push(button);
-  }
-  if (out.length < 4 && !out.some((button) => button.payload?.act === 'help')) {
-    out.push({ label: '📖 Добыча и руды', action: 'MINE_ACT', payload: { act: 'help' } });
-  }
-  out.push({ label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } });
-  return out.slice(0, 5);
+  return [...shortcuts, ...nested];
+}
+
+export function miningGatherButtons(ctx: MiningMenuView, page = 0): GameButton[] {
+  return paginate(
+    miningGatherBody(ctx),
+    page,
+    (next) => ({ label: '➡ Ещё', action: 'MINE_ACT', payload: { act: 'open', page: next } }),
+    { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
+  );
 }
 
 function viewOf(ctx: WeekCtx): MiningMenuView {
@@ -323,7 +322,7 @@ export async function mineAct(
     return host.respond(
       ctx.player,
       `⛏ ДОБЫЧА\nКирка: ${pickaxeLabel(inventoryRank(ctx))}. Энергия: ${ctx.player.energy}/${ctx.player.maxEnergy}.\nЧем лучше кирка — тем более редкие жилы доступны.`,
-      miningGatherButtons(viewOf(ctx)),
+      miningGatherButtons(viewOf(ctx), page),
     );
   }
   if (act === 'help') {
@@ -361,7 +360,7 @@ export async function mineAct(
   if (act === 'mine') {
     return doMine(host, ctx, site, eventId);
   }
-  return host.respond(ctx.player, '⛏ ДОБЫЧА', miningGatherButtons(viewOf(ctx)));
+  return host.respond(ctx.player, '⛏ ДОБЫЧА', miningGatherButtons(viewOf(ctx), page));
 }
 
 export function isMineCommand(type: string): boolean {

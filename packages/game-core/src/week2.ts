@@ -12,6 +12,7 @@ import {
 import type { CombatantSnapshot } from '@kubolesie/combat-engine';
 import { ActionRejectedError, InsufficientResourcesError } from './errors';
 import { grantMetaAchievement, noteActivity } from './meta';
+import { pagedButtons } from './paging';
 import type { WeekCtx, WeekHost } from './week';
 
 export const WEEK2_MENUS = ['farm', 'quarry', 'mist', 'lowland', 'seal2'] as const;
@@ -568,10 +569,10 @@ async function week2Act(
   if (act === 'seal') return sealMenu(host, ctx);
   if (act === 'prep') return prepSeal(host, ctx);
   if (act === 'eat_fish') return farmAct(host, ctx, 'eat_fish');
-  if (act === 'open') return week2Hub(host, ctx);
+  if (act === 'open' || act === 'hub') return week2Hub(host, ctx, Number(payload.page ?? 0));
   if (act === 'meet_mira') return meetMira(host, ctx);
   void payload;
-  return week2Hub(host, ctx);
+  return week2Hub(host, ctx, Number(payload.page ?? 0));
 }
 
 async function gatherBorder(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
@@ -922,28 +923,29 @@ async function sealMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
   return prepSeal(host, ctx);
 }
 
-async function week2Hub(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
+async function week2Hub(host: WeekHost, ctx: WeekCtx, page = 0): Promise<GameResponse> {
   if (ctx.flags.week_2_complete) return host.renderNode(ctx.player, 'week2_complete');
-  const buttons: GameButton[] = [];
+  const items: GameButton[] = [];
   if (ctx.flags.farming_unlocked) {
-    buttons.push({ label: 'Грядка', action: 'FARM_ACT', payload: { act: 'open' } });
+    items.push({ label: 'Грядка', action: 'FARM_ACT', payload: { act: 'open' } });
   }
-  buttons.push({ label: 'Кромка', action: 'WEEK2_ACT', payload: { act: 'border' } });
+  items.push({ label: 'Кромка', action: 'WEEK2_ACT', payload: { act: 'border' } });
   if (ctx.flags.day_8_complete) {
-    buttons.push({ label: 'Низина', action: 'WEEK2_ACT', payload: { act: 'lowland' } });
+    items.push({ label: 'Низина', action: 'WEEK2_ACT', payload: { act: 'lowland' } });
   }
   if (ctx.flags.day_11_complete) {
-    buttons.push({ label: 'Карьер', action: 'WEEK2_ACT', payload: { act: 'quarry' } });
+    items.push({ label: 'Карьер', action: 'WEEK2_ACT', payload: { act: 'quarry' } });
   }
   if (ctx.flags.day_13_complete) {
-    buttons.push({ label: 'Печать', action: 'WEEK2_ACT', payload: { act: 'seal' } });
+    items.push({ label: 'Печать', action: 'WEEK2_ACT', payload: { act: 'seal' } });
   }
-  buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-  return host.respond(
-    ctx.player,
-    'Низина дышит. Две печати ещё не молчат. Одна уже.',
-    buttons.slice(0, 5),
+  const buttons = pagedButtons(
+    items,
+    page,
+    (next) => ({ label: '➡ Ещё', action: 'WEEK2_ACT', payload: { act: 'hub', page: next } }),
+    { label: BACK_LABEL, action: 'OPEN_CAMP' },
   );
+  return host.respond(ctx.player, 'Низина дышит. Две печати ещё не молчат. Одна уже.', buttons);
 }
 
 export async function applyWeek2Victory(host: WeekHost, ctx: WeekCtx, enemyId: string): Promise<string[]> {

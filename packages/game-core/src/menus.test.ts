@@ -89,7 +89,9 @@ describe('action menus', () => {
     await store.addResource(player.id, 'LOG', 4);
     const tools = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'tools' });
     expect(hasLabel(tools, 'Назад')).toBe(true);
-    expect(tools.buttons.some((button) => button.action === 'CRAFT_ITEM')).toBe(false);
+    expect(hasLabel(tools, 'Деревянная кирка')).toBe(true);
+    expect(tools.buttons.some((button) => button.action === 'CRAFT_ITEM')).toBe(true);
+    expect(tools.buttons.length).toBeLessThanOrEqual(5);
 
     const weapons = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'weapons' });
     expect(weapons.text).toContain('нечего ковать');
@@ -97,10 +99,12 @@ describe('action menus', () => {
 
     const items = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'items' });
     expect(hasLabel(items, 'Доски')).toBe(true);
+    expect(hasLabel(items, 'Палки') || hasLabel(items, 'Ещё')).toBe(true);
     expect(items.buttons.find((button) => button.label.includes('Доски'))).toMatchObject({
       action: 'CRAFT_ITEM',
       payload: { recipeId: 'planks' },
     });
+    expect(items.buttons.length).toBeLessThanOrEqual(5);
   });
 
   it('8. назад returns to the previous menu', async () => {
@@ -224,7 +228,8 @@ describe('mock playthrough via nested menus', () => {
 
     const tools = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'tools' });
     expect(hasLabel(tools, 'Назад')).toBe(true);
-    expect(tools.buttons.some((button) => button.action === 'CRAFT_ITEM')).toBe(false);
+    expect(hasLabel(tools, 'Деревянная кирка')).toBe(true);
+    expect(tools.buttons.some((button) => button.action === 'CRAFT_ITEM')).toBe(true);
 
     const backToCraft = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'craft' });
     expect(hasLabel(backToCraft, 'Базовый')).toBe(true);
@@ -269,6 +274,52 @@ describe('mock playthrough via nested menus', () => {
     expect((await store.listItems(player.id)).some((item) => item.templateId === 'stone_pickaxe')).toBe(true);
     expect((await store.getResources(player.id)).WOOD ?? 0).toBe(0);
     expect((await store.getResources(player.id)).STONE ?? 0).toBe(0);
+  });
+
+  it('shows unlocked survival recipes even without ingredients or a table', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    player.hp = 20;
+    player.energy = 20;
+    player.coins = 0;
+    await store.savePlayer(player);
+    await store.addResource(player.id, 'LOG', 8);
+    await store.createItem({ playerId: player.id, templateId: 'rusty_token', rarity: 'UNCOMMON' });
+    await store.createItem({ playerId: player.id, templateId: 'stone_knife', rarity: 'COMMON' });
+    await store.createItem({ playerId: player.id, templateId: 'dry_rusk', rarity: 'COMMON' });
+
+    const craft = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'craft' });
+    expect(labels(craft)).toEqual(['🪵 Базовый', '⛏ Инструменты', '⚔ Снаряжение', '🧰 Материалы', '⬅ Назад']);
+
+    const items = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'items' });
+    expect(items.text).not.toMatch(/Пока нечего крафтить/);
+    const itemLabels = new Set(labels(items));
+    let page = items;
+    for (let i = 0; i < 6; i += 1) {
+      expect(page.buttons.length).toBeLessThanOrEqual(5);
+      expect(hasLabel(page, 'Назад')).toBe(true);
+      for (const label of labels(page)) itemLabels.add(label);
+      const more = page.buttons.find((button) => button.label.includes('Ещё'));
+      if (!more) break;
+      page = await act(runtime, vkUserId, 'OPEN_MENU', more.payload);
+    }
+    expect([...itemLabels].some((label) => label.includes('Доски'))).toBe(true);
+    expect([...itemLabels].some((label) => label.includes('Палки'))).toBe(true);
+    expect([...itemLabels].some((label) => label.includes('Верстак'))).toBe(true);
+
+    const tools = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'tools' });
+    expect(tools.text).not.toMatch(/Пока нечего крафтить/);
+    expect(hasLabel(tools, 'Деревянная кирка')).toBe(true);
+    const pick = tools.buttons.find((button) => button.label.includes('Деревянная кирка'))!;
+    const denied = await act(runtime, vkUserId, 'CRAFT_ITEM', pick.payload ?? {});
+    expect(denied.text).toMatch(/верстак/i);
+    expect(denied.buttons.length).toBeGreaterThanOrEqual(2);
+    expect(denied.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(denied, 'Назад') || hasLabel(denied, 'кирка') || hasLabel(denied, 'Ещё')).toBe(true);
+
+    const sticks = await act(runtime, vkUserId, 'CRAFT_ITEM', { recipeId: 'sticks' });
+    expect(sticks.text).toMatch(/Не хватает/);
+    expect(sticks.buttons.length).toBeGreaterThanOrEqual(2);
+    expect(sticks.buttons.length).toBeLessThanOrEqual(5);
   });
 
   it('day 2 starts instead of the old stub', async () => {

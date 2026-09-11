@@ -11,7 +11,10 @@ import type {
   ResourceType,
 } from '@kubolesie/shared';
 import { BACK_LABEL } from '@kubolesie/shared';
-import { miningGatherButtons } from './mining';
+import { miningGatherBody } from './mining';
+import { pagedButtons } from './paging';
+
+export { pagedButtons } from './paging';
 
 export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'materials' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'clan_home' | 'clan_tasks' | 'clan_donate' | 'cosmetics' | 'achievements' | 'farm' | 'quarry' | 'mist' | 'lowland' | 'seal2' | 'pvp_hub' | 'pvp_history' | 'pvp_rewards' | 'market' | 'market_buy' | 'market_sell' | 'market_mine' | 'market_auc' | 'work' | 'jobs' | 'production' | 'rootwood' | 'grove' | 'mechanism' | 'seal3' | 'trail' | 'hollow' | 'warped' | 'seal4' | 'marsh' | 'basin' | 'outpost' | 'seal5' | 'station' | 'gallery' | 'switch' | 'seal6';
 
@@ -349,24 +352,6 @@ export function backButton(from: ActionMenuId): GameButton {
   };
 }
 
-export function pagedButtons(
-  items: GameButton[],
-  page: number,
-  makeMore: (nextPage: number) => GameButton,
-  back: GameButton,
-  pageSize = 3,
-): GameButton[] {
-  const size = Math.max(1, Math.floor(pageSize));
-  const safe = Math.max(0, Math.floor(Number.isFinite(page) ? page : 0));
-  const maxPage = Math.max(0, Math.ceil(items.length / size) - 1);
-  const used = Math.min(safe, maxPage);
-  const slice = items.slice(used * size, used * size + size);
-  const out = [...slice];
-  if (used < maxPage) out.push(makeMore(used + 1));
-  out.push(back);
-  return out;
-}
-
 function recipeButton(recipeId: string): GameButton | undefined {
   const recipe = getRecipe(recipeId);
   if (!recipe) return undefined;
@@ -448,7 +433,6 @@ export function visibleRecipeButtons(group: 'tools' | 'weapons' | 'items' | 'mat
     ) {
       continue;
     }
-    if (!canAffordRecipe(recipe, ctx)) continue;
     const button = recipeButton(recipeId);
     if (button) buttons.push(button);
   }
@@ -472,8 +456,7 @@ export function hubButtons(ctx: MenuSnapshot): GameButton[] {
   return buttons;
 }
 
-export function gatherButtons(ctx: MenuSnapshot): GameButton[] {
-  const buttons = miningGatherButtons(ctx);
+export function gatherButtons(ctx: MenuSnapshot, page = 0): GameButton[] {
   const extras: GameButton[] = [];
   if (canUseCommand('BUILD_TEMP_SHELTER', ctx) && !ctx.flags.temporary_shelter_level) {
     extras.push({ label: '🏕 Собрать укрытие', action: 'BUILD_TEMP_SHELTER' });
@@ -485,11 +468,12 @@ export function gatherButtons(ctx: MenuSnapshot): GameButton[] {
       payload: { nodeId: 'stone_scree', choiceId: 'scavenger' },
     });
   }
-  if (!extras.length) return buttons;
-  const withoutBack = buttons.filter((button) => button.label !== BACK_LABEL);
-  const merged = [...extras, ...withoutBack].slice(0, 4);
-  merged.push(backButton('gather'));
-  return merged;
+  return pagedButtons(
+    [...extras, ...miningGatherBody(ctx)],
+    page,
+    (next) => ({ label: '➡ Ещё', action: 'OPEN_MENU', payload: { menu: 'gather', page: next } }),
+    backButton('gather'),
+  );
 }
 
 export function campButtons(ctx: MenuSnapshot): GameButton[] {
@@ -498,10 +482,7 @@ export function campButtons(ctx: MenuSnapshot): GameButton[] {
     buttons.push({ label: '🛠 Разместить верстак', action: 'PLACE_CAMP_TABLE' });
   }
   if (!ctx.flags.camp_fire_built) {
-    const recipe = getRecipe('campfire');
-    if (recipe && canAffordRecipe(recipe, ctx)) {
-      buttons.push({ label: '🔥 Костёр', action: 'CRAFT_ITEM', payload: { recipeId: 'campfire' } });
-    }
+    buttons.push({ label: '🔥 Костёр', action: 'CRAFT_ITEM', payload: { recipeId: 'campfire' } });
   }
   if (!ctx.flags.camp_lit && (ctx.flags.camp_fire_built || ctx.items.some((item) => item.templateId === 'torch'))) {
     buttons.push({ label: '💡 Освещение', action: 'LIGHT_CAMP' });
@@ -517,10 +498,7 @@ export function campButtons(ctx: MenuSnapshot): GameButton[] {
   if (ctx.flags.furnace_placed || ctx.flags.furnace_built) {
     buttons.push({ label: '🔥 Печь', action: 'FURNACE_ACT', payload: { act: 'open' } });
   } else if (ctx.flags.day_3_complete) {
-    const recipe = getRecipe('furnace');
-    if (recipe && canAffordRecipe(recipe, ctx)) {
-      buttons.push({ label: '🔥 Печь', action: 'CRAFT_ITEM', payload: { recipeId: 'furnace' } });
-    }
+    buttons.push({ label: '🔥 Печь', action: 'CRAFT_ITEM', payload: { recipeId: 'furnace' } });
   }
   if (ctx.flags.met_vel && buttons.length < 3) {
     buttons.push({ label: '⚖ Вел', action: 'TALK_NPC', payload: { npcId: 'vel' } });
@@ -567,7 +545,7 @@ export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText
     };
   }
   if (menu === 'gather') {
-    const actions = gatherButtons(ctx);
+    const actions = gatherButtons(ctx, page);
     return {
       id: 'gather',
       text: extraText || `⛏ ДОБЫЧА. ${location}\nЧем лучше кирка — тем более редкие жилы доступны.`,
