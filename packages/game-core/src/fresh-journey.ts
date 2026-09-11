@@ -813,7 +813,6 @@ export class Journey {
         await this.pressIf('расселине');
         await this.untilResource('COAL', 1, async () => this.coal(1));
       }
-      await this.seek('стану');
       await this.goHub();
       if (this.has('🏕 Стан')) await this.click('🏕 Стан');
       else await this.seek('🏕 Стан');

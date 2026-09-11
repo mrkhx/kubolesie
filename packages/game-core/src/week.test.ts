@@ -743,7 +743,8 @@ describe('day 7 wenzel and seals', () => {
     expect(stale.text).toMatch(/тропу|нельзя/i);
     expect((await store.getFlags(player.id)).day_3_complete).toBeUndefined();
     const earlyFurnace = await act(runtime, vkUserId, 'CRAFT_ITEM', { recipeId: 'furnace' });
-    expect(earlyFurnace.text).toMatch(/клин|нельзя|Печь — после/i);
+    expect(earlyFurnace.text).toMatch(/Печь|Скрафчено|булыж/i);
+    expect((await store.getFlags(player.id)).day_3_complete).toBeUndefined();
   });
 
   it('compact hub stays at most 5 buttons after the week opens', async () => {

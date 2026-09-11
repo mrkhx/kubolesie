@@ -373,7 +373,8 @@ describe('deadContentAudit', () => {
       ...CRAFT_MENU_GROUPS.materials,
     ];
     expect(new Set(grouped).size).toBe(grouped.length);
-    expect(Object.keys(CRAFT_RECIPES)).toHaveLength(grouped.length + 1);
+    expect(Object.keys(CRAFT_RECIPES)).toHaveLength(grouped.length);
+    expect(grouped).toContain('campfire');
     expect(CRAFT_RECIPES.campfire).toBeTruthy();
   });
 

@@ -118,9 +118,10 @@ export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items' | 'material
     'planks',
     'sticks',
     'crafting_table',
+    'campfire',
+    'furnace',
     'chest',
     'torch',
-    'furnace',
     'bucket',
     'bread',
     'salvage_wood',
@@ -462,7 +463,6 @@ export function visibleRecipeButtons(group: 'tools' | 'weapons' | 'items' | 'mat
     ) {
       continue;
     }
-    if (recipeId === 'furnace' && !ctx.flags.day_3_complete) continue;
     if ((recipeId === 'stone_hoe' || recipeId === 'iron_hoe') && !ctx.flags.farming_unlocked) continue;
     if (recipeId === 'bow' && !ctx.flags.first_string && !(ctx.resources.STRING ?? 0)) continue;
     if (recipeId === 'bucket' && !ctx.flags.day_10_complete) continue;
@@ -553,6 +553,17 @@ export function gatherButtons(ctx: MenuSnapshot, page = 0): GameButton[] {
   );
 }
 
+export function campStatusText(ctx: MenuSnapshot): string {
+  const lines = ['Стан. Только нужное.'];
+  if (!ctx.flags.camp_fire_built) {
+    lines.push('Костёр — 3 бревна + 3 палки + 1 уголь.');
+  }
+  if (!ctx.flags.furnace_placed && !ctx.flags.furnace_built) {
+    lines.push('Печь — 8 булыжника. Ставится здесь, плавит руду.');
+  }
+  return lines.join('\n');
+}
+
 export function campButtons(ctx: MenuSnapshot, page = 0): GameButton[] {
   const items: GameButton[] = [];
   if (!ctx.flags.camp_table_placed && hasCraftingTable(ctx.items)) {
@@ -574,7 +585,7 @@ export function campButtons(ctx: MenuSnapshot, page = 0): GameButton[] {
   }
   if (ctx.flags.furnace_placed || ctx.flags.furnace_built) {
     items.push({ label: '🔥 Печь', action: 'FURNACE_ACT', payload: { act: 'open' } });
-  } else if (ctx.flags.day_3_complete) {
+  } else if (ctx.flags.player_camp_founded) {
     items.push({ label: '🔥 Печь', action: 'CRAFT_ITEM', payload: { recipeId: 'furnace' } });
   }
   if (
@@ -649,7 +660,7 @@ export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText
   if (menu === 'camp') {
     return {
       id: 'camp',
-      text: extraText || 'Стан. Только нужное.',
+      text: extraText || campStatusText(ctx),
       buttons: campButtons(ctx, page),
     };
   }

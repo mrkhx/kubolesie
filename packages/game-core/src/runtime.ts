@@ -905,6 +905,13 @@ export class GameRuntime {
     return playerHasTable(ctx.items);
   }
 
+  private async moveToOwnCamp(ctx: Ctx): Promise<void> {
+    if (!ctx.flags.player_camp_founded) return;
+    if (ctx.player.currentLocation === 'player_camp') return;
+    ctx.player.currentLocation = 'player_camp';
+    await this.store.savePlayer(ctx.player);
+  }
+
   private async openMenu(ctx: Ctx, menu: ActionMenuId, extraText?: string, page = 0): Promise<GameResponse> {
     if (isPvpMenu(menu)) return openPvpMenu(this.weekHost(), ctx, menu);
     if (isMarketMenu(menu)) return openMarketMenu(this.store, ctx.player, menu, this.now());
@@ -934,7 +941,10 @@ export class GameRuntime {
       'Цепочка: дерево → кирка → камень → уголь → железо → медь/олово → бронза.',
       this.hasCraftingTable(ctx) ? 'Верстак стоит.' : 'Верстака нет — сначала доски.',
       ctx.flags.player_camp_founded
-        ? `Стан: ${ctx.flags.camp_table_placed ? 'стол на земле' : 'стол не поставлен'}, ${ctx.flags.camp_fire_built ? 'костёр есть' : 'костра нет'}.`
+        ? `Стан: ${ctx.flags.camp_table_placed ? 'стол на земле' : 'стол не поставлен'}, ${ctx.flags.camp_fire_built ? 'костёр есть' : 'костра нет — 3 бревна + 3 палки + 1 уголь'}.`
+        : '',
+      ctx.flags.player_camp_founded && !ctx.flags.furnace_placed && !ctx.flags.furnace_built
+        ? 'Печь ещё не стоит — 8 булыжника. Кнопка на стане и в «Базовый».'
         : '',
     ]
       .filter(Boolean)
@@ -1106,13 +1116,16 @@ export class GameRuntime {
   }
 
   private async craftFail(ctx: Ctx, recipe: CraftRecipe, message: string): Promise<GameResponse> {
+    if (
+      (recipe.id === 'campfire' || recipe.id === 'furnace' || recipe.id === 'chest') &&
+      ctx.flags.player_camp_founded
+    ) {
+      const menu = buildActionMenu('camp', this.snapshot(ctx));
+      return this.respond(ctx.player, message, menu.buttons.length >= 2 ? menu.buttons : NAV);
+    }
     const group = recipeGroup(recipe.id);
     if (group) {
       const menu = buildActionMenu(group, this.snapshot(ctx));
-      return this.respond(ctx.player, message, menu.buttons.length >= 2 ? menu.buttons : NAV);
-    }
-    if (recipe.id === 'campfire') {
-      const menu = buildActionMenu('camp', this.snapshot(ctx));
       return this.respond(ctx.player, message, menu.buttons.length >= 2 ? menu.buttons : NAV);
     }
     return this.respond(ctx.player, message, NAV);
@@ -1127,6 +1140,9 @@ export class GameRuntime {
     if (recipe.id === 'crafting_table' && this.hasCraftingTable(ctx)) {
       return this.craftFail(ctx, recipe, 'Верстак уже есть. Поставь его на стан, не делай второй.');
     }
+    if (recipe.id === 'campfire' || recipe.id === 'chest' || recipe.id === 'furnace') {
+      if (ctx.flags.player_camp_founded) await this.moveToOwnCamp(ctx);
+    }
     if (recipe.id === 'campfire' || recipe.id === 'chest') {
       if (ctx.player.currentLocation !== 'player_camp' || !ctx.flags.player_camp_founded) {
         return this.craftFail(ctx, recipe, 'Это ставится на своём стане.');
@@ -1139,9 +1155,6 @@ export class GameRuntime {
       return this.craftFail(ctx, recipe, 'Сундук уже есть.');
     }
     if (recipe.id === 'furnace') {
-      if (!ctx.flags.day_3_complete) {
-        return this.craftFail(ctx, recipe, 'Печь — после Сизого клина. Сначала День 3.');
-      }
       if (!furnaceCraftLocationOk(ctx)) {
         return this.craftFail(ctx, recipe, 'Печь ставится на своём стане. Или у костра Рема, если стана нет.');
       }
@@ -1266,7 +1279,8 @@ export class GameRuntime {
       ctx.flags[flag] = '1';
     }
     const fresh = await this.load(ctx.player);
-    const group = recipe.id === 'campfire' ? 'camp' : recipeGroup(recipe.id) ?? 'items';
+    const group =
+      recipe.id === 'campfire' || recipe.id === 'furnace' || recipe.id === 'chest' ? 'camp' : recipeGroup(recipe.id) ?? 'items';
     const menu = buildActionMenu(group, this.snapshot(fresh));
     const buttons: GameButton[] = [];
     if (template.slot && lastItem) {

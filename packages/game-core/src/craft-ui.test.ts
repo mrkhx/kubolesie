@@ -146,7 +146,7 @@ describe('craft UI production screenshot', { timeout: 30_000 }, () => {
     expect(emptyCraftCopy(items.text)).toBe(false);
     expect(recipeLabels(items).some((label) => label.includes('Доски'))).toBe(true);
     expect(recipeLabels(items).some((label) => label.includes('Палки'))).toBe(true);
-    expect(recipeLabels(items).some((label) => label.includes('Сундук'))).toBe(true);
+    expect(recipeLabels(items).some((label) => label.includes('Костёр') || label.includes('Печь') || label.includes('Сундук'))).toBe(true);
     expect(items.buttons.length).toBeLessThanOrEqual(5);
 
     const tools = await pressCategory(session, 'Инструменты');
@@ -246,7 +246,13 @@ describe('craft UI survival path', { timeout: 30_000 }, () => {
   });
 
   it('survival group order keeps table before chest', () => {
-    expect(CRAFT_MENU_GROUPS.items.slice(0, 4)).toEqual(['planks', 'sticks', 'crafting_table', 'chest']);
+    expect(CRAFT_MENU_GROUPS.items.slice(0, 5)).toEqual([
+      'planks',
+      'sticks',
+      'crafting_table',
+      'campfire',
+      'furnace',
+    ]);
     const noTable = visibleRecipeButtons('items', {
       ...emptySnapshot(),
       resources: { LOG: 8, PLANK: 8 },
