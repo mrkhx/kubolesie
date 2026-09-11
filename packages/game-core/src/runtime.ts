@@ -82,6 +82,7 @@ import {
   pagedButtons,
   parseMenuId,
   recipeGroup,
+  recipeStationFailMessage,
   requirementMet,
   type ActionMenuId,
   type MenuSnapshot,
@@ -1121,7 +1122,7 @@ export class GameRuntime {
     const recipe = getRecipe(recipeId);
     if (!recipe) return this.respond(ctx.player, 'Такого рецепта нет.', NAV);
     if (recipe.station === 'crafting_table' && !this.hasCraftingTable(ctx)) {
-      return this.craftFail(ctx, recipe, 'Нужен верстак.');
+      return this.craftFail(ctx, recipe, recipeStationFailMessage(recipe, this.snapshot(ctx)));
     }
     if (recipe.id === 'crafting_table' && this.hasCraftingTable(ctx)) {
       return this.craftFail(ctx, recipe, 'Верстак уже есть. Поставь его на стан, не делай второй.');

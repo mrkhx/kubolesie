@@ -94,8 +94,11 @@ describe('action menus', () => {
     expect(tools.buttons.length).toBeLessThanOrEqual(5);
 
     const weapons = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'weapons' });
-    expect(weapons.text).toContain('нечего ковать');
+    expect(weapons.text).toMatch(/откроется позже/i);
+    expect(weapons.text).not.toMatch(/Пока нечего/);
     expect(hasLabel(weapons, 'Назад')).toBe(true);
+    expect(weapons.buttons.length).toBeGreaterThanOrEqual(2);
+    expect(weapons.buttons.length).toBeLessThanOrEqual(5);
 
     const items = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'items' });
     expect(hasLabel(items, 'Доски')).toBe(true);
@@ -292,6 +295,12 @@ describe('mock playthrough via nested menus', () => {
 
     const items = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'items' });
     expect(items.text).not.toMatch(/Пока нечего крафтить/);
+    expect(items.text).toMatch(/Доски/);
+    expect(items.text).toMatch(/Палки/);
+    expect(items.text).toMatch(/Верстак/);
+    const firstPage = labels(items).filter((label) => !label.includes('Ещё') && !label.includes('Назад'));
+    expect(firstPage).toEqual(['🪵 Доски', '🪵 Палки', '🛠 Верстак']);
+    expect(firstPage.some((label) => label.includes('Сундук'))).toBe(false);
     const itemLabels = new Set(labels(items));
     let page = items;
     for (let i = 0; i < 6; i += 1) {
@@ -312,6 +321,8 @@ describe('mock playthrough via nested menus', () => {
     const pick = tools.buttons.find((button) => button.label.includes('Деревянная кирка'))!;
     const denied = await act(runtime, vkUserId, 'CRAFT_ITEM', pick.payload ?? {});
     expect(denied.text).toMatch(/верстак/i);
+    expect(denied.text).toMatch(/доск/i);
+    expect(denied.text).toMatch(/палки/i);
     expect(denied.buttons.length).toBeGreaterThanOrEqual(2);
     expect(denied.buttons.length).toBeLessThanOrEqual(5);
     expect(hasLabel(denied, 'Назад') || hasLabel(denied, 'кирка') || hasLabel(denied, 'Ещё')).toBe(true);

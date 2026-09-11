@@ -2,6 +2,7 @@ import {
   COMMAND_REQUIREMENTS,
   getLocation,
   getRecipe,
+  resourceLabel,
   type CommandRequirement,
   type CraftRecipe,
 } from '@kubolesie/content';
@@ -117,13 +118,13 @@ export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items' | 'material
     'planks',
     'sticks',
     'crafting_table',
-    'salvage_wood',
-    'salvage_stone',
     'chest',
     'torch',
     'furnace',
     'bucket',
     'bread',
+    'salvage_wood',
+    'salvage_stone',
   ],
   materials: [
     'bronze_ingot',
@@ -314,6 +315,82 @@ export function hasCraftingTable(items: Array<{ templateId: string }>): boolean 
   return items.some((item) => item.templateId === 'crafting_table');
 }
 
+export function ownsCraftingTable(ctx: MenuSnapshot): boolean {
+  return hasCraftingTable(ctx.items) || Boolean(ctx.flags.camp_table_placed);
+}
+
+function stripDecorLabel(value: string): string {
+  return value
+    .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{2190}-\u{21FF}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function recipeNeedPhrase(recipe: CraftRecipe, ctx: MenuSnapshot): string {
+  const cost = effectiveRecipeCost(recipe, ctx);
+  return Object.entries(cost)
+    .filter(([, need]) => (need ?? 0) > 0)
+    .map(([resource, need]) => `${need} ${stripDecorLabel(resourceLabel(resource as ResourceType)).toLowerCase()}`)
+    .join(' + ');
+}
+
+export function recipeHint(recipe: CraftRecipe, ctx: MenuSnapshot): string {
+  const need = recipeNeedPhrase(recipe, ctx);
+  const stationMissing = recipe.station === 'crafting_table' && !hasCraftingTable(ctx.items);
+  if (stationMissing && need) return `нужен верстак, ${need}`;
+  if (stationMissing) return 'нужен верстак';
+  return need;
+}
+
+export function recipeStationFailMessage(recipe: CraftRecipe, ctx: MenuSnapshot): string {
+  const need = recipeNeedPhrase(recipe, ctx);
+  return need ? `Нужен верстак. ${need}` : 'Нужен верстак.';
+}
+
+const CRAFT_GROUP_TITLES: Record<'tools' | 'weapons' | 'items' | 'materials', string> = {
+  tools: 'Инструменты',
+  weapons: 'Снаряжение',
+  items: 'Базовый крафт',
+  materials: 'Материалы',
+};
+
+const CRAFT_GROUP_LATER: Record<'tools' | 'weapons' | 'items' | 'materials', string> = {
+  tools: 'Инструменты откроются позже — сначала верстак и дерево.',
+  weapons: 'Снаряжение откроется позже по мере развития кузницы.',
+  items: 'Базовый крафт откроется позже.',
+  materials: 'Материалы откроются позже по мере развития кузницы и жил.',
+};
+
+export function craftGroupText(
+  group: 'tools' | 'weapons' | 'items' | 'materials',
+  recipes: GameButton[],
+  ctx: MenuSnapshot,
+  page = 0,
+): string {
+  if (!recipes.length) return CRAFT_GROUP_LATER[group];
+  const size = 3;
+  const maxPage = Math.max(0, Math.ceil(recipes.length / size) - 1);
+  const used = Math.min(Math.max(0, Math.floor(page)), maxPage);
+  const slice = recipes.slice(used * size, used * size + size);
+  const lines = slice.map((button) => {
+    const recipeId = String(button.payload?.recipeId ?? '');
+    const recipe = getRecipe(recipeId);
+    const name = stripDecorLabel(button.label);
+    if (!recipe) return name;
+    const hint = recipeHint(recipe, ctx);
+    return hint ? `${name} — ${hint}` : name;
+  });
+  return [CRAFT_GROUP_TITLES[group], ...lines].join('\n');
+}
+
+function emptyCraftNav(group: 'tools' | 'weapons' | 'items' | 'materials'): GameButton[] {
+  const nav: GameButton[] = [];
+  if (group !== 'items') nav.push({ label: '🪵 Базовый', action: 'OPEN_MENU', payload: { menu: 'items' } });
+  if (group !== 'tools') nav.push({ label: '⛏ Инструменты', action: 'OPEN_MENU', payload: { menu: 'tools' } });
+  nav.push(backButton(group));
+  return nav.slice(0, 5);
+}
+
 export function effectiveRecipeCost(
   recipe: CraftRecipe,
   ctx: MenuSnapshot,
@@ -367,7 +444,7 @@ export function visibleRecipeButtons(group: 'tools' | 'weapons' | 'items' | 'mat
   for (const recipeId of CRAFT_MENU_GROUPS[group]) {
     const recipe = getRecipe(recipeId);
     if (!recipe) continue;
-    if (recipeId === 'crafting_table' && hasCraftingTable(ctx.items)) continue;
+    if (recipeId === 'crafting_table' && ownsCraftingTable(ctx)) continue;
     if (recipeId === 'chest' && ctx.flags.camp_chest_built) continue;
     if (recipeId === 'campfire' && ctx.flags.camp_fire_built) continue;
     if (recipeId === 'furnace' && (ctx.flags.furnace_placed || ctx.flags.furnace_built)) continue;
@@ -586,22 +663,17 @@ export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText
   const group = menu as 'tools' | 'weapons' | 'items' | 'materials';
   if (group === 'tools' || group === 'weapons' || group === 'items' || group === 'materials') {
     const recipes = visibleRecipeButtons(group, ctx);
-    const titles: Record<'tools' | 'weapons' | 'items' | 'materials', string> = {
-      tools: 'Инструменты',
-      weapons: 'Снаряжение',
-      items: 'Базовый крафт',
-      materials: 'Материалы',
-    };
-    const empty = group === 'weapons' ? 'Пока нечего ковать.' : 'Пока нечего крафтить.';
-    const buttons = pagedButtons(
-      recipes,
-      page,
-      (next) => ({ label: '➡ Ещё', action: 'OPEN_MENU', payload: { menu: group, page: next } }),
-      backButton(group),
-    );
+    const buttons = recipes.length
+      ? pagedButtons(
+          recipes,
+          page,
+          (next) => ({ label: '➡ Ещё', action: 'OPEN_MENU', payload: { menu: group, page: next } }),
+          backButton(group),
+        )
+      : emptyCraftNav(group);
     return {
       id: menu,
-      text: extraText || (recipes.length ? titles[group] : empty),
+      text: extraText || craftGroupText(group, recipes, ctx, page),
       buttons,
     };
   }
