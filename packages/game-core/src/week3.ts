@@ -14,6 +14,7 @@ import { ActionRejectedError, InsufficientResourcesError } from './errors';
 import type { WeekCtx, WeekHost } from './week';
 import { grantMetaAchievement, noteActivity } from './meta';
 import { tickCrop } from './week2';
+import { pagedButtons } from './paging';
 
 export const WEEK3_MENUS = ['rootwood', 'grove', 'mechanism', 'seal3'] as const;
 export type Week3MenuId = (typeof WEEK3_MENUS)[number];
@@ -466,9 +467,9 @@ async function week3Act(
   if (act === 'use_core') return useRootCore(host, ctx);
   if (act === 'prep') return prepSeal(host, ctx);
   if (act === 'seal') return prepSeal(host, ctx);
-  if (act === 'open') return week3Hub(host, ctx);
+  if (act === 'open' || act === 'hub') return week3Hub(host, ctx, Number(payload.page ?? 0));
   void payload;
-  return week3Hub(host, ctx);
+  return week3Hub(host, ctx, Number(payload.page ?? 0));
 }
 
 async function edgeMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameResponse> {
@@ -495,7 +496,7 @@ async function edgeMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameR
   ]
     .filter(Boolean)
     .join('\n');
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function inspectMark(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
@@ -533,7 +534,7 @@ async function gatherEdge(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
     return host.respond(
       ctx.player,
       `Первый след чащи. +4 ${resourceLabel('LOG')}, +3 ${resourceLabel('ROOT_FIBER')}. Корни тёплые.`,
-      buttons.slice(0, 5),
+      buttons,
     );
   }
   await host.store.addResource(ctx.player.id, 'ROOT_FIBER', 1);
@@ -560,7 +561,7 @@ async function tangleMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Gam
       buttons.unshift({ label: 'Завершить День 16', action: 'COMPLETE_DAY_16' });
     }
     buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-    return host.respond(ctx.player, extra || 'Завал разобран. Тропа дышит, но проходит.', buttons.slice(0, 5));
+    return host.respond(ctx.player, extra || 'Завал разобран. Тропа дышит, но проходит.', buttons);
   }
   const loggerLv = await jobLevel(host, ctx, 'LOGGER');
   const minerLv = await jobLevel(host, ctx, 'MINER');
@@ -580,7 +581,7 @@ async function tangleMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Gam
   ]
     .filter(Boolean)
     .join('\n');
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function clearPath(host: WeekHost, ctx: WeekCtx, kind: 'logger' | 'miner' | 'crafter'): Promise<GameResponse> {
@@ -652,7 +653,7 @@ async function groveMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Game
   return host.respond(
     ctx.player,
     extra || 'Полая роща. Повторные бои дают шкуру и волокно. Не ферма опыта.',
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -671,7 +672,7 @@ async function pitMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
     buttons.push({ label: 'Корнеплёт', action: 'WEEK3_ACT', payload: { act: 'rootlasher' } });
   }
   buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-  return host.respond(ctx.player, 'Корневая яма. Дно дышит. Жалец капает смолой.', buttons.slice(0, 5));
+  return host.respond(ctx.player, 'Корневая яма. Дно дышит. Жалец капает смолой.', buttons);
 }
 
 async function forage(host: WeekHost, ctx: WeekCtx, eventId: string): Promise<GameResponse> {
@@ -735,7 +736,7 @@ async function mechanismMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<
   ]
     .filter(Boolean)
     .join('\n');
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function examineMechanism(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
@@ -802,7 +803,7 @@ async function supplyMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Gam
   ]
     .filter(Boolean)
     .join('\n');
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function packSupplies(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
@@ -877,7 +878,7 @@ async function rootlasherGate(host: WeekHost, ctx: WeekCtx): Promise<GameRespons
   return host.respond(
     ctx.player,
     'Корнеплёт в яме. Кора и живые корни. Не страж печати. Лук, щит, настил помогают. Без них — можно.',
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -912,7 +913,7 @@ async function socialMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Gam
   return host.respond(
     ctx.player,
     [extra, 'Следы чужой группы. Не клановая война. Три пути, все ведут дальше.', clanLine].filter(Boolean).join('\n'),
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -963,7 +964,7 @@ async function clanMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
   return host.respond(
     ctx.player,
     `Знак ${clan.clan.tag} здесь уже знают. Показать или скрыть — не сила удара.`,
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -1032,42 +1033,46 @@ async function prepSeal(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
     });
   }
   buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-  return host.respond(ctx.player, lines.join('\n'), buttons.slice(0, 5));
+  return host.respond(ctx.player, lines.join('\n'), buttons);
 }
 
-async function week3Hub(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
+async function week3Hub(host: WeekHost, ctx: WeekCtx, page = 0): Promise<GameResponse> {
   if (ctx.flags.week_3_complete) return host.renderNode(ctx.player, 'week3_complete');
-  const buttons: GameButton[] = [];
+  const items: GameButton[] = [];
   if (!ctx.flags.day_15_complete) {
-    buttons.push({ label: 'Край чащи', action: 'WEEK3_ACT', payload: { act: 'edge' } });
+    items.push({ label: 'Край чащи', action: 'WEEK3_ACT', payload: { act: 'edge' } });
   } else if (!ctx.flags.day_16_complete) {
-    buttons.push({ label: 'Завал', action: 'WEEK3_ACT', payload: { act: 'tangle' } });
+    items.push({ label: 'Завал', action: 'WEEK3_ACT', payload: { act: 'tangle' } });
   } else if (!ctx.flags.day_17_complete) {
-    buttons.push({ label: 'Роща', action: 'WEEK3_ACT', payload: { act: 'grove' } });
+    items.push({ label: 'Роща', action: 'WEEK3_ACT', payload: { act: 'grove' } });
   } else if (!ctx.flags.day_18_complete) {
-    buttons.push({ label: 'Узел', action: 'WEEK3_ACT', payload: { act: 'mechanism' } });
+    items.push({ label: 'Узел', action: 'WEEK3_ACT', payload: { act: 'mechanism' } });
   } else if (!ctx.flags.day_19_complete) {
-    buttons.push({ label: 'Припасы', action: 'WEEK3_ACT', payload: { act: 'supply' } });
+    items.push({ label: 'Припасы', action: 'WEEK3_ACT', payload: { act: 'supply' } });
   } else if (!ctx.flags.day_20_complete) {
     if (ctx.flags.defeated_rootlasher) {
-      buttons.push({ label: 'Следы', action: 'WEEK3_ACT', payload: { act: 'social' } });
+      items.push({ label: 'Следы', action: 'WEEK3_ACT', payload: { act: 'social' } });
     } else {
-      buttons.push({ label: 'Корнеплёт', action: 'WEEK3_ACT', payload: { act: 'rootlasher' } });
+      items.push({ label: 'Корнеплёт', action: 'WEEK3_ACT', payload: { act: 'rootlasher' } });
     }
   } else {
-    buttons.push({ label: 'Свод', action: 'WEEK3_ACT', payload: { act: 'prep' } });
+    items.push({ label: 'Свод', action: 'WEEK3_ACT', payload: { act: 'prep' } });
   }
-  if (ctx.flags.day_16_complete && buttons.length < 3) {
-    buttons.push({ label: 'Роща', action: 'WEEK3_ACT', payload: { act: 'grove' } });
+  if (ctx.flags.day_16_complete && items.every((row) => row.payload?.act !== 'grove')) {
+    items.push({ label: 'Роща', action: 'WEEK3_ACT', payload: { act: 'grove' } });
   }
-  if (ctx.flags.day_15_complete && buttons.length < 3) {
-    buttons.push({ label: 'Край чащи', action: 'WEEK3_ACT', payload: { act: 'edge' } });
+  if (ctx.flags.day_15_complete && items.every((row) => row.payload?.act !== 'edge')) {
+    items.push({ label: 'Край чащи', action: 'WEEK3_ACT', payload: { act: 'edge' } });
   }
-  buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
   return host.respond(
     ctx.player,
     'Корневая чаща. Три печати ещё не молчат. Две уже. Одна близко.',
-    buttons.slice(0, 5),
+    pagedButtons(
+      items,
+      page,
+      (next) => ({ label: '➡ Ещё', action: 'WEEK3_ACT', payload: { act: 'hub', page: next } }),
+      { label: BACK_LABEL, action: 'OPEN_CAMP' },
+    ),
   );
 }
 

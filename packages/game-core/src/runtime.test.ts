@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ENERGY_REGEN_INTERVAL_MS } from '@kubolesie/shared';
+import { ENERGY_REGEN_INTERVAL_MS, HP_PER_INTERVAL } from '@kubolesie/shared';
 import type { NormalizedIncomingEvent } from '@kubolesie/shared';
 import { MemoryGameStore } from './memory-store';
 import { GameRuntime } from './runtime';
@@ -57,6 +57,22 @@ describe('energy regeneration', () => {
     );
     expect(next.energy).toBe(20);
     expect(next.lastEnergyAt.getTime()).toBe(now.getTime());
+  });
+
+  it('restores HP per tick even when energy is already full', () => {
+    const now = new Date('2026-09-06T12:00:00Z');
+    const next = regenerateEnergy(
+      {
+        energy: 20,
+        maxEnergy: 20,
+        hp: 20,
+        maxHp: 100,
+        lastEnergyAt: new Date(now.getTime() - 4 * ENERGY_REGEN_INTERVAL_MS),
+      },
+      now,
+    );
+    expect(next.energy).toBe(20);
+    expect(next.hp).toBe(20 + 4 * HP_PER_INTERVAL);
   });
 });
 

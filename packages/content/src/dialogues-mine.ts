@@ -70,6 +70,19 @@ export const MINE_NODES: Record<string, DialogueNode> = {
         nextNode: 'adit_listen',
         condition: { type: 'flag', flag: 'heard_mine_crawler', exists: false },
       },
+      { id: 'more', label: '➡ Ещё', nextNode: 'old_adit_more' },
+      {
+        id: 'leave',
+        label: 'Выйти',
+        nextNode: 'rem_camp',
+        actions: [{ type: 'set_location', locationId: 'rem_camp' }],
+      },
+    ],
+  },
+  old_adit_more: {
+    id: 'old_adit_more',
+    text: 'Штольня глубже. Шорох, голубой свет, выход.',
+    choices: [
       {
         id: 'crawler',
         label: 'Идти на шорох',
@@ -86,12 +99,7 @@ export const MINE_NODES: Record<string, DialogueNode> = {
           { type: 'visit', locationId: 'secret_chamber' },
         ],
       },
-      {
-        id: 'leave',
-        label: 'Выйти',
-        nextNode: 'rem_camp',
-        actions: [{ type: 'set_location', locationId: 'rem_camp' }],
-      },
+      { id: 'back', label: '⬅ Назад', nextNode: 'old_adit' },
     ],
   },
   adit_rails: {

@@ -388,3 +388,60 @@ describe('pagedButtons helper', () => {
     expect(last.some((button) => button.label.startsWith('Item'))).toBe(true);
   });
 });
+
+describe('campButtons week-act visibility', () => {
+  it('does not hide WEEK3_ACT behind furnace+farm+work+vel', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    for (const flag of [
+      'player_camp_founded',
+      'camp_table_placed',
+      'camp_fire_built',
+      'day_2_complete',
+      'day_3_complete',
+      'furnace_placed',
+      'met_vel',
+      'farming_unlocked',
+      'week_1_complete',
+      'week_2_complete',
+    ]) {
+      await store.setFlag(player.id, flag, '1');
+    }
+    player.currentLocation = 'player_camp';
+    await store.savePlayer(player);
+    const camp = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'camp' });
+    expect(camp.buttons.length).toBeLessThanOrEqual(5);
+    const labels = new Set(camp.buttons.map((button) => button.label));
+    let page = camp;
+    for (let i = 0; i < 6 && page.buttons.some((button) => button.label.includes('Ещё')); i += 1) {
+      const more = page.buttons.find((button) => button.label.includes('Ещё'))!;
+      page = await act(runtime, vkUserId, more.action as never, more.payload ?? {});
+      for (const label of page.buttons.map((button) => button.label)) labels.add(label);
+    }
+    expect([...labels].some((label) => label.includes('Чаща'))).toBe(true);
+    expect([...labels].some((label) => label.includes('Назад'))).toBe(true);
+  });
+
+  it('hub keeps 🏕 Стан after camp is founded even away from player_camp', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    for (const flag of [
+      'player_camp_founded',
+      'camp_table_placed',
+      'camp_fire_built',
+      'day_2_complete',
+      'day_3_complete',
+      'furnace_placed',
+    ]) {
+      await store.setFlag(player.id, flag, '1');
+    }
+    player.currentLocation = 'drowned_quarry';
+    await store.savePlayer(player);
+    const hub = await act(runtime, vkUserId, 'OPEN_CAMP');
+    expect(hub.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(hub, 'Стан')).toBe(true);
+    expect(isMainHub(hub.buttons)).toBe(true);
+    const campBtn = hub.buttons.find((button) => button.label.includes('Стан'));
+    expect(campBtn).toMatchObject({ action: 'OPEN_MENU', payload: { menu: 'camp' } });
+    const camp = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'camp' });
+    expect(hasLabel(camp, 'Печь')).toBe(true);
+  });
+});

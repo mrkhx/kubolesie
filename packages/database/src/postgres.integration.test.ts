@@ -1,10 +1,17 @@
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client } from 'pg';
-import { GameRuntime, InsufficientResourcesError } from '@kubolesie/game-core';
+import {
+  buyFixedListing,
+  createAuctionListing,
+  createFixedListing,
+  GameRuntime,
+  InsufficientResourcesError,
+  placeBid,
+} from '@kubolesie/game-core';
 import { RecordingVkApi, VkAdapter } from '@kubolesie/vk-bot';
 import { PrismaClient } from './generated/client';
 import { PrismaGameStore } from './prisma-store';
@@ -12,7 +19,7 @@ import { PrismaGameStore } from './prisma-store';
 const url = process.env.TEST_DATABASE_URL ?? '';
 const describePg = url ? describe : describe.skip;
 
-const MIGRATIONS = [
+const LEGACY_MIGRATIONS = [
   '20260906120000_init',
   '20260906180000_day_one',
   '20260906190000_crafting_pipeline',
@@ -23,6 +30,7 @@ const MIGRATIONS = [
 ] as const;
 
 const MIGRATIONS_DIR = join(__dirname, '../prisma/migrations');
+const MINING_2_MIGRATION = '20260911120000_mining_crafting_2';
 
 function uid(prefix: string): string {
   return `${prefix}-${randomUUID().slice(0, 8)}`;
@@ -38,8 +46,28 @@ function sqlFile(name: string): string {
   return readFileSync(join(MIGRATIONS_DIR, name, 'migration.sql'), 'utf8');
 }
 
+function allMigrationNames(): string[] {
+  return readdirSync(MIGRATIONS_DIR)
+    .filter((name) => name !== 'migration_lock.toml')
+    .sort();
+}
+
 async function applySql(client: Client, name: string): Promise<void> {
   await client.query(sqlFile(name));
+}
+
+async function act(
+  runtime: GameRuntime,
+  vkUserId: string,
+  type: string,
+  payload: Record<string, unknown> = {},
+  eventId = uid('act'),
+) {
+  return runtime.handle({
+    eventId,
+    identity: { provider: 'vk', providerUserId: vkUserId, displayName: 'Путник' },
+    command: { type: type as never, payload },
+  });
 }
 
 const vkConfig = {
@@ -239,6 +267,111 @@ describePg('postgresql production path', () => {
     ]);
     expect(await store.getWeeklyScore(player.id, period)).toBe(12);
   });
+
+  it('persists inventory, reward claims, craft, smelt, market, auction, production, pvp and week flags', async () => {
+    const vkUserId = uid('crit');
+    const runtime = new GameRuntime(store);
+    await act(runtime, vkUserId, 'START_GAME');
+    const player = await store.findPlayerByVkUserId(vkUserId);
+    expect(player).not.toBeNull();
+    const id = player!.id;
+
+    const knife = await store.createItem({ playerId: id, templateId: 'stone_knife', rarity: 'COMMON' });
+    expect((await store.listItems(id)).some((row) => row.id === knife.id)).toBe(true);
+
+    const firstClaim = await store.tryClaimReward(id, 'crate', 'pg_crit_crate');
+    const secondClaim = await store.tryClaimReward(id, 'crate', 'pg_crit_crate');
+    expect(firstClaim).toBe(true);
+    expect(secondClaim).toBe(false);
+    expect(await store.hasRewardClaim(id, 'crate', 'pg_crit_crate')).toBe(true);
+
+    await store.addResource(id, 'LOG', 8);
+    const craft = await act(runtime, vkUserId, 'CRAFT_ITEM', { recipeId: 'planks' });
+    expect(craft.text).not.toMatch(/не хватает|нельзя/i);
+    expect((await store.getResources(id)).PLANK ?? 0).toBeGreaterThanOrEqual(4);
+
+    await store.setFlag(id, 'furnace_placed', '1');
+    await store.addResource(id, 'COAL', 1);
+    await store.addResource(id, 'IRON_ORE', 2);
+    await act(runtime, vkUserId, 'FURNACE_ACT', { act: 'add_coal' });
+    await act(runtime, vkUserId, 'FURNACE_ACT', { act: 'smelt' });
+    await act(runtime, vkUserId, 'FURNACE_ACT', { act: 'take' });
+    expect((await store.getResources(id)).IRON_INGOT ?? 0).toBeGreaterThanOrEqual(1);
+
+    const seller = await store.createPlayer({ vkUserId: uid('seller'), name: 'Продавец' });
+    const buyer = await store.createPlayer({ vkUserId: uid('buyer'), name: 'Покупатель' });
+    await store.addResource(seller.id, 'LOG', 10);
+    buyer.coins = 500;
+    await store.savePlayer(buyer);
+    const listing = await createFixedListing(store, {
+      sellerPlayerId: seller.id,
+      assetRef: 'LOG',
+      quantity: 4,
+      unitPrice: 3,
+    });
+    expect((await store.getResources(seller.id)).LOG).toBe(6);
+    await buyFixedListing(store, { listingId: listing.id, buyerPlayerId: buyer.id });
+    expect((await store.getResources(buyer.id)).LOG ?? 0).toBe(4);
+    expect((await store.findPlayerById(seller.id))!.coins).toBeGreaterThan(0);
+
+    const auctionSeller = await store.createPlayer({ vkUserId: uid('aucs'), name: 'Аукцион' });
+    const bidder = await store.createPlayer({ vkUserId: uid('aucb'), name: 'Ставка' });
+    await store.addResource(auctionSeller.id, 'COAL', 5);
+    bidder.coins = 80;
+    await store.savePlayer(bidder);
+    const auction = await createAuctionListing(store, {
+      sellerPlayerId: auctionSeller.id,
+      assetRef: 'COAL',
+      quantity: 2,
+      startingPrice: 5,
+      buyoutPrice: 20,
+      durationHours: 12,
+    });
+    expect((await store.getResources(auctionSeller.id)).COAL).toBe(3);
+    const bid = await placeBid(store, { listingId: auction.id, bidderPlayerId: bidder.id, amount: 8 });
+    expect(bid.listing.currentBid).toBe(8);
+    expect((await store.findPlayerById(bidder.id))!.coins).toBe(72);
+
+    const farmer = await store.createPlayer({ vkUserId: uid('farm'), name: 'Фермер' });
+    farmer.coins = 200;
+    await store.savePlayer(farmer);
+    await store.addResource(farmer.id, 'LOG', 20);
+    await store.addResource(farmer.id, 'PLANK', 20);
+    await store.addResource(farmer.id, 'COBBLESTONE', 10);
+    const now = new Date('2026-09-11T12:00:00Z');
+    await store.buildProductionBuilding({ playerId: farmer.id, buildingType: 'WHEAT_FARM', now });
+    const later = new Date(now.getTime() + 4 * 3600 * 1000);
+    const collected = await store.collectProductionBuilding({
+      playerId: farmer.id,
+      buildingType: 'WHEAT_FARM',
+      now: later,
+    });
+    expect(collected.primary + collected.secondary).toBeGreaterThan(0);
+    expect((await store.getResources(farmer.id)).WHEAT ?? 0).toBeGreaterThan(0);
+
+    const rating = await store.getRating(id);
+    rating.pvpRating = 1120;
+    await store.saveRating(rating);
+    expect((await store.getRating(id)).pvpRating).toBe(1120);
+    await store.incrementStatistics(id, { pvpWins: 1 });
+    expect((await store.getStatistics(id)).pvpWins).toBe(1);
+
+    await store.setFlag(id, 'week_6_complete', '1');
+    await store.setFlag(id, 'day_42_complete', '1');
+    const flags = await store.getFlags(id);
+    expect(flags.week_6_complete).toBe('1');
+    expect(flags.day_42_complete).toBe('1');
+
+    const prismaB = new PrismaClient({ datasources: { db: { url } } });
+    await prismaB.$connect();
+    const storeB = new PrismaGameStore(prismaB);
+    expect((await storeB.listItems(id)).some((row) => row.templateId === 'stone_knife')).toBe(true);
+    expect(await storeB.hasRewardClaim(id, 'crate', 'pg_crit_crate')).toBe(true);
+    expect((await storeB.getResources(id)).IRON_INGOT ?? 0).toBeGreaterThanOrEqual(1);
+    expect((await storeB.getFlags(id)).week_6_complete).toBe('1');
+    expect((await storeB.getRating(id)).pvpRating).toBe(1120);
+    await prismaB.$disconnect();
+  });
 });
 
 describePg('postgresql upgrade path', () => {
@@ -253,9 +386,9 @@ describePg('postgresql upgrade path', () => {
     const db = new Client({ connectionString: upgradeUrl });
     await db.connect();
     try {
-      await applySql(db, MIGRATIONS[0]);
-      await applySql(db, MIGRATIONS[1]);
-      await applySql(db, MIGRATIONS[2]);
+      await applySql(db, LEGACY_MIGRATIONS[0]);
+      await applySql(db, LEGACY_MIGRATIONS[1]);
+      await applySql(db, LEGACY_MIGRATIONS[2]);
       await db.query(
         `INSERT INTO players (id, vk_user_id, name, updated_at)
          VALUES ('p_up', 'vk-upgrade', 'Старый', NOW())`,
@@ -268,10 +401,10 @@ describePg('postgresql upgrade path', () => {
         `INSERT INTO player_flags (id, player_id, flag, value, updated_at)
          VALUES ('f1', 'p_up', 'day_1_complete', '1', NOW())`,
       );
-      await applySql(db, MIGRATIONS[3]);
-      await applySql(db, MIGRATIONS[4]);
-      await applySql(db, MIGRATIONS[5]);
-      await applySql(db, MIGRATIONS[6]);
+      await applySql(db, LEGACY_MIGRATIONS[3]);
+      await applySql(db, LEGACY_MIGRATIONS[4]);
+      await applySql(db, LEGACY_MIGRATIONS[5]);
+      await applySql(db, LEGACY_MIGRATIONS[6]);
       const player = await db.query(`SELECT vk_user_id, name FROM players WHERE id = 'p_up'`);
       expect(player.rows[0]).toMatchObject({ vk_user_id: 'vk-upgrade', name: 'Старый' });
       const resources = await db.query(`SELECT amount FROM player_resources WHERE player_id = 'p_up'`);
@@ -289,6 +422,73 @@ describePg('postgresql upgrade path', () => {
          WHERE table_name = 'products' AND column_name = 'currency'`,
       );
       expect(String(premiumDefault.rows[0]?.column_default)).toMatch(/PREMIUM/);
+    } finally {
+      await db.end();
+      const drop = new Client({ connectionString: replaceDbName(url, 'postgres') });
+      await drop.connect();
+      await drop.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+      await drop.end();
+    }
+  });
+
+  it('keeps a pre-Mining-2.0 player intact after applying mining_crafting_2', async () => {
+    const names = allMigrationNames();
+    expect(names[names.length - 1]).toBe(MINING_2_MIGRATION);
+    const prior = names.slice(0, -1);
+
+    const admin = new Client({ connectionString: replaceDbName(url, 'postgres') });
+    await admin.connect();
+    const dbName = `kubolesie_mc2_${Date.now()}`;
+    await admin.query(`CREATE DATABASE "${dbName}"`);
+    await admin.end();
+
+    const upgradeUrl = replaceDbName(url, dbName);
+    const db = new Client({ connectionString: upgradeUrl });
+    await db.connect();
+    try {
+      for (const name of prior) {
+        await applySql(db, name);
+      }
+      await db.query(
+        `INSERT INTO players (id, vk_user_id, name, updated_at)
+         VALUES ('p_mc2', 'vk-mc2', 'Шахтёр', NOW())`,
+      );
+      await db.query(
+        `INSERT INTO player_resources (id, player_id, resource, amount, updated_at)
+         VALUES ('r_log', 'p_mc2', 'LOG', 8, NOW()),
+                ('r_ore', 'p_mc2', 'IRON_ORE', 3, NOW())`,
+      );
+      await db.query(
+        `INSERT INTO player_flags (id, player_id, flag, value, updated_at)
+         VALUES ('f_w6', 'p_mc2', 'week_6_complete', '1', NOW())`,
+      );
+      await applySql(db, MINING_2_MIGRATION);
+      const player = await db.query(`SELECT vk_user_id, name FROM players WHERE id = 'p_mc2'`);
+      expect(player.rows[0]).toMatchObject({ vk_user_id: 'vk-mc2', name: 'Шахтёр' });
+      const resources = await db.query(
+        `SELECT resource, amount FROM player_resources WHERE player_id = 'p_mc2' ORDER BY resource`,
+      );
+      expect(
+        resources.rows.map((row: { resource: string; amount: unknown }) => ({
+          resource: row.resource,
+          amount: Number(row.amount),
+        })),
+      ).toEqual(
+        expect.arrayContaining([
+          { resource: 'LOG', amount: 8 },
+          { resource: 'IRON_ORE', amount: 3 },
+        ]),
+      );
+      const flags = await db.query(`SELECT value FROM player_flags WHERE player_id = 'p_mc2'`);
+      expect(flags.rows[0].value).toBe('1');
+      await db.query(
+        `INSERT INTO player_resources (id, player_id, resource, amount, updated_at)
+         VALUES ('r_cu', 'p_mc2', 'COPPER_ORE', 1, NOW())`,
+      );
+      const copper = await db.query(
+        `SELECT amount FROM player_resources WHERE player_id = 'p_mc2' AND resource = 'COPPER_ORE'`,
+      );
+      expect(Number(copper.rows[0].amount)).toBe(1);
     } finally {
       await db.end();
       const drop = new Client({ connectionString: replaceDbName(url, 'postgres') });

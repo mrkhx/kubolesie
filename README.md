@@ -201,7 +201,7 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 | `VK_CONFIRMATION_CODE` | строка confirmation |
 | `VK_API_VERSION` | версия VK API, по умолчанию 5.199 |
 | `VK_API_TIMEOUT_MS` | timeout `messages.send`, по умолчанию 4000 |
-| `APP_COMMIT_SHA` | опционально в `/health` |
+| `APP_COMMIT_SHA` | опционально в `/health`; если пусто — `RENDER_GIT_COMMIT` |
 | `GAME_STORE` | `prisma` или `memory` (memory запрещён в production) |
 | `MEMORY_STORE_PATH` | JSON-снимок только для dev fallback |
 | `ENABLE_MOCK_API` | mock HTTP; в production всегда выключен |

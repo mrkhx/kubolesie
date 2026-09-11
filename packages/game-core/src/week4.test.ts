@@ -466,6 +466,8 @@ describe('day 26 blackroot', () => {
     expect(await itemCount(store, player.id, 'crafting_table')).toBe(table);
     const win = await fightUntil(runtime, store, player.id, vkUserId, 'blackroot');
     expect(win.text).toMatch(/Победа/i);
+    expect(win.buttons.some((button) => button.label.includes('Завершить День 26'))).toBe(true);
+    expect(win.buttons.length).toBeLessThanOrEqual(5);
     expect((await store.getResources(player.id)).BLACKROOT_CORE).toBe(1);
     await fightUntil(runtime, store, player.id, vkUserId, 'blackroot');
     expect((await store.getResources(player.id)).BLACKROOT_CORE).toBe(1);

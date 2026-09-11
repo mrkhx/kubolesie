@@ -23,6 +23,7 @@ import { ActionRejectedError, InsufficientEnergyError } from './errors';
 import { noteActivity } from './meta';
 import { noteManualMine, noteMiningUnlock } from './mining-metrics';
 import { noteDailyGather, type WeekCtx, type WeekHost } from './week';
+import { pagedButtons } from './paging';
 
 const PAGE_SIZE = 3;
 
@@ -76,13 +77,7 @@ function paginate(
   makeMore: (next: number) => GameButton,
   back: GameButton,
 ): GameButton[] {
-  const safe = Math.max(0, Math.floor(page));
-  const start = safe * PAGE_SIZE;
-  const slice = buttons.slice(start, start + PAGE_SIZE);
-  const out = [...slice];
-  if (start + PAGE_SIZE < buttons.length) out.push(makeMore(safe + 1));
-  out.push(back);
-  return out.slice(0, 5);
+  return pagedButtons(buttons, page, makeMore, back, PAGE_SIZE);
 }
 
 function groupBack(): GameButton {
@@ -219,7 +214,7 @@ function siteScreen(ctx: WeekCtx, site: MiningSite): { text: string; buttons: Ga
       { label: '📦 Что можно найти', action: 'MINE_ACT', payload: { act: 'info', site: site.id } },
       { label: MINING_GROUP_LABELS[site.group], action: 'MINE_ACT', payload: { act: 'group', group: site.group } },
       groupBack(),
-    ].slice(0, 5),
+    ],
   };
 }
 

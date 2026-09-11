@@ -3,6 +3,7 @@ export const PROTOTYPE_VERSION = '0.0.13';
 
 export const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
 export const ENERGY_PER_INTERVAL = 1;
+export const HP_PER_INTERVAL = 5;
 export const STARTING_HP = 100;
 export const STARTING_ENERGY = 20;
 export const XP_TO_LEVEL_2 = 40;

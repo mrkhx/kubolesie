@@ -1,4 +1,4 @@
-import { ENERGY_PER_INTERVAL, ENERGY_REGEN_INTERVAL_MS } from '@kubolesie/shared';
+import { ENERGY_PER_INTERVAL, ENERGY_REGEN_INTERVAL_MS, HP_PER_INTERVAL } from '@kubolesie/shared';
 
 export interface EnergyState {
   energy: number;
@@ -6,8 +6,21 @@ export interface EnergyState {
   lastEnergyAt: Date;
 }
 
+function hasVitals(player: EnergyState): player is EnergyState & { hp: number; maxHp: number } {
+  return (
+    'hp' in player &&
+    'maxHp' in player &&
+    typeof (player as EnergyState & { hp?: unknown }).hp === 'number' &&
+    typeof (player as EnergyState & { maxHp?: unknown }).maxHp === 'number'
+  );
+}
+
 export function regenerateEnergy<T extends EnergyState>(player: T, now: Date): T {
-  if (player.energy >= player.maxEnergy) {
+  const vitals = hasVitals(player);
+  const hpFull = !vitals || player.hp >= player.maxHp;
+  const energyFull = player.energy >= player.maxEnergy;
+
+  if (energyFull && hpFull) {
     return { ...player, lastEnergyAt: now };
   }
 
@@ -16,22 +29,24 @@ export function regenerateEnergy<T extends EnergyState>(player: T, now: Date): T
     return player;
   }
 
-  const restored = Math.floor(elapsed / ENERGY_REGEN_INTERVAL_MS) * ENERGY_PER_INTERVAL;
-  if (restored <= 0) {
+  const ticks = Math.floor(elapsed / ENERGY_REGEN_INTERVAL_MS);
+  if (ticks <= 0) {
     return player;
   }
 
-  const energy = Math.min(player.maxEnergy, player.energy + restored);
-  if (energy >= player.maxEnergy) {
-    return { ...player, energy, lastEnergyAt: now };
-  }
+  const energy = Math.min(player.maxEnergy, player.energy + ticks * ENERGY_PER_INTERVAL);
+  const nextHp = vitals ? Math.min(player.maxHp, player.hp + ticks * HP_PER_INTERVAL) : undefined;
+  const energyDone = energy >= player.maxEnergy;
+  const hpDone = !vitals || (nextHp != null && nextHp >= player.maxHp);
+  const lastEnergyAt =
+    energyDone && hpDone
+      ? now
+      : new Date(player.lastEnergyAt.getTime() + ticks * ENERGY_REGEN_INTERVAL_MS);
 
-  const consumedTicks = energy - player.energy;
-  return {
-    ...player,
-    energy,
-    lastEnergyAt: new Date(player.lastEnergyAt.getTime() + consumedTicks * ENERGY_REGEN_INTERVAL_MS),
-  };
+  if (vitals) {
+    return { ...player, energy, hp: nextHp as number, lastEnergyAt };
+  }
+  return { ...player, energy, lastEnergyAt };
 }
 
 export function spendEnergy<T extends EnergyState>(player: T, amount: number, now: Date): T {

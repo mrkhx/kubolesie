@@ -48,7 +48,7 @@ Production + `RATE_LIMIT_ENABLED=true` (так по умолчанию) **без
 
 `PORT` задаёт hosting. Слушаем `HOST=0.0.0.0`.
 
-Опционально `APP_COMMIT_SHA` для health.
+Опционально `APP_COMMIT_SHA` для health. Если пусто, берётся `RENDER_GIT_COMMIT` (Render подставляет его сам). Git в runtime не вызывается.
 
 Пустой `GAME_STORE=memory` в production — startup error. MemoryStore только для tests/dev.
 

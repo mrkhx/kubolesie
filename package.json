@@ -19,7 +19,7 @@
     "db:migrate:deploy": "npm run prisma:migrate:deploy --workspace=@kubolesie/database",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:simulation": "vitest run packages/game-core/src/simulation.test.ts packages/game-core/src/audit.test.ts",
+    "test:simulation": "vitest run packages/game-core/src/simulation.test.ts packages/game-core/src/audit.test.ts packages/game-core/src/fresh-journey.test.ts",
     "test:db": "vitest run --config vitest.integration.config.ts",
     "test:db:migrations": "tsx scripts/test-db-migrations.ts",
     "test:redis": "tsx scripts/test-redis.ts",

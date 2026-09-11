@@ -14,6 +14,7 @@ import { ActionRejectedError } from './errors';
 import type { WeekCtx, WeekHost } from './week';
 import { grantMetaAchievement, noteActivity } from './meta';
 import { tickCrop } from './week2';
+import { pagedButtons } from './paging';
 
 export const WEEK6_MENUS = ['station', 'gallery', 'switch', 'seal6'] as const;
 export type Week6MenuId = (typeof WEEK6_MENUS)[number];
@@ -515,9 +516,9 @@ async function week6Act(
   if (act === 'use_core') return useStationCore(host, ctx);
   if (act === 'prep') return prepSeal(host, ctx);
   if (act === 'seal') return prepSeal(host, ctx);
-  if (act === 'open') return week6Hub(host, ctx);
+  if (act === 'open' || act === 'hub') return week6Hub(host, ctx, Number(payload.page ?? 0));
   void payload;
-  return week6Hub(host, ctx);
+  return week6Hub(host, ctx, Number(payload.page ?? 0));
 }
 
 async function edgeMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameResponse> {
@@ -544,7 +545,7 @@ async function edgeMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameR
   ]
     .filter(Boolean)
     .join('\n');
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function inspectYard(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
@@ -592,7 +593,7 @@ async function gatherEdge(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
     return host.respond(
       ctx.player,
       `Первый склад стана. +3 ${resourceLabel('LOG')}, +4 ${resourceLabel('GEAR_SCRAP')}. Шестерёнки и скобы, не провода.`,
-      buttons.slice(0, 5),
+      buttons,
     );
   }
   await host.store.addResource(ctx.player.id, 'GEAR_SCRAP', 1);
@@ -613,7 +614,7 @@ async function routeMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Game
   return host.respond(
     ctx.player,
     extra || 'Три пути по стану. Все сходятся у сортировки. Пыль следы ещё держит.',
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -639,7 +640,7 @@ async function sortMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameR
     if (!ctx.flags.day_37_complete) buttons.push({ label: 'Завершить День 37', action: 'COMPLETE_DAY_37' });
     buttons.push({ label: 'В галереи', action: 'WEEK6_ACT', payload: { act: 'gallery' } });
     buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-    return host.respond(ctx.player, extra || 'Сортировка пройдена. Галереи дышат пылью.', buttons.slice(0, 5));
+    return host.respond(ctx.player, extra || 'Сортировка пройдена. Галереи дышат пылью.', buttons);
   }
   const logger = await jobLevel(host, ctx, 'LOGGER');
   const miner = await jobLevel(host, ctx, 'MINER');
@@ -660,7 +661,7 @@ async function sortMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameR
   ]
     .filter(Boolean)
     .join('\n');
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function falsePath(host: WeekHost, ctx: WeekCtx, kind: 'clear' | 'weight' | 'catwalk'): Promise<GameResponse> {
@@ -733,7 +734,7 @@ async function galleryMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Ga
   return host.respond(
     ctx.player,
     extra || 'Нижние галереи. Повторные бои дают камень, уголь и лом. Не ферма опыта.',
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -795,7 +796,7 @@ async function switchMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Gam
   ]
     .filter(Boolean)
     .join('\n');
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function examineSwitch(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
@@ -861,6 +862,9 @@ async function skrezhetnikGate(host: WeekHost, ctx: WeekCtx): Promise<GameRespon
   ctx.player.currentLocation = 'skrezhetnik_lair';
   await host.store.savePlayer(ctx.player);
   const buttons: GameButton[] = [{ label: 'Бить Скрежетника', action: 'START_PVE', payload: { enemyId: 'skrezhetnik' } }];
+  if (ctx.flags.defeated_skrezhetnik && !ctx.flags.day_40_complete) {
+    buttons.unshift({ label: 'Завершить День 40', action: 'COMPLETE_DAY_40' });
+  }
   if (hasItem(ctx, 'haul_line') && !ctx.flags.haul_line_used) {
     buttons.push({ label: 'Канат', action: 'WEEK6_ACT', payload: { act: 'use_line' } });
   }
@@ -874,7 +878,7 @@ async function skrezhetnikGate(host: WeekHost, ctx: WeekCtx): Promise<GameRespon
   return host.respond(
     ctx.player,
     'Скрежетник среди лебёдок. На панцире скобы и пластины. Не механизм. Не страж печати. Лук, щит, канат, распорка помогают. Без них — можно.',
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -942,7 +946,7 @@ async function contactMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Ga
   ]
     .filter(Boolean)
     .join('\n');
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function speakUnknown(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
@@ -1029,7 +1033,7 @@ async function socialMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Gam
     [extra, 'Сборщики лома сбились со свежих меток. Три пути, все ведут дальше. Это не тот, кто на мосту.', clanLine]
       .filter(Boolean)
       .join('\n'),
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -1092,7 +1096,7 @@ async function clanMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
   return host.respond(
     ctx.player,
     `Знак ${clan.clan.tag} здесь уже знают. Показать или скрыть — не сила удара. Показанный знак чуть дешевле пайка.`,
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -1168,38 +1172,42 @@ async function prepSeal(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
     });
   }
   buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-  return host.respond(ctx.player, lines.join('\n'), buttons.slice(0, 5));
+  return host.respond(ctx.player, lines.join('\n'), buttons);
 }
 
-async function week6Hub(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
+async function week6Hub(host: WeekHost, ctx: WeekCtx, page = 0): Promise<GameResponse> {
   if (ctx.flags.week_6_complete) return host.renderNode(ctx.player, 'week6_complete');
-  const buttons: GameButton[] = [];
+  const items: GameButton[] = [];
   if (!ctx.flags.day_36_complete) {
-    buttons.push({ label: 'Край стана', action: 'WEEK6_ACT', payload: { act: 'edge' } });
+    items.push({ label: 'Край стана', action: 'WEEK6_ACT', payload: { act: 'edge' } });
   } else if (!ctx.flags.day_37_complete) {
-    buttons.push({ label: 'Сортировка', action: 'WEEK6_ACT', payload: { act: 'sort' } });
+    items.push({ label: 'Сортировка', action: 'WEEK6_ACT', payload: { act: 'sort' } });
   } else if (!ctx.flags.day_38_complete) {
-    buttons.push({ label: 'Галереи', action: 'WEEK6_ACT', payload: { act: 'gallery' } });
+    items.push({ label: 'Галереи', action: 'WEEK6_ACT', payload: { act: 'gallery' } });
   } else if (!ctx.flags.day_39_complete) {
-    buttons.push({ label: 'Рычаги', action: 'WEEK6_ACT', payload: { act: 'switch' } });
+    items.push({ label: 'Рычаги', action: 'WEEK6_ACT', payload: { act: 'switch' } });
   } else if (!ctx.flags.day_40_complete) {
-    buttons.push({ label: 'Скрежетник', action: 'WEEK6_ACT', payload: { act: 'skrezhetnik' } });
+    items.push({ label: 'Скрежетник', action: 'WEEK6_ACT', payload: { act: 'skrezhetnik' } });
   } else if (!ctx.flags.day_41_complete) {
-    buttons.push({ label: 'Мост', action: 'WEEK6_ACT', payload: { act: 'contact' } });
+    items.push({ label: 'Мост', action: 'WEEK6_ACT', payload: { act: 'contact' } });
   } else {
-    buttons.push({ label: 'Свод', action: 'WEEK6_ACT', payload: { act: 'prep' } });
+    items.push({ label: 'Свод', action: 'WEEK6_ACT', payload: { act: 'prep' } });
   }
-  if (ctx.flags.day_37_complete && buttons.length < 3) {
-    buttons.push({ label: 'Галереи', action: 'WEEK6_ACT', payload: { act: 'gallery' } });
+  if (ctx.flags.day_37_complete && items.every((row) => row.payload?.act !== 'gallery')) {
+    items.push({ label: 'Галереи', action: 'WEEK6_ACT', payload: { act: 'gallery' } });
   }
-  if (ctx.flags.day_36_complete && buttons.length < 3) {
-    buttons.push({ label: 'Край стана', action: 'WEEK6_ACT', payload: { act: 'edge' } });
+  if (ctx.flags.day_36_complete && items.every((row) => row.payload?.act !== 'edge')) {
+    items.push({ label: 'Край стана', action: 'WEEK6_ACT', payload: { act: 'edge' } });
   }
-  buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
   return host.respond(
     ctx.player,
     'Заброшенный стан. Шесть печатей ещё не молчат. Пять уже. Одна близко. На мосту кто-то говорит.',
-    buttons.slice(0, 5),
+    pagedButtons(
+      items,
+      page,
+      (next) => ({ label: '➡ Ещё', action: 'WEEK6_ACT', payload: { act: 'hub', page: next } }),
+      { label: BACK_LABEL, action: 'OPEN_CAMP' },
+    ),
   );
 }
 

@@ -154,7 +154,7 @@ export const WEEK2_NODES: Record<string, DialogueNode> = {
     ].join('\n'),
     choices: [
       { id: 'fight', label: 'К Смольнику', command: 'WEEK2_ACT', commandPayload: { act: 'smolnik' } },
-      { id: 'shield', label: 'Щит', command: 'OPEN_MENU', commandPayload: { menu: 'items' } },
+      { id: 'shield', label: 'Щит', command: 'OPEN_MENU', commandPayload: { menu: 'weapons' } },
       { id: 'back', label: 'К карьеру', command: 'WEEK2_ACT', commandPayload: { act: 'quarry' } },
     ],
   },

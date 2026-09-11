@@ -550,6 +550,24 @@ describe('day 13 smolnik', () => {
     return seeded;
   }
 
+  it('day 13 shield shortcut opens weapons, not the basic items menu', async () => {
+    const { runtime, vkUserId } = await toDay13(false);
+    const start = await act(runtime, vkUserId, 'BEGIN_DAY_13');
+    const shield = start.buttons.find((button) => button.label.includes('Щит'));
+    expect(shield).toMatchObject({ action: 'OPEN_MENU', payload: { menu: 'weapons' } });
+  });
+
+  it('shield can be equipped on HANDS so its defense actually applies', async () => {
+    const { store, runtime, player, vkUserId } = await toDay13(true);
+    expect(ITEM_TEMPLATES.shield.slot).toBe('HANDS');
+    const shield = (await store.listItems(player.id)).find((item) => item.templateId === 'shield');
+    expect(shield).toBeDefined();
+    const equipped = await act(runtime, vkUserId, 'EQUIP_ITEM', { itemId: shield!.id });
+    expect(equipped.text).toMatch(/Надето|щит/i);
+    const eq = await store.getEquipment(player.id);
+    expect(eq.HANDS).toBe(shield!.id);
+  });
+
   it('retries without wipe and grants BOG_CORE once', async () => {
     const { store, runtime, player, vkUserId } = await toDay13(true);
     const knife = await itemCount(store, player.id, 'crafting_table');

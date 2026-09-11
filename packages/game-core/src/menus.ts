@@ -446,7 +446,7 @@ export function hubButtons(ctx: MenuSnapshot): GameButton[] {
     { label: '🎒 Инвентарь', action: 'OPEN_INVENTORY' },
     { label: '👁 Осмотреться', action: 'EXPLORE' },
   ];
-  if (ctx.flags.player_camp_founded && ctx.currentLocation === 'player_camp') {
+  if (ctx.flags.player_camp_founded) {
     buttons.push({ label: '🏕 Стан', action: 'OPEN_MENU', payload: { menu: 'camp' } });
   } else if (ctx.currentLocation === 'ashen_wedge') {
     buttons.push({ label: '🌲 Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
@@ -476,16 +476,16 @@ export function gatherButtons(ctx: MenuSnapshot, page = 0): GameButton[] {
   );
 }
 
-export function campButtons(ctx: MenuSnapshot): GameButton[] {
-  const buttons: GameButton[] = [];
+export function campButtons(ctx: MenuSnapshot, page = 0): GameButton[] {
+  const items: GameButton[] = [];
   if (!ctx.flags.camp_table_placed && hasCraftingTable(ctx.items)) {
-    buttons.push({ label: '🛠 Разместить верстак', action: 'PLACE_CAMP_TABLE' });
+    items.push({ label: '🛠 Разместить верстак', action: 'PLACE_CAMP_TABLE' });
   }
   if (!ctx.flags.camp_fire_built) {
-    buttons.push({ label: '🔥 Костёр', action: 'CRAFT_ITEM', payload: { recipeId: 'campfire' } });
+    items.push({ label: '🔥 Костёр', action: 'CRAFT_ITEM', payload: { recipeId: 'campfire' } });
   }
   if (!ctx.flags.camp_lit && (ctx.flags.camp_fire_built || ctx.items.some((item) => item.templateId === 'torch'))) {
-    buttons.push({ label: '💡 Освещение', action: 'LIGHT_CAMP' });
+    items.push({ label: '💡 Освещение', action: 'LIGHT_CAMP' });
   }
   if (
     ctx.flags.player_camp_founded &&
@@ -493,36 +493,46 @@ export function campButtons(ctx: MenuSnapshot): GameButton[] {
     ctx.flags.camp_fire_built &&
     !ctx.flags.day_2_complete
   ) {
-    buttons.push({ label: '✅ Завершить обустройство', action: 'COMPLETE_DAY_2' });
+    items.push({ label: '✅ Завершить обустройство', action: 'COMPLETE_DAY_2' });
   }
   if (ctx.flags.furnace_placed || ctx.flags.furnace_built) {
-    buttons.push({ label: '🔥 Печь', action: 'FURNACE_ACT', payload: { act: 'open' } });
+    items.push({ label: '🔥 Печь', action: 'FURNACE_ACT', payload: { act: 'open' } });
   } else if (ctx.flags.day_3_complete) {
-    buttons.push({ label: '🔥 Печь', action: 'CRAFT_ITEM', payload: { recipeId: 'furnace' } });
+    items.push({ label: '🔥 Печь', action: 'CRAFT_ITEM', payload: { recipeId: 'furnace' } });
   }
-  if (ctx.flags.met_vel && buttons.length < 3) {
-    buttons.push({ label: '⚖ Вел', action: 'TALK_NPC', payload: { npcId: 'vel' } });
+  if (
+    ctx.flags.furnace_placed &&
+    ctx.flags.first_ingot &&
+    !ctx.flags.day_4_complete &&
+    ctx.items.some((item) => item.templateId === 'iron_pickaxe' || item.templateId === 'iron_axe' || item.templateId === 'iron_sword')
+  ) {
+    items.push({ label: '✅ Завершить День 4', action: 'COMPLETE_DAY_4' });
   }
-  if (ctx.flags.farming_unlocked && buttons.length < 4) {
-    buttons.push({ label: '🌾 Грядка', action: 'FARM_ACT', payload: { act: 'open' } });
+  if (ctx.flags.week_5_complete && !ctx.flags.week_6_complete) {
+    items.push({ label: '⛓ Пост', action: 'WEEK6_ACT', payload: { act: 'open' } });
+  } else if (ctx.flags.week_4_complete && !ctx.flags.week_5_complete) {
+    items.push({ label: '💧 Топь', action: 'WEEK5_ACT', payload: { act: 'open' } });
+  } else if (ctx.flags.week_3_complete && !ctx.flags.week_4_complete) {
+    items.push({ label: '🍂 Тропа', action: 'WEEK4_ACT', payload: { act: 'open' } });
+  } else if (ctx.flags.week_2_complete) {
+    items.push({ label: '🌿 Чаща', action: 'WEEK3_ACT', payload: { act: 'open' } });
   }
-  if (ctx.flags.week_1_complete && buttons.length < 4) {
-    buttons.push({ label: '⚒ Хозяйство', action: 'OPEN_MENU', payload: { menu: 'work' } });
+  if (ctx.flags.met_vel) {
+    items.push({ label: '⚖ Вел', action: 'TALK_NPC', payload: { npcId: 'vel' } });
   }
-  if (ctx.flags.week_5_complete && !ctx.flags.week_6_complete && buttons.length < 4) {
-    buttons.push({ label: '⛓ Пост', action: 'WEEK6_ACT', payload: { act: 'open' } });
-  } else if (ctx.flags.week_4_complete && !ctx.flags.week_5_complete && buttons.length < 4) {
-    buttons.push({ label: '💧 Топь', action: 'WEEK5_ACT', payload: { act: 'open' } });
-  } else if (ctx.flags.week_3_complete && !ctx.flags.week_4_complete && buttons.length < 4) {
-    buttons.push({ label: '🍂 Тропа', action: 'WEEK4_ACT', payload: { act: 'open' } });
-  } else if (ctx.flags.week_2_complete && buttons.length < 4) {
-    buttons.push({ label: '🌿 Чаща', action: 'WEEK3_ACT', payload: { act: 'open' } });
+  if (ctx.flags.farming_unlocked) {
+    items.push({ label: '🌾 Грядка', action: 'FARM_ACT', payload: { act: 'open' } });
   }
-  if (buttons.length < 4) {
-    buttons.push({ label: '👤 Герой', action: 'OPEN_MENU', payload: { menu: 'hero' } });
+  if (ctx.flags.week_1_complete) {
+    items.push({ label: '⚒ Хозяйство', action: 'OPEN_MENU', payload: { menu: 'work' } });
   }
-  buttons.push(backButton('camp'));
-  return buttons;
+  items.push({ label: '👤 Герой', action: 'OPEN_MENU', payload: { menu: 'hero' } });
+  return pagedButtons(
+    items,
+    page,
+    (next) => ({ label: '➡ Ещё', action: 'OPEN_MENU', payload: { menu: 'camp', page: next } }),
+    backButton('camp'),
+  );
 }
 
 export function craftRootButtons(): GameButton[] {
@@ -563,7 +573,7 @@ export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText
     return {
       id: 'camp',
       text: extraText || 'Стан. Только нужное.',
-      buttons: campButtons(ctx),
+      buttons: campButtons(ctx, page),
     };
   }
   if (menu === 'wedge' || menu === 'daily' || menu === 'furnace' || menu === 'trade' || menu === 'pvp' || menu === 'prep' || menu === 'hero' || menu === 'profile' || menu === 'stats' || menu === 'ratings' || menu === 'clan' || menu === 'cosmetics' || menu === 'work' || menu === 'jobs' || menu === 'production') {

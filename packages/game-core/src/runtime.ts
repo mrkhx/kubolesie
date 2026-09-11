@@ -261,7 +261,11 @@ export class GameRuntime {
     try {
       const player = await this.ensurePlayer(event);
       const refreshed = regenerateEnergy(player, this.now());
-      if (refreshed.energy !== player.energy || refreshed.lastEnergyAt.getTime() !== player.lastEnergyAt.getTime()) {
+      if (
+        refreshed.energy !== player.energy ||
+        refreshed.lastEnergyAt.getTime() !== player.lastEnergyAt.getTime() ||
+        refreshed.hp !== player.hp
+      ) {
         await this.store.savePlayer(refreshed);
       }
       const current = (await this.store.findPlayerById(player.id)) ?? refreshed;
@@ -332,7 +336,7 @@ export class GameRuntime {
       case 'START_GAME':
         return this.startGame(ctx);
       case 'EXPLORE':
-        return this.explore(ctx);
+        return this.explore(ctx, Number(command.payload?.page ?? 0));
       case 'OPEN_INVENTORY':
         return this.openInventory(ctx, Number(command.payload?.page ?? 0));
       case 'OPEN_CAMP':
@@ -621,13 +625,13 @@ export class GameRuntime {
     return ctx.player.maxEnergy + bonus;
   }
 
-  private async explore(ctx: Ctx): Promise<GameResponse> {
+  private async explore(ctx: Ctx, page = 0): Promise<GameResponse> {
     if (ctx.player.currentState.startsWith('night_') && !ctx.flags.day_1_complete) {
       return this.renderNode(ctx.player, ctx.player.currentState);
     }
     const loc = ctx.player.currentLocation;
     if (loc === 'player_camp' && ctx.flags.player_camp_founded) {
-      return this.exploreCamp(ctx);
+      return this.exploreCamp(ctx, page);
     }
     if (loc === 'soot_fissure') {
       if (
@@ -813,7 +817,7 @@ export class GameRuntime {
     return `Свой стан. ${roof}\n${table} ${fire} ${light}`;
   }
 
-  private async exploreCamp(ctx: Ctx): Promise<GameResponse> {
+  private async exploreCamp(ctx: Ctx, page = 0): Promise<GameResponse> {
     if (
       ctx.flags.day_3_complete &&
       !ctx.flags.day_4_complete &&
@@ -834,65 +838,66 @@ export class GameRuntime {
       await this.store.setFlag(ctx.player.id, 'scavenger_day2_visit', '1');
       return this.renderNode(ctx.player, 'scavenger_day2');
     }
-    const buttons: GameButton[] = [];
+    const items: GameButton[] = [];
     if (!ctx.flags.seen_soot_fissure) {
-      buttons.push({
+      items.push({
         label: 'След сажи',
         action: 'DIALOGUE_CHOICE',
         payload: { nodeId: 'soot_notice', choiceId: 'go' },
       });
     } else {
-      buttons.push({
+      items.push({
         label: 'К расселине',
         action: 'DIALOGUE_CHOICE',
         payload: { nodeId: 'camp_look', choiceId: 'soot_go' },
       });
     }
     if (!ctx.flags.seen_ridge_tracks) {
-      buttons.push({
+      items.push({
         label: 'Следы на краю',
         action: 'DIALOGUE_CHOICE',
         payload: { nodeId: 'camp_look', choiceId: 'ridge' },
       });
     }
     if (ctx.flags.met_rem) {
-      buttons.push({ label: 'К Рему', action: 'TALK_NPC', payload: { npcId: 'rem' } });
+      items.push({ label: 'К Рему', action: 'TALK_NPC', payload: { npcId: 'rem' } });
     }
     if (ctx.flags.scavenger_day2_visit && !ctx.flags.scavenger_cache && !ctx.flags.defeated_stone_scavenger) {
-      buttons.push({
+      items.push({
         label: 'Падальщик',
         action: 'DIALOGUE_CHOICE',
         payload: { nodeId: 'camp_look', choiceId: 'scavenger' },
       });
     }
-    if (buttons.length < 5 && ctx.flags.day_2_complete && !ctx.flags.week_1_complete) {
-      buttons.push({ label: '🌲 Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
+    if (ctx.flags.day_2_complete && !ctx.flags.week_1_complete) {
+      items.push({ label: '🌲 Клин', action: 'OPEN_MENU', payload: { menu: 'wedge' } });
     }
-    if (buttons.length < 5 && ctx.flags.week_5_complete && !ctx.flags.week_6_complete) {
-      buttons.push({ label: '⛓ Пост', action: 'WEEK6_ACT', payload: { act: 'open' } });
+    if (ctx.flags.week_5_complete && !ctx.flags.week_6_complete) {
+      items.push({ label: '⛓ Пост', action: 'WEEK6_ACT', payload: { act: 'open' } });
+    } else if (ctx.flags.week_4_complete && !ctx.flags.week_5_complete) {
+      items.push({ label: '💧 Топь', action: 'WEEK5_ACT', payload: { act: 'open' } });
+    } else if (ctx.flags.week_3_complete && !ctx.flags.week_4_complete) {
+      items.push({ label: '🍂 Тропа', action: 'WEEK4_ACT', payload: { act: 'open' } });
+    } else if (ctx.flags.week_2_complete && !ctx.flags.week_3_complete) {
+      items.push({ label: '🌿 Чаща', action: 'WEEK3_ACT', payload: { act: 'open' } });
     }
-    if (buttons.length < 5 && ctx.flags.week_4_complete && !ctx.flags.week_5_complete) {
-      buttons.push({ label: '💧 Топь', action: 'WEEK5_ACT', payload: { act: 'open' } });
-    }
-    if (buttons.length < 5 && ctx.flags.week_3_complete && !ctx.flags.week_4_complete) {
-      buttons.push({ label: '🍂 Тропа', action: 'WEEK4_ACT', payload: { act: 'open' } });
-    }
-    if (buttons.length < 5 && ctx.flags.week_2_complete && !ctx.flags.week_3_complete) {
-      buttons.push({ label: '🌿 Чаща', action: 'WEEK3_ACT', payload: { act: 'open' } });
-    }
-    if (buttons.length < 5 && ctx.flags.week_1_complete && !ctx.flags.week_2_complete) {
+    if (ctx.flags.week_1_complete && !ctx.flags.week_2_complete) {
       if (ctx.flags.farming_unlocked) {
-        buttons.push({ label: '🌾 Грядка', action: 'FARM_ACT', payload: { act: 'open' } });
+        items.push({ label: '🌾 Грядка', action: 'FARM_ACT', payload: { act: 'open' } });
       } else {
-        buttons.push({ label: '🌫 Кромка', action: 'WEEK2_ACT', payload: { act: 'border' } });
+        items.push({ label: '🌫 Кромка', action: 'WEEK2_ACT', payload: { act: 'border' } });
       }
     }
-    if (buttons.length < 5) {
-      buttons.push({ label: '🏕 Стан', action: 'OPEN_MENU', payload: { menu: 'camp' } });
-    }
+    items.push({ label: '🏕 Стан', action: 'OPEN_MENU', payload: { menu: 'camp' } });
     ctx.player.currentState = 'camp_look';
     await this.store.savePlayer(ctx.player);
-    return this.respond(ctx.player, this.campLookText(ctx), buttons.slice(0, 5));
+    const buttons = pagedButtons(
+      items,
+      page,
+      (next) => ({ label: '➡ Ещё', action: 'EXPLORE', payload: { page: next } }),
+      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
+    );
+    return this.respond(ctx.player, this.campLookText(ctx), buttons);
   }
 
   private hasCraftingTable(ctx: Ctx): boolean {
@@ -1852,6 +1857,7 @@ export class GameRuntime {
         if (winNotes.length) extra += `\n${winNotes.join(' ')}`;
         if (enemyId === 'blackroot') {
           buttons.unshift({ label: 'К узлу', action: 'WEEK4_ACT', payload: { act: 'warped' } });
+          buttons.unshift({ label: 'Завершить День 26', action: 'COMPLETE_DAY_26' });
         } else if (enemyId === 'tlennik') {
           buttons.unshift({ label: 'К карте', action: 'COMPLETE_DAY_28' });
         } else {
@@ -1863,6 +1869,7 @@ export class GameRuntime {
         if (winNotes.length) extra += `\n${winNotes.join(' ')}`;
         if (enemyId === 'miremaw') {
           buttons.unshift({ label: 'К знаку', action: 'WEEK5_ACT', payload: { act: 'moving' } });
+          buttons.unshift({ label: 'Завершить День 33', action: 'COMPLETE_DAY_33' });
         } else if (enemyId === 'bezdonnik') {
           buttons.unshift({ label: 'К карте', action: 'COMPLETE_DAY_35' });
         } else {
@@ -1874,6 +1881,7 @@ export class GameRuntime {
         if (winNotes.length) extra += `\n${winNotes.join(' ')}`;
         if (enemyId === 'skrezhetnik') {
           buttons.unshift({ label: 'К мосту', action: 'WEEK6_ACT', payload: { act: 'contact' } });
+          buttons.unshift({ label: 'Завершить День 40', action: 'COMPLETE_DAY_40' });
         } else if (enemyId === 'zatvornik') {
           buttons.unshift({ label: 'К карте', action: 'COMPLETE_DAY_42' });
         } else {

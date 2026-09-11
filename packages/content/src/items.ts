@@ -305,6 +305,7 @@ export const ITEM_TEMPLATES: Record<string, ItemTemplate> = {
     name: 'Щит',
     description: 'Шесть досок и слиток. Держит тяжёлый удар.',
     rarity: 'UNCOMMON',
+    slot: 'HANDS',
     defenseBonus: 4,
   },
   bucket: {

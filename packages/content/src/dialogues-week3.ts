@@ -31,6 +31,7 @@ export const WEEK3_NODES: Record<string, DialogueNode> = {
     choices: [
       { id: 'day16', label: 'Начать День 16', command: 'BEGIN_DAY_16' },
       { id: 'edge', label: 'Ещё к чаще', command: 'WEEK3_ACT', commandPayload: { act: 'edge' } },
+      { id: 'camp', label: 'К стану', command: 'OPEN_CAMP' },
     ],
   },
   day16_start: {
@@ -88,6 +89,7 @@ export const WEEK3_NODES: Record<string, DialogueNode> = {
     choices: [
       { id: 'day19', label: 'Начать День 19', command: 'BEGIN_DAY_19' },
       { id: 'mech', label: 'Ещё к узлу', command: 'WEEK3_ACT', commandPayload: { act: 'mechanism' } },
+      { id: 'camp', label: 'К стану', command: 'OPEN_CAMP' },
     ],
   },
   day19_start: {

@@ -78,7 +78,7 @@ export const WEEK5_NODES: Record<string, DialogueNode> = {
       'Стрелка на схеме не совпадает со свежими метками в топи. Кто-то уводит путь.',
     ].join('\n'),
     choices: [
-      { id: 'outpost', label: 'К стану', command: 'WEEK5_ACT', commandPayload: { act: 'outpost' } },
+      { id: 'outpost', label: 'К затопленному стану', command: 'WEEK5_ACT', commandPayload: { act: 'outpost' } },
       { id: 'camp', label: 'К стану', command: 'OPEN_CAMP' },
     ],
   },
@@ -87,7 +87,7 @@ export const WEEK5_NODES: Record<string, DialogueNode> = {
     text: 'Старый путь и новый не одно. Дальше под настилом дышит крупное. Не страж печати. Страж воды.',
     choices: [
       { id: 'day33', label: 'Начать День 33', command: 'BEGIN_DAY_33' },
-      { id: 'outpost', label: 'Ещё к стану', command: 'WEEK5_ACT', commandPayload: { act: 'outpost' } },
+      { id: 'outpost', label: 'Ещё к затопленному стану', command: 'WEEK5_ACT', commandPayload: { act: 'outpost' } },
     ],
   },
   day33_start: {

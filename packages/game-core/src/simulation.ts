@@ -1,6 +1,7 @@
 import {
   ENERGY_PER_INTERVAL,
   ENERGY_REGEN_INTERVAL_MS,
+  HP_PER_INTERVAL,
   RESOURCE_TYPES,
   type GameButton,
   type GameCommandType,
@@ -413,6 +414,20 @@ export class SimSession {
     const after = await this.reload();
     if (after.energy < need) {
       this.clock.advanceTicks(after.maxEnergy + 2);
+      await this.act('OPEN_MENU', { menu: 'hub' }, undefined, { quiet: true });
+    }
+  }
+
+  async ensureHp(ratio = 0.9): Promise<void> {
+    const player = await this.reload();
+    const want = Math.max(1, Math.floor(player.maxHp * ratio));
+    if (player.hp >= want) return;
+    const missing = Math.max(1, want - player.hp);
+    this.clock.advanceTicks(Math.ceil(missing / HP_PER_INTERVAL) + 2);
+    await this.act('OPEN_INVENTORY', {}, undefined, { quiet: true });
+    const after = await this.reload();
+    if (after.hp < want) {
+      this.clock.advanceTicks(after.maxHp + 4);
       await this.act('OPEN_MENU', { menu: 'hub' }, undefined, { quiet: true });
     }
   }

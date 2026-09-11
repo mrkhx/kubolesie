@@ -537,7 +537,7 @@ function farmScreen(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameRespo
     buttons.push({ label: '🔨 Крафт', action: 'OPEN_MENU', payload: { menu: 'craft' } });
   }
   buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function week2Act(
@@ -595,7 +595,7 @@ async function gatherBorder(host: WeekHost, ctx: WeekCtx): Promise<GameResponse>
     return host.respond(
       ctx.player,
       'На кромке — семена в иле и камыш кубами. +2 семени, +3 камыша.\nВ тумане далёкий огонёк идёт против ветра.',
-      buttons.slice(0, 5),
+      buttons,
     );
   }
   await host.store.addResource(ctx.player.id, 'REED', 1);
@@ -624,7 +624,7 @@ async function borderMenu(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<Gam
   ]
     .filter(Boolean)
     .join('\n');
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function lowlandMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
@@ -655,7 +655,7 @@ async function lowlandMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> 
   return host.respond(
     ctx.player,
     `Туманная низина. Вода по щиколотку. ${bow}`,
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -737,7 +737,7 @@ async function quarryMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
   return host.respond(
     ctx.player,
     'Утонувший карьер. Не клин. Вода стоит в проходе. Глина пахнет железом.',
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -770,7 +770,7 @@ async function quarryStage(host: WeekHost, ctx: WeekCtx, stage: 'shore' | 'flood
       hasBucket(ctx)
         ? 'Проход по пояс. Ведро снимет воду с клетки. Вброд — можно, но кусает холод.'
         : 'Проход затоплен. Ведро: 3 слитка. Или вброд — минус здоровье, плюс проход. Железо — в штольне.',
-      buttons.slice(0, 5),
+      buttons,
     );
   }
   if (stage === 'workings') {
@@ -793,7 +793,7 @@ async function quarryStage(host: WeekHost, ctx: WeekCtx, stage: 'shore' | 'flood
   return host.respond(
     ctx.player,
     'Нижняя камера. На стене — символ Второй печати. Тот же род, что семёрка. Путь дальше закрыт камнем и водой.',
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -865,7 +865,7 @@ async function smolnikGate(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> 
   return host.respond(
     ctx.player,
     'Смольник в котловине. Смола, корни, не печать. Лук помогает. Щит держит. Без них — можно, дольше.',
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -915,7 +915,7 @@ async function prepSeal(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
     });
   }
   buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-  return host.respond(ctx.player, lines.join('\n'), buttons.slice(0, 5));
+  return host.respond(ctx.player, lines.join('\n'), buttons);
 }
 
 async function sealMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
@@ -1015,5 +1015,5 @@ export async function talkMira(host: WeekHost, ctx: WeekCtx): Promise<GameRespon
     buttons.push({ label: 'Завершить День 11', action: 'COMPLETE_DAY_11' });
   }
   buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }

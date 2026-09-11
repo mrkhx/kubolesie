@@ -86,7 +86,7 @@ export function loadAppConfig(env: NodeJS.Dict<string> = process.env): AppConfig
     version: PROTOTYPE_VERSION,
     prototypeVersion: PROTOTYPE_VERSION,
     balanceVersion: BALANCE_VERSION,
-    commitSha: emptyToNull(env.APP_COMMIT_SHA),
+    commitSha: emptyToNull(env.APP_COMMIT_SHA) ?? emptyToNull(env.RENDER_GIT_COMMIT),
     mockApiEnabled: production ? false : env.ENABLE_MOCK_API !== 'false',
     vk: loadVkConfig(env),
     database: loadDatabaseConfig(env),

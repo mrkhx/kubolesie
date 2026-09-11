@@ -502,6 +502,8 @@ describe('day 33 miremaw', () => {
     expect(await itemCount(store, player.id, 'crafting_table')).toBe(table);
     const win = await fightUntil(runtime, store, player.id, vkUserId, 'miremaw');
     expect(win.text).toMatch(/Победа/i);
+    expect(win.buttons.some((button) => button.label.includes('Завершить День 33'))).toBe(true);
+    expect(win.buttons.length).toBeLessThanOrEqual(5);
     expect((await store.getResources(player.id)).MARSH_HEART).toBe(1);
     await fightUntil(runtime, store, player.id, vkUserId, 'miremaw');
     expect((await store.getResources(player.id)).MARSH_HEART).toBe(1);

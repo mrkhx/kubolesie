@@ -240,6 +240,30 @@ describe('weekHubsUi', { timeout: 30_000 }, () => {
   });
 });
 
+describe('velPagination', { timeout: 20_000 }, () => {
+  it('sell and buy menus page every SKU without silent truncate', async () => {
+    const session = await SimSession.boot({ vkUserId: 'audit-vel' });
+    await session.grantFlags(['met_vel', 'player_camp_founded', 'day_2_complete']);
+    await seedCamp(session);
+    for (const sku of ['LOG', 'PLANK', 'COBBLESTONE', 'COAL', 'IRON_ORE', 'IRON_INGOT', 'HIDE'] as const) {
+      await session.store.addResource(session.playerId, sku, 2);
+    }
+    await session.act('TRADE_ACT', { act: 'sell_menu' });
+    const sell = new Set(await session.collectPagedLabels());
+    expect([...sell].some((label) => label.includes('Уголь') || label.includes('уголь'))).toBe(true);
+    expect([...sell].some((label) => /шкур|Шкур/i.test(label))).toBe(true);
+    expect(session.last.buttons.length).toBeLessThanOrEqual(5);
+
+    await session.act('TRADE_ACT', { act: 'buy_menu' });
+    const buy = new Set(await session.collectPagedLabels());
+    expect([...buy].some((label) => label.includes('Стекло'))).toBe(true);
+    expect([...buy].some((label) => label.includes('кольчуг') || label.includes('Кольчуг'))).toBe(true);
+    expect([...buy].some((label) => label.includes('меч'))).toBe(true);
+    expect(session.last.buttons.length).toBeLessThanOrEqual(5);
+    session.assertHealthy();
+  });
+});
+
 describe('miningProgressionUi', { timeout: 60_000 }, () => {
   it('wooden pickaxe via UI unlocks quarry, then stone pickaxe via UI', async () => {
     const session = await SimSession.boot({ vkUserId: 'audit-mine' });

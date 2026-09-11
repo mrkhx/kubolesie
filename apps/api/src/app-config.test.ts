@@ -107,6 +107,30 @@ describe('production app config', () => {
     expect(config.mockApiEnabled).toBe(false);
   });
 
+  it('prefers APP_COMMIT_SHA over RENDER_GIT_COMMIT for health', () => {
+    const config = loadAppConfig({
+      ...COMPLETE,
+      APP_COMMIT_SHA: 'abc123',
+      RENDER_GIT_COMMIT: 'render456',
+    });
+    expect(config.commitSha).toBe('abc123');
+  });
+
+  it('falls back to RENDER_GIT_COMMIT when APP_COMMIT_SHA is empty', () => {
+    const config = loadAppConfig({
+      ...COMPLETE,
+      APP_COMMIT_SHA: '   ',
+      RENDER_GIT_COMMIT: 'render456',
+    });
+    expect(config.commitSha).toBe('render456');
+  });
+
+  it('keeps commitSha null when neither commit env is set', () => {
+    const { APP_COMMIT_SHA: _unused, ...rest } = COMPLETE;
+    const config = loadAppConfig({ ...rest, RENDER_GIT_COMMIT: '' });
+    expect(config.commitSha).toBeNull();
+  });
+
   it('does not leak secrets, tokens, DATABASE_URL or REDIS_URL in describeAppConfig', () => {
     const dumped = JSON.stringify(describeAppConfig(loadAppConfig(COMPLETE)));
     expect(dumped).not.toContain('test-token');

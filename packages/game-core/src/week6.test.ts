@@ -506,6 +506,8 @@ describe('day 40 skrezhetnik', () => {
     expect((await store.listItems(player.id)).length).toBeGreaterThan(3);
     const win = await fightUntil(runtime, store, player.id, vkUserId, 'skrezhetnik');
     expect(win.text).toMatch(/Победа/i);
+    expect(win.buttons.some((button) => button.label.includes('Завершить День 40'))).toBe(true);
+    expect(win.buttons.length).toBeLessThanOrEqual(5);
     expect((await store.getResources(player.id)).STATION_CORE).toBe(1);
     expect((await store.getFlags(player.id)).defeated_skrezhetnik).toBe('1');
     await fightUntil(runtime, store, player.id, vkUserId, 'skrezhetnik');

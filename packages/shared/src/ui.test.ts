@@ -73,6 +73,26 @@ describe('vk button presentation', () => {
     expect(presentButton({ label: '🌲 Рубить дерево', action: 'GATHER_WOOD' }).label).toBe('🪓 Рубить дерево');
     expect(presentButton({ label: 'Добывать камень', action: 'GATHER_STONE' }).label).toBe('🪨 Добыть булыжник');
   });
+
+  it('does not rewrite «К стану» into «К лагерю»', () => {
+    const camp = presentButton({ label: 'К стану', action: 'OPEN_CAMP' });
+    expect(camp.label).toBe('🏕 К стану');
+    expect(camp.label).not.toMatch(/лагерю/);
+    const outpost = presentButton({
+      label: 'К затопленному стану',
+      action: 'WEEK5_ACT',
+      payload: { act: 'outpost' },
+    });
+    expect(outpost.label).toMatch(/затопленному стану/);
+    expect(outpost.label).not.toMatch(/лагерю/);
+    expect(outpost.label).toBe('🏕 К затопленному стану');
+    expect(presentButton({ label: 'Ещё к затопленному стану', action: 'WEEK5_ACT' }).label).toBe(
+      '🏕 Ещё к затопленному стану',
+    );
+    expect(presentButton({ label: 'Пока к стану', action: 'EXPLORE' }).label).toBe('🏕 К стану');
+    expect(presentButton({ label: 'К лагерю', action: 'OPEN_CAMP' }).label).toBe('🏕 К лагерю');
+    expect(presentButton({ label: 'Ещё к лагерю', action: 'WEEK4_ACT' }).label).toBe('🏕 Ещё к лагерю');
+  });
 });
 
 describe('rarity localization', () => {

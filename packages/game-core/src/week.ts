@@ -24,6 +24,7 @@ import {
   TRIBUTE_COBBLE,
   TRIBUTE_COINS,
   VEL_BUYS,
+  VEL_SELLS,
   WENZEL_QUEST_XP,
   getItemTemplate,
   getPvpRival,
@@ -695,7 +696,7 @@ async function furnaceAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, 
   if (act === 'smelt_ore') {
     return smeltNamedOre(host, ctx, String(payload.ore ?? ''));
   }
-  return furnaceScreen(host, ctx);
+  return furnaceScreen(host, ctx, '', Number(payload.page ?? 0));
 }
 
 function expandedSmeltRows(ctx: WeekCtx) {
@@ -787,7 +788,7 @@ function furnaceOreScreen(host: WeekHost, ctx: WeekCtx, ore: string, extra = '')
   ]);
 }
 
-function furnaceScreen(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameResponse> {
+function furnaceScreen(host: WeekHost, ctx: WeekCtx, extra = '', page = 0): Promise<GameResponse> {
   const fuel = flagNum(ctx.flags, 'furnace_fuel');
   const output = flagNum(ctx.flags, 'furnace_output');
   const extraOres = expandedSmeltRows(ctx)
@@ -803,23 +804,38 @@ function furnaceScreen(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameRe
   ]
     .filter(Boolean)
     .join('\n');
-  const buttons: GameButton[] = [
+  const items: GameButton[] = [
     { label: 'Положить руду', action: 'FURNACE_ACT', payload: { act: 'smelt' } },
   ];
   if (furnaceHasExpanded(ctx)) {
-    buttons.push({ label: 'Другая руда', action: 'FURNACE_ACT', payload: { act: 'ores' } });
+    items.push({ label: 'Другая руда', action: 'FURNACE_ACT', payload: { act: 'ores' } });
   } else if ((ctx.resources.RAW_FISH ?? 0) > 0) {
-    buttons.push({ label: 'Жарить рыбу', action: 'FURNACE_ACT', payload: { act: 'cook_fish' } });
+    items.push({ label: 'Жарить рыбу', action: 'FURNACE_ACT', payload: { act: 'cook_fish' } });
   }
-  buttons.push({ label: 'Положить уголь', action: 'FURNACE_ACT', payload: { act: 'add_coal' } });
-  buttons.push({ label: 'Забрать слитки', action: 'FURNACE_ACT', payload: { act: 'take' } });
-  if (buttons.length < 4 && ctx.flags.unknown_blue_mineral && (ctx.resources.RAW_FISH ?? 0) < 1 && !furnaceHasExpanded(ctx)) {
-    buttons.push({ label: 'Синее', action: 'FURNACE_ACT', payload: { act: 'smelt_blue' } });
-  } else if (buttons.length < 4) {
-    buttons.push({ label: 'Дрова', action: 'FURNACE_ACT', payload: { act: 'add_log' } });
+  items.push({ label: 'Положить уголь', action: 'FURNACE_ACT', payload: { act: 'add_coal' } });
+  items.push({ label: 'Забрать слитки', action: 'FURNACE_ACT', payload: { act: 'take' } });
+  const canFinishDay4 =
+    Boolean(ctx.flags.furnace_placed) &&
+    Boolean(ctx.flags.first_ingot) &&
+    !ctx.flags.day_4_complete &&
+    IRON_TOOL_RECIPES.some((id) => hasItem(ctx, id));
+  if (canFinishDay4) {
+    items.push({ label: 'Завершить День 4', action: 'COMPLETE_DAY_4' });
   }
-  buttons.push({ label: 'Отойти', action: 'OPEN_CAMP' });
-  return host.respond(ctx.player, text, buttons);
+  if (ctx.flags.unknown_blue_mineral && (ctx.resources.RAW_FISH ?? 0) < 1 && !furnaceHasExpanded(ctx)) {
+    items.push({ label: 'Синее', action: 'FURNACE_ACT', payload: { act: 'smelt_blue' } });
+  }
+  items.push({ label: 'Дрова', action: 'FURNACE_ACT', payload: { act: 'add_log' } });
+  return host.respond(
+    ctx.player,
+    text,
+    pagedButtons(
+      items,
+      page,
+      (next) => ({ label: '➡ Ещё', action: 'FURNACE_ACT', payload: { act: 'open', page: next } }),
+      { label: 'Отойти', action: 'OPEN_CAMP' },
+    ),
+  );
 }
 
 async function tradeAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, unknown>): Promise<GameResponse> {
@@ -907,26 +923,41 @@ async function tradeAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, un
     );
   }
   if (act === 'sell_menu') {
-    const owned = VEL_BUYS.filter((sku) => (ctx.resources[sku.resource] ?? 0) > 0).slice(0, 3);
+    const page = Number(payload.page ?? 0);
+    const owned = VEL_BUYS.filter((sku) => (ctx.resources[sku.resource] ?? 0) > 0);
     const sellBtns: GameButton[] = owned.map((sku) => ({
       label: `${resourceLabel(sku.resource)} (${sku.price})`,
       action: 'TRADE_ACT',
       payload: { act: 'sell', sku: sku.id },
     }));
-    sellBtns.push({ label: BACK_LABEL, action: 'TRADE_ACT', payload: { act: 'open' } });
     return host.respond(
       ctx.player,
       owned.length ? 'Что продаёшь? Вел платит меньше, чем берёт за своё.' : 'Нечего продать из его списка.',
-      sellBtns.slice(0, 5),
+      pagedButtons(
+        sellBtns,
+        page,
+        (next) => ({ label: '➡ Ещё', action: 'TRADE_ACT', payload: { act: 'sell_menu', page: next } }),
+        { label: BACK_LABEL, action: 'TRADE_ACT', payload: { act: 'open' } },
+      ),
     );
   }
   if (act === 'buy_menu') {
-    return host.respond(ctx.player, `Монеты: ${ctx.player.coins}. Купить:`, [
-      { label: 'Стекло (15)', action: 'TRADE_ACT', payload: { act: 'buy', sku: 'glass' } },
-      { label: 'Сухарь (8)', action: 'TRADE_ACT', payload: { act: 'buy', sku: 'rusk' } },
-      { label: 'Палки ×4 (6)', action: 'TRADE_ACT', payload: { act: 'buy', sku: 'sticks' } },
-      { label: BACK_LABEL, action: 'TRADE_ACT', payload: { act: 'open' } },
-    ]);
+    const page = Number(payload.page ?? 0);
+    const buyBtns: GameButton[] = VEL_SELLS.map((sku) => ({
+      label: `${sku.name} (${sku.price})`,
+      action: 'TRADE_ACT',
+      payload: { act: 'buy', sku: sku.id },
+    }));
+    return host.respond(
+      ctx.player,
+      `Монеты: ${ctx.player.coins}. Купить:`,
+      pagedButtons(
+        buyBtns,
+        page,
+        (next) => ({ label: '➡ Ещё', action: 'TRADE_ACT', payload: { act: 'buy_menu', page: next } }),
+        { label: BACK_LABEL, action: 'TRADE_ACT', payload: { act: 'open' } },
+      ),
+    );
   }
   if (act === 'token') return host.renderNode(ctx.player, 'vel_token');
   return host.respond(
@@ -954,7 +985,7 @@ function tradeButtons(ctx: WeekCtx): GameButton[] {
     buttons.push({ label: 'Завершить День 5', action: 'COMPLETE_DAY_5' });
   }
   buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-  return buttons.slice(0, 5);
+  return buttons;
 }
 
 function pvpMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
@@ -980,7 +1011,7 @@ function pvpMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
   return host.respond(
     ctx.player,
     `Осыпь. Вешка Яры.\nСтычек: ${used}/${PVP_MAX}. Рейтинг: ${standing}.\nМонет с PvP мало — так и задумано.`,
-    buttons.slice(0, 5),
+    buttons,
   );
 }
 
@@ -1080,7 +1111,7 @@ async function startPvp(host: WeekHost, ctx: WeekCtx, eventId: string, rivalId: 
   if (left > 0) buttons.push({ label: `Ещё след (осталось ${left})`, action: 'START_PVP' });
   if (!ctx.flags.day_6_complete) buttons.push({ label: 'Завершить День 6', action: 'COMPLETE_DAY_6' });
   buttons.push({ label: 'К стану', action: 'OPEN_CAMP' });
-  return host.respond(ctx.player, `${log}${extra}`, buttons.slice(0, 5));
+  return host.respond(ctx.player, `${log}${extra}`, buttons);
 }
 
 async function payTribute(host: WeekHost, ctx: WeekCtx, withWhat: string): Promise<GameResponse> {
@@ -1270,7 +1301,7 @@ function prepMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
     });
   }
   buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
-  return host.respond(ctx.player, lines.join('\n'), buttons.slice(0, 5));
+  return host.respond(ctx.player, lines.join('\n'), buttons);
 }
 
 export async function applyWeekLoot(
