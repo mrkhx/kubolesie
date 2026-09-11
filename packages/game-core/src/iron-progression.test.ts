@@ -108,9 +108,10 @@ describe('exact production iron player', { timeout: 30_000 }, () => {
     await pressNamed(session, 'Крафт', trace);
     await pressNamed(session, 'Базовый', trace);
     expect(session.last.text).not.toMatch(/Пока нечего/);
-    expect(hasLabel(session.last, 'Костёр')).toBe(true);
-    await pressNamed(session, 'Ещё', trace);
+    expect(hasLabel(session.last, 'Доски')).toBe(true);
+    expect(hasLabel(session.last, 'Палки')).toBe(true);
     expect(hasLabel(session.last, 'Печь')).toBe(true);
+    expect(hasLabel(session.last, 'Верстак')).toBe(false);
 
     await backUntil(session, 'Стан', trace);
     await pressNamed(session, 'Стан', trace);
@@ -124,6 +125,9 @@ describe('exact production iron player', { timeout: 30_000 }, () => {
     expect(hasLabel(fireFail, 'Костёр')).toBe(true);
     expect(hasLabel(fireFail, 'Печь')).toBe(true);
 
+    await backUntil(session, 'Крафт', trace);
+    await pressNamed(session, 'Крафт', trace);
+    await pressNamed(session, 'Базовый', trace);
     const made = await pressNamed(session, 'Печь', trace);
     expect(made.text).toMatch(/Печь|Скрафчено/i);
     expect(await session.flag('furnace_placed')).toBe('1');

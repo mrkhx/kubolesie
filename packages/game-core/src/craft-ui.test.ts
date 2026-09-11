@@ -250,8 +250,8 @@ describe('craft UI survival path', { timeout: 30_000 }, () => {
       'planks',
       'sticks',
       'crafting_table',
-      'campfire',
       'furnace',
+      'campfire',
     ]);
     const noTable = visibleRecipeButtons('items', {
       ...emptySnapshot(),
