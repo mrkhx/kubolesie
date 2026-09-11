@@ -53,13 +53,6 @@ export const FOREST_NODES: Record<string, DialogueNode> = {
         nextNode: 'check_bushes',
         condition: { type: 'flag', flag: 'defeated_wild_shrew', exists: false },
       },
-      { id: 'gather', label: '⛏ Добыча', command: 'OPEN_MENU', commandPayload: { menu: 'gather' } },
-      {
-        id: 'token',
-        label: 'Осмотреть жетон',
-        command: 'INSPECT_TOKEN',
-        condition: { type: 'item', templateId: 'rusty_token' },
-      },
       {
         id: 'smoke',
         label: 'К дыму',
@@ -81,10 +74,28 @@ export const FOREST_NODES: Record<string, DialogueNode> = {
         label: 'В лагерь Рема',
         command: 'TALK_NPC',
         commandPayload: { npcId: 'rem' },
-        condition: { type: 'flag', flag: 'met_rem', exists: true },
+        condition: [
+          { type: 'flag', flag: 'met_rem', exists: true },
+          { type: 'flag', flag: 'node7_gate_closed', exists: true },
+        ],
+      },
+      { id: 'gather', label: '⛏ Добыча', command: 'OPEN_MENU', commandPayload: { menu: 'gather' } },
+      { id: 'more', label: '➡ Ещё', nextNode: 'forest_more' },
+    ],
+  },
+  forest_more: {
+    id: 'forest_more',
+    text: 'Опушка. Что ещё нужно?',
+    choices: [
+      {
+        id: 'token',
+        label: 'Осмотреть жетон',
+        command: 'INSPECT_TOKEN',
+        condition: { type: 'item', templateId: 'rusty_token' },
       },
       { id: 'inv', label: '🎒 Инвентарь', command: 'OPEN_INVENTORY' },
       { id: 'camp', label: '🔨 Крафт', command: 'OPEN_MENU', commandPayload: { menu: 'craft' } },
+      { id: 'back', label: '⬅ Назад', nextNode: 'forest_hub' },
     ],
   },
   check_bushes: {

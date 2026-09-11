@@ -8,6 +8,7 @@ import {
   SimSession,
   STORY_FLAGS_WEEK1,
   STORY_FLAGS_WEEK6,
+  formatButtonOverflow,
   randomWalk,
   seedCamp,
   type EconomySample,
@@ -320,6 +321,8 @@ describe('random walk', { timeout: 60_000 }, () => {
       );
     }
     expect(session.invariantFailures).toEqual([]);
+    expect(session.buttonOverflows).toEqual([]);
+    session.assertHealthy();
     expect(report.location).toBeTruthy();
     expect(report.currentState).toBeTruthy();
   });
@@ -800,5 +803,151 @@ describe('content contracts used by simulation', () => {
     expect(MINING_SITES.quarry.energy).toBe(1);
     expect(MINING_SITES.iron.energy).toBe(2);
     expect(MINING_SITES.deep.energy).toBe(3);
+  });
+});
+
+describe('chat UI five-button cap', { timeout: 30_000 }, () => {
+  it('formats overflow as a fatal UI assertion', () => {
+    const message = formatButtonOverflow({
+      reason: 'buttons 7 > 5',
+      location: 'forest_clearing',
+      currentState: 'forest_hub',
+      step: 3,
+      count: 7,
+      labels: ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
+    });
+    expect(message).toBe(
+      [
+        'UI button overflow:',
+        'state=forest_hub',
+        'location=forest_clearing',
+        'count=7',
+        'labels=[A, B, C, D, E, F, G]',
+      ].join('\n'),
+    );
+  });
+
+  it('assertHealthy throws the overflow fingerprint', async () => {
+    const session = await SimSession.boot({ vkUserId: 'sim-overflow-fmt' });
+    session.buttonOverflows.push({
+      reason: 'buttons 6 > 5',
+      location: 'rem_camp',
+      currentState: 'rem_camp',
+      step: 1,
+      count: 6,
+      labels: ['1', '2', '3', '4', '5', '6'],
+    });
+    expect(() => session.assertHealthy()).toThrow(
+      [
+        'UI button overflow:',
+        'state=rem_camp',
+        'location=rem_camp',
+        'count=6',
+        'labels=[1, 2, 3, 4, 5, 6]',
+      ].join('\n'),
+    );
+  });
+
+  it('keeps forest_hub, rem_camp and week6_complete within 5 buttons without dropping actions', async () => {
+    const forest = await SimSession.boot({ vkUserId: 'sim-ui-forest' });
+    const hub = await forest.act('EXPLORE');
+    expect(hub.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(forest, 'Добыча')).toBe(true);
+    expect(hasLabel(forest, 'Ещё')).toBe(true);
+    await forest.press('Ещё');
+    expect(forest.last.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(forest, 'Инвентарь')).toBe(true);
+    expect(hasLabel(forest, 'Крафт')).toBe(true);
+    expect(hasLabel(forest, 'Назад')).toBe(true);
+    forest.assertHealthy();
+
+    const rem = await SimSession.boot({ vkUserId: 'sim-ui-rem' });
+    await rem.grantFlags(['met_rem', 'activated_node7_token', 'node7_gate_closed', 'found_rusty_token']);
+    await rem.store.upsertPlayerQuest({
+      playerId: rem.playerId,
+      questId: 'iron_for_gate',
+      status: 'ACTIVE',
+      progress: {},
+    });
+    await rem.giveItem('stone_pickaxe');
+    await rem.store.addResource(rem.playerId, 'IRON_ORE', 8);
+    await rem.moveTo('rem_camp');
+    const camp = await rem.act('EXPLORE');
+    expect(camp.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(rem, 'Показать жетон') || hasLabel(rem, 'Скрыть жетон') || hasLabel(rem, 'осыпь')).toBe(true);
+    expect(hasLabel(rem, 'Добыча')).toBe(true);
+    expect(hasLabel(rem, 'Ещё')).toBe(true);
+    await rem.press('Ещё');
+    expect(rem.last.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(rem, 'штольн')).toBe(true);
+    expect(hasLabel(rem, 'Отдать железо')).toBe(true);
+    expect(hasLabel(rem, 'Крафт')).toBe(true);
+    expect(hasLabel(rem, 'Назад')).toBe(true);
+    await rem.press('Ещё');
+    expect(rem.last.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(rem, 'Инвентарь')).toBe(true);
+    expect(hasLabel(rem, 'опушк')).toBe(true);
+    rem.assertHealthy();
+
+    const week6 = await SimSession.boot({ vkUserId: 'sim-ui-w6' });
+    await week6.grantFlags(STORY_FLAGS_WEEK6);
+    await seedCamp(week6);
+    await week6.moveTo('forest_clearing');
+    const done = await week6.act('EXPLORE');
+    expect(done.buttons.length).toBeLessThanOrEqual(5);
+    expect((await week6.reload()).currentState).toBe('week6_complete');
+    expect(hasLabel(week6, 'стану') || hasLabel(week6, 'Добыча')).toBe(true);
+    expect(hasLabel(week6, 'Герой')).toBe(true);
+    expect(labels(week6).join(' ')).not.toMatch(/День 43|Week 7|неделя 7/i);
+    const day43 = await week6.act('BEGIN_DAY_43' as never, {});
+    expect(day43.text).toMatch(/нельзя|Неизвестн/i);
+    week6.assertHealthy();
+  });
+
+  it('paginates inventory instead of dumping every item action', async () => {
+    const session = await SimSession.boot({ vkUserId: 'sim-ui-inv' });
+    for (const templateId of [
+      'wooden_pickaxe',
+      'stone_pickaxe',
+      'iron_pickaxe',
+      'wooden_axe',
+      'stone_axe',
+      'wooden_sword',
+      'hide_tunic',
+      'dry_rusk',
+    ]) {
+      await session.giveItem(templateId);
+    }
+    const first = await session.act('OPEN_INVENTORY');
+    expect(first.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(session, 'Назад')).toBe(true);
+    const seen = new Set(labels(session));
+    for (let page = 0; page < 6 && hasLabel(session, 'Ещё'); page += 1) {
+      await session.press('Ещё');
+      expect(session.last.buttons.length).toBeLessThanOrEqual(5);
+      expect(hasLabel(session, 'Назад')).toBe(true);
+      for (const label of labels(session)) seen.add(label);
+    }
+    expect([...seen].some((label) => label.includes('Надеть'))).toBe(true);
+    expect([...seen].some((label) => label.includes('Съесть'))).toBe(true);
+    session.assertHealthy();
+  });
+
+  it('keeps furnace and craft result screens within 5 buttons including back', async () => {
+    const session = await SimSession.boot({ vkUserId: 'sim-ui-craft' });
+    await session.grantFlags(['day_3_complete', 'player_camp_founded', 'week_1_complete']);
+    await seedCamp(session);
+    await session.giveItem('crafting_table');
+    await session.ensureResource('PLANK', 9);
+    await session.ensureResource('STICK', 2);
+    const table = await session.craft('wooden_pickaxe');
+    expect(table.buttons.length).toBeLessThanOrEqual(5);
+
+    await session.grantFlags(['furnace_placed', 'furnace_built']);
+    await session.giveItem('furnace');
+    const furnace = await session.act('FURNACE_ACT', { act: 'open' });
+    expect(furnace.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(session, 'Отойти')).toBe(true);
+    session.assertHealthy();
   });
 });

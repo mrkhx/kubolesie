@@ -736,6 +736,10 @@ function furnaceOresScreen(host: WeekHost, ctx: WeekCtx, page: number): Promise<
   if ((ctx.resources.RAW_FISH ?? 0) > 0) {
     buttons.push({ label: 'Жарить рыбу', action: 'FURNACE_ACT', payload: { act: 'cook_fish' } });
   }
+  buttons.push({ label: 'Дрова', action: 'FURNACE_ACT', payload: { act: 'add_log' } });
+  if (ctx.flags.unknown_blue_mineral) {
+    buttons.push({ label: 'Синее', action: 'FURNACE_ACT', payload: { act: 'smelt_blue' } });
+  }
   const safe = Math.max(0, Math.floor(page));
   const pageSize = 3;
   const slice = buttons.slice(safe * pageSize, safe * pageSize + pageSize);
@@ -747,7 +751,7 @@ function furnaceOresScreen(host: WeekHost, ctx: WeekCtx, page: number): Promise<
   return host.respond(
     ctx.player,
     `Плавка. Топливо: ${fuel}. 1 руда = 1 слиток. 1 топливо за плавку.`,
-    out.slice(0, 5),
+    out,
   );
 }
 
@@ -806,7 +810,7 @@ function furnaceScreen(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameRe
     buttons.push({ label: 'Дрова', action: 'FURNACE_ACT', payload: { act: 'add_log' } });
   }
   buttons.push({ label: 'Отойти', action: 'OPEN_CAMP' });
-  return host.respond(ctx.player, text, buttons.slice(0, 5));
+  return host.respond(ctx.player, text, buttons);
 }
 
 async function tradeAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, unknown>): Promise<GameResponse> {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { NormalizedIncomingEvent } from '@kubolesie/shared';
 import { MemoryGameStore } from './memory-store';
 import { GameRuntime } from './runtime';
-import { isMainHub } from './menus';
+import { isMainHub, pagedButtons } from './menus';
 
 function event(
   type: NormalizedIncomingEvent['command']['type'],
@@ -277,5 +277,63 @@ describe('mock playthrough via nested menus', () => {
     const day2 = await act(runtime, vkUserId, 'BEGIN_DAY_2');
     expect(day2.text).toMatch(/стан|Затвор держит/i);
     expect(day2.text).not.toContain('Продолжение скоро будет доступно');
+  });
+
+  it('paginates a long inventory instead of emitting more than 5 buttons', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    for (const templateId of [
+      'wooden_pickaxe',
+      'stone_pickaxe',
+      'iron_pickaxe',
+      'wooden_axe',
+      'stone_axe',
+      'wooden_sword',
+      'hide_tunic',
+    ]) {
+      await store.createItem({ playerId: player.id, templateId, rarity: 'COMMON' });
+    }
+    const page0 = await act(runtime, vkUserId, 'OPEN_INVENTORY');
+    expect(page0.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(page0, 'Назад')).toBe(true);
+    expect(hasLabel(page0, 'Ещё')).toBe(true);
+    const more = page0.buttons.find((button) => button.label.includes('Ещё'));
+    expect(more).toMatchObject({ action: 'OPEN_INVENTORY' });
+    const page1 = await act(runtime, vkUserId, 'OPEN_INVENTORY', more?.payload);
+    expect(page1.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(page1, 'Назад')).toBe(true);
+    expect(page1.buttons.some((button) => button.action === 'EQUIP_ITEM')).toBe(true);
+  });
+});
+
+describe('pagedButtons helper', () => {
+  const items = [1, 2, 3, 4, 5, 6, 7].map((n) => ({
+    label: `Item ${n}`,
+    action: 'OPEN_MENU' as const,
+    payload: { n },
+  }));
+  const back = { label: '⬅ Назад', action: 'OPEN_MENU' as const, payload: { menu: 'hub' } };
+
+  it('keeps three items plus more and back on the first page', () => {
+    const page0 = pagedButtons(
+      items,
+      0,
+      (next) => ({ label: '➡ Ещё', action: 'OPEN_INVENTORY', payload: { page: next } }),
+      back,
+    );
+    expect(page0).toHaveLength(5);
+    expect(page0.map((button) => button.label)).toEqual(['Item 1', 'Item 2', 'Item 3', '➡ Ещё', '⬅ Назад']);
+  });
+
+  it('clamps an out-of-range page and never drops back', () => {
+    const last = pagedButtons(
+      items,
+      99,
+      (next) => ({ label: '➡ Ещё', action: 'OPEN_INVENTORY', payload: { page: next } }),
+      back,
+    );
+    expect(last.length).toBeLessThanOrEqual(5);
+    expect(last.at(-1)).toEqual(back);
+    expect(last.some((button) => button.label === '➡ Ещё')).toBe(false);
+    expect(last.some((button) => button.label.startsWith('Item'))).toBe(true);
   });
 });

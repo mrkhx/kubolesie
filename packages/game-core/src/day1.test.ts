@@ -235,7 +235,7 @@ async function playToDay1Complete(options: PlayOptions = {}) {
   const currentLoc = await reload(store, id);
   currentLoc.currentLocation = 'rem_camp';
   await store.savePlayer(currentLoc);
-  await choice(runtime, vkUserId, 'rem_camp', 'adit');
+  await choice(runtime, vkUserId, 'rem_camp_more', 'adit');
 
   await choice(runtime, vkUserId, 'old_adit', 'listen');
   await choice(runtime, vkUserId, 'adit_listen', 'back');

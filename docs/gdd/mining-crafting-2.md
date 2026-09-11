@@ -10,7 +10,7 @@
 
 ## 0. Принципы
 
-- Чат: ≤5 кнопок. VK — только интерфейс. Логика в Game Core. PostgreSQL — SoT.
+- Чат: ≤5 кнопок. Если действий больше — submenu или pagination, не silent truncate. VK — только интерфейс. Логика в Game Core. PostgreSQL — SoT.
 - Ручная добыча ценнее production. Новые руды не идут в старую Mine.
 - Энергия — главный лимит. Нет cron mining, workers, premium speed, pay-to-win.
 - Нет durability, если её не было. Нет копирования Minecraft names/assets.

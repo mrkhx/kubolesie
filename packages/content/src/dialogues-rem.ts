@@ -99,6 +99,14 @@ export const REM_NODES: Record<string, DialogueNode> = {
         condition: { type: 'quest', questId: 'iron_for_gate', statuses: ['ACTIVE'] },
         actions: [{ type: 'set_location', locationId: 'stone_scree' }, { type: 'visit', locationId: 'stone_scree' }],
       },
+      { id: 'gather', label: '⛏ Добыча', command: 'OPEN_MENU', commandPayload: { menu: 'gather' } },
+      { id: 'more', label: '➡ Ещё', nextNode: 'rem_camp_more' },
+    ],
+  },
+  rem_camp_more: {
+    id: 'rem_camp_more',
+    text: 'Лагерь Рема. Штольня, железо, ночь.',
+    choices: [
       {
         id: 'adit',
         label: 'К старой штольне',
@@ -113,7 +121,10 @@ export const REM_NODES: Record<string, DialogueNode> = {
         id: 'return_iron',
         label: 'Отдать железо',
         command: 'RETURN_IRON',
-        condition: { type: 'resource', resource: 'IRON_ORE', min: 8 },
+        condition: [
+          { type: 'resource', resource: 'IRON_ORE', min: 8 },
+          { type: 'quest', questId: 'iron_for_gate', statuses: ['ACTIVE'] },
+        ],
       },
       {
         id: 'night_rem',
@@ -132,8 +143,15 @@ export const REM_NODES: Record<string, DialogueNode> = {
           { type: 'flag', flag: 'temporary_shelter_level', exists: true },
         ],
       },
-      { id: 'gather', label: '⛏ Добыча', command: 'OPEN_MENU', commandPayload: { menu: 'gather' } },
       { id: 'camp', label: '🔨 Крафт', command: 'OPEN_MENU', commandPayload: { menu: 'craft' } },
+      { id: 'more', label: '➡ Ещё', nextNode: 'rem_camp_kit' },
+      { id: 'back', label: '⬅ Назад', nextNode: 'rem_camp' },
+    ],
+  },
+  rem_camp_kit: {
+    id: 'rem_camp_kit',
+    text: 'Лагерь Рема. Сумка и опушка.',
+    choices: [
       { id: 'inv', label: '🎒 Инвентарь', command: 'OPEN_INVENTORY' },
       {
         id: 'forest',
@@ -141,6 +159,7 @@ export const REM_NODES: Record<string, DialogueNode> = {
         nextNode: 'forest_hub',
         actions: [{ type: 'set_location', locationId: 'forest_clearing' }],
       },
+      { id: 'back', label: '⬅ Назад', nextNode: 'rem_camp_more' },
     ],
   },
   rem_show_token: {

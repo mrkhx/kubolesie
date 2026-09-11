@@ -181,7 +181,10 @@ export const WEEK6_NODES: Record<string, DialogueNode> = {
     ].join('\n'),
     choices: [
       { id: 'camp', label: 'К стану', command: 'OPEN_CAMP' },
-      { id: 'look', label: 'Осмотреться', command: 'EXPLORE' },
+      { id: 'gather', label: '⛏ Добыча', command: 'OPEN_MENU', commandPayload: { menu: 'gather' } },
+      { id: 'hero', label: '👤 Герой', command: 'OPEN_MENU', commandPayload: { menu: 'hero' } },
+      { id: 'work', label: '⚒ Хозяйство', command: 'OPEN_MENU', commandPayload: { menu: 'work' } },
+      { id: 'market', label: '🛒 Рынок', command: 'OPEN_MENU', commandPayload: { menu: 'market' } },
     ],
   },
 };

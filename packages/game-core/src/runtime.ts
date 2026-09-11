@@ -78,6 +78,7 @@ import {
   buildActionMenu,
   effectiveRecipeCost,
   hasCraftingTable as playerHasTable,
+  pagedButtons,
   parseMenuId,
   recipeGroup,
   requirementMet,
@@ -332,7 +333,7 @@ export class GameRuntime {
       case 'EXPLORE':
         return this.explore(ctx);
       case 'OPEN_INVENTORY':
-        return this.openInventory(ctx);
+        return this.openInventory(ctx, Number(command.payload?.page ?? 0));
       case 'OPEN_CAMP':
         return this.openCamp(ctx);
       case 'OPEN_MENU':
@@ -937,7 +938,7 @@ export class GameRuntime {
     return this.openMenu(ctx, 'hub');
   }
 
-  private async openInventory(ctx: Ctx): Promise<GameResponse> {
+  private async openInventory(ctx: Ctx, page = 0): Promise<GameResponse> {
     const equipped = new Set(Object.values(ctx.equipment));
     const itemLines = ctx.items.map((item) => {
       const template = getItemTemplate(item.templateId);
@@ -951,27 +952,26 @@ export class GameRuntime {
         const base = `• ${resourceLabel(resource)} ×${amount}`;
         return hint ? `${base} — ${hint}` : base;
       });
+    const back: GameButton = { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } };
+    const look: GameButton = { label: '👁 Осмотреться', action: 'EXPLORE' };
     if (!itemLines.length && !resourceLines.length) {
-      return this.respond(ctx.player, 'Инвентарь пуст.', [
-        { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
-        { label: '👁 Осмотреться', action: 'EXPLORE' },
-      ]);
+      return this.respond(ctx.player, 'Инвентарь пуст.', [back, look]);
     }
-    const buttons: GameButton[] = [];
+    const actions: GameButton[] = [];
     for (const item of ctx.items) {
       const template = getItemTemplate(item.templateId);
       if (template?.slot && !equipped.has(item.id)) {
-        buttons.push({
+        actions.push({
           label: `Надеть: ${template.name}`,
           action: 'EQUIP_ITEM',
           payload: { itemId: item.id },
         });
       }
       if (template?.consumable) {
-        buttons.push({ label: `Съесть: ${template.name}`, action: 'USE_ITEM', payload: { itemId: item.id } });
+        actions.push({ label: `Съесть: ${template.name}`, action: 'USE_ITEM', payload: { itemId: item.id } });
       }
       if (item.templateId === 'rusty_token') {
-        buttons.push({ label: 'Осмотреть жетон', action: 'INSPECT_TOKEN' });
+        actions.push({ label: 'Осмотреть жетон', action: 'INSPECT_TOKEN' });
       }
     }
     const text = [
@@ -980,11 +980,14 @@ export class GameRuntime {
     ]
       .filter(Boolean)
       .join('\n');
-    return this.respond(ctx.player, text, [
-      ...buttons,
-      { label: BACK_LABEL, action: 'OPEN_MENU', payload: { menu: 'hub' } },
-      { label: '👁 Осмотреться', action: 'EXPLORE' },
-    ]);
+    const buttons = pagedButtons(
+      actions,
+      page,
+      (next) => ({ label: '➡ Ещё', action: 'OPEN_INVENTORY', payload: { page: next } }),
+      back,
+    );
+    if (buttons.length < 5) buttons.push(look);
+    return this.respond(ctx.player, text, buttons);
   }
 
   private async gatherWood(ctx: Ctx, eventId: string): Promise<GameResponse> {
@@ -1791,7 +1794,7 @@ export class GameRuntime {
     let extra = mods?.note ? `\n${mods.note}.` : '';
     const buttons: GameButton[] = [...NAV];
     if (battle.result === 'WIN') {
-      extra += await this.applyCombatLoot(ctx, enemyId, eventId, buttons);
+      extra += await this.applyCombatLoot(ctx, enemyId, eventId);
       await this.store.upsertDiscovery({
         playerId: ctx.player.id,
         discoveryId: enemy.id,
@@ -1923,7 +1926,6 @@ export class GameRuntime {
     ctx: Ctx,
     enemyId: string,
     eventId: string,
-    buttons: GameButton[],
   ): Promise<string> {
     const notes: string[] = [];
     if (enemyId === 'wild_shrew') {
@@ -1953,7 +1955,6 @@ export class GameRuntime {
           await this.store.recordItemHistory({ itemId: gloves.id, playerId: ctx.player.id, type: 'LOOTED' });
           await noteActivity(this.store, ctx.player, { type: 'loot', count: 1 });
           notes.push('Потёртые перчатки!');
-          buttons.unshift({ label: 'Надеть перчатки', action: 'EQUIP_ITEM', payload: { itemId: gloves.id } });
         }
       }
     }

@@ -349,6 +349,24 @@ export function backButton(from: ActionMenuId): GameButton {
   };
 }
 
+export function pagedButtons(
+  items: GameButton[],
+  page: number,
+  makeMore: (nextPage: number) => GameButton,
+  back: GameButton,
+  pageSize = 3,
+): GameButton[] {
+  const size = Math.max(1, Math.floor(pageSize));
+  const safe = Math.max(0, Math.floor(Number.isFinite(page) ? page : 0));
+  const maxPage = Math.max(0, Math.ceil(items.length / size) - 1);
+  const used = Math.min(safe, maxPage);
+  const slice = items.slice(used * size, used * size + size);
+  const out = [...slice];
+  if (used < maxPage) out.push(makeMore(used + 1));
+  out.push(back);
+  return out;
+}
+
 function recipeButton(recipeId: string): GameButton | undefined {
   const recipe = getRecipe(recipeId);
   if (!recipe) return undefined;
@@ -587,20 +605,16 @@ export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText
       materials: 'Материалы',
     };
     const empty = group === 'weapons' ? 'Пока нечего ковать.' : 'Пока нечего крафтить.';
-    const safePage = Math.max(0, Math.floor(Number.isFinite(page) ? page : 0));
-    const pageSize = 3;
-    const maxPage = Math.max(0, Math.ceil(recipes.length / pageSize) - 1);
-    const usedPage = Math.min(safePage, maxPage);
-    const slice = recipes.slice(usedPage * pageSize, usedPage * pageSize + pageSize);
-    const buttons = [...slice];
-    if (usedPage < maxPage) {
-      buttons.push({ label: '➡ Ещё', action: 'OPEN_MENU', payload: { menu: group, page: usedPage + 1 } });
-    }
-    buttons.push(backButton(group));
+    const buttons = pagedButtons(
+      recipes,
+      page,
+      (next) => ({ label: '➡ Ещё', action: 'OPEN_MENU', payload: { menu: group, page: next } }),
+      backButton(group),
+    );
     return {
       id: menu,
       text: extraText || (recipes.length ? titles[group] : empty),
-      buttons: buttons.slice(0, 5),
+      buttons,
     };
   }
   return {

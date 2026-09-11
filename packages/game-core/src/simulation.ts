@@ -101,6 +101,8 @@ export interface SimInvariantFailure {
   location: string;
   currentState: string;
   step: number;
+  count?: number;
+  labels?: string[];
 }
 
 export interface SoftlockReport {
@@ -131,6 +133,17 @@ export interface RandomWalkReport {
 
 function labelsOf(response: GameResponse): string[] {
   return response.buttons.map((button) => button.label);
+}
+
+export function formatButtonOverflow(failure: SimInvariantFailure): string {
+  const labels = failure.labels ?? [];
+  return [
+    'UI button overflow:',
+    `state=${failure.currentState}`,
+    `location=${failure.location}`,
+    `count=${failure.count ?? 0}`,
+    `labels=[${labels.join(', ')}]`,
+  ].join('\n');
 }
 
 function isRejectedText(text: string): boolean {
@@ -296,6 +309,8 @@ export class SimSession {
           location: after?.currentLocation ?? '',
           currentState: after?.currentState ?? '',
           step: this.history.length,
+          count: response.buttons.length,
+          labels: labelsOf(response),
         });
       }
       await this.checkInvariants();
@@ -530,6 +545,10 @@ export class SimSession {
   }
 
   assertHealthy(): void {
+    const overflow = this.buttonOverflows[0];
+    if (overflow) {
+      throw new Error(formatButtonOverflow(overflow));
+    }
     const invariant = this.firstInvariant();
     if (invariant) {
       throw new Error(
