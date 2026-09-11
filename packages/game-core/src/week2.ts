@@ -858,7 +858,7 @@ async function smolnikGate(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> 
     buttons.push({ label: 'С дистанции', action: 'START_PVE', payload: { enemyId: 'smolnik', move: 'bow' } });
   }
   if (!hasShield(ctx) && buttons.length < 3) {
-    buttons.push({ label: 'Щит', action: 'OPEN_MENU', payload: { menu: 'items' } });
+    buttons.push({ label: 'Щит', action: 'OPEN_MENU', payload: { menu: 'weapons' } });
   }
   buttons.push({ label: BACK_LABEL, action: 'WEEK2_ACT', payload: { act: 'quarry' } });
   return host.respond(

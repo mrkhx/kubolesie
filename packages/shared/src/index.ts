@@ -1,5 +1,5 @@
-export const BALANCE_VERSION = '0.0.12';
-export const PROTOTYPE_VERSION = '0.0.12';
+export const BALANCE_VERSION = '0.0.13';
+export const PROTOTYPE_VERSION = '0.0.13';
 
 export const ENERGY_REGEN_INTERVAL_MS = 10 * 60 * 1000;
 export const ENERGY_PER_INTERVAL = 1;
@@ -153,6 +153,7 @@ export const GAME_COMMANDS = [
   'COMPLETE_DAY_41',
   'COMPLETE_DAY_42',
   'WEEK6_ACT',
+  'MINE_ACT',
 ] as const;
 
 export type GameCommandType = (typeof GAME_COMMANDS)[number];
@@ -236,7 +237,18 @@ export type ResourceType =
   | 'SEAL_SHARD_3'
   | 'GEAR_SCRAP'
   | 'STATION_CORE'
-  | 'SEAL_SHARD_2';
+  | 'SEAL_SHARD_2'
+  | 'COPPER_ORE'
+  | 'COPPER_INGOT'
+  | 'TIN_ORE'
+  | 'TIN_INGOT'
+  | 'BRONZE_INGOT'
+  | 'SILVER_ORE'
+  | 'SILVER_INGOT'
+  | 'GOLD_ORE'
+  | 'GOLD_INGOT'
+  | 'DEEP_CRYSTAL'
+  | 'COPPER_FITTING';
 
 export const RESOURCE_TYPES: ResourceType[] = [
   'WOOD',
@@ -278,6 +290,17 @@ export const RESOURCE_TYPES: ResourceType[] = [
   'GEAR_SCRAP',
   'STATION_CORE',
   'SEAL_SHARD_2',
+  'COPPER_ORE',
+  'COPPER_INGOT',
+  'TIN_ORE',
+  'TIN_INGOT',
+  'BRONZE_INGOT',
+  'SILVER_ORE',
+  'SILVER_INGOT',
+  'GOLD_ORE',
+  'GOLD_INGOT',
+  'DEEP_CRYSTAL',
+  'COPPER_FITTING',
 ];
 
 export type Rarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY' | 'MYTHIC';

@@ -251,9 +251,10 @@ const ACTION_STYLE: Partial<Record<string, { emoji?: string; label?: string; col
 const MENU_STYLE: Record<string, { label: string; color: ButtonColor }> = {
   gather: { label: '⛏ Добыча', color: 'primary' },
   craft: { label: '🔨 Крафт', color: 'primary' },
-  tools: { label: '🛠 Инструменты', color: 'primary' },
-  weapons: { label: '⚔ Оружие', color: 'primary' },
-  items: { label: '📦 Предметы', color: 'primary' },
+  tools: { label: '⛏ Инструменты', color: 'primary' },
+  weapons: { label: '⚔ Снаряжение', color: 'primary' },
+  items: { label: '🪵 Базовый', color: 'primary' },
+  materials: { label: '🧰 Материалы', color: 'primary' },
   hub: { label: '🏕 Стан', color: 'primary' },
   camp: { label: '🏕 Стан', color: 'primary' },
   wedge: { label: '🌲 Клин', color: 'primary' },
@@ -361,7 +362,7 @@ export function presentButton(button: GameButton): GameButton {
   if (action === 'OPEN_MENU' && MENU_STYLE[menu] && !isBackLabel(original)) {
     const style = MENU_STYLE[menu]!;
     // Keep contextual destination labels like «К клину» rather than flattening every OPEN_MENU.
-    if (!stripped || /^(добыча|крафт|инвентарь|герой|профиль|статистика|рейтинги|клан|стан|предметы|инструменты|оружие)$/i.test(stripped)) {
+    if (!stripped || /^(добыча|крафт|инвентарь|герой|профиль|статистика|рейтинги|клан|стан|предметы|инструменты|оружие|базовый|снаряжение|материалы)$/i.test(stripped)) {
       return { ...button, label: style.label, color: style.color };
     }
   }

@@ -188,8 +188,8 @@ describe('jobs domain', () => {
     expect(prof.text).not.toContain('logger_logs');
     expect((GAME_COMMANDS as readonly string[]).includes('JOB_ACT')).toBe(true);
     expect((ACTION_MENUS as readonly string[]).includes('work')).toBe(true);
-    expect(PROTOTYPE_VERSION).toBe('0.0.12');
-    expect(BALANCE_VERSION).toBe('0.0.12');
+    expect(PROTOTYPE_VERSION).toBe('0.0.13');
+    expect(BALANCE_VERSION).toBe('0.0.13');
     expect(JOBS.unlockFlag).toBe('week_1_complete');
   });
 

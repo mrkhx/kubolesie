@@ -68,7 +68,7 @@ export type MetaEvent =
   | { type: 'week'; week?: number }
   | { type: 'coins'; amount: number }
   | { type: 'farm'; act: 'plant' | 'harvest'; amount?: number }
-  | { type: 'furnace'; act: 'cook_fish'; amount?: number };
+  | { type: 'furnace'; act: 'cook_fish' | 'smelt'; amount?: number };
 
 const NAV: GameButton[] = [
   { label: '👤 Герой', action: 'OPEN_MENU', payload: { menu: 'hero' } },

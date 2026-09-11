@@ -32,6 +32,7 @@ export * from './loot';
 export * from './meta';
 export * from './jobs';
 export * from './production';
+export * from './mining';
 
 export { WEEK2_NODES } from './dialogues-week2';
 export { WEEK3_NODES } from './dialogues-week3';
@@ -102,6 +103,17 @@ export function resourceLabel(resource: ResourceType): string {
     GEAR_SCRAP: '⚙ Механический лом',
     STATION_CORE: '⚙ Сердечник стана',
     SEAL_SHARD_2: '🔷 Осколок шестой печати',
+    COPPER_ORE: '🟠 Медная руда',
+    COPPER_INGOT: '🟠 Медный слиток',
+    TIN_ORE: '⚪ Оловянная руда',
+    TIN_INGOT: '⚪ Оловянный слиток',
+    BRONZE_INGOT: '🥉 Бронзовый слиток',
+    SILVER_ORE: '✨ Серебряная руда',
+    SILVER_INGOT: '✨ Серебряный слиток',
+    GOLD_ORE: '🟡 Золотая руда',
+    GOLD_INGOT: '🟡 Золотой слиток',
+    DEEP_CRYSTAL: '💎 Жильный кристалл',
+    COPPER_FITTING: '🟠 Медный крепёж',
   };
   return labels[resource];
 }

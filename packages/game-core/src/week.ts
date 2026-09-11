@@ -17,6 +17,7 @@ import {
   PVP_RIVALS,
   PVP_WIN_COINS,
   PVP_WIN_XP,
+  SMELT_ORES,
   STONE_SALVAGE_TOOLS,
   TOKEN_SALE_PRICE,
   TOOTH_SALE_PRICE,
@@ -30,6 +31,7 @@ import {
   getVelSell,
   nextPvpRival,
   resourceLabel,
+  smeltRowUnlocked,
 } from '@kubolesie/content';
 import { seededChance, seededRange, simulateBattle, type CombatantSnapshot } from '@kubolesie/combat-engine';
 import {
@@ -41,6 +43,7 @@ import {
 import { formatCombatLog } from './combat-log';
 import type { GameStore, InventoryItemRecord, PlayerQuestRecord, PlayerRecord } from './store';
 import { grantMetaAchievement, noteActivity } from './meta';
+import { noteSmelt } from './mining-metrics';
 
 export const WEEK_MENUS = ['wedge', 'daily', 'furnace', 'trade', 'pvp', 'prep'] as const;
 export type WeekMenuId = (typeof WEEK_MENUS)[number];
@@ -214,6 +217,8 @@ export function afterCraftFlags(recipeId: string, flags: Record<string, string>)
   if (recipeId === 'marsh_platform') extra.push('has_marsh_platform');
   if (recipeId === 'haul_line') extra.push('has_haul_line');
   if (recipeId === 'mechanical_brace') extra.push('has_mechanical_brace');
+  if (recipeId === 'bronze_pickaxe') extra.push('has_bronze_pickaxe');
+  if (recipeId === 'deep_pickaxe') extra.push('has_deep_pickaxe');
   return extra;
 }
 
@@ -250,7 +255,7 @@ export async function dispatchWeek(
     case 'COMPLETE_DAY_7':
       return completeDay7(host, ctx);
     case 'FURNACE_ACT':
-      return furnaceAct(host, ctx, String(command.payload?.act ?? 'open'));
+      return furnaceAct(host, ctx, command.payload ?? {});
     case 'TRADE_ACT':
       return tradeAct(host, ctx, command.payload ?? {});
     case 'PAY_TRIBUTE':
@@ -541,7 +546,7 @@ export async function openWeekMenu(host: WeekHost, ctx: WeekCtx, menu: WeekMenuI
     return wedgeMenu(host, ctx);
   }
   if (menu === 'daily') return dailyMenu(host, ctx);
-  if (menu === 'furnace') return furnaceAct(host, ctx, 'open');
+  if (menu === 'furnace') return furnaceAct(host, ctx, { act: 'open' });
   if (menu === 'trade') return tradeAct(host, ctx, { act: 'open' });
   if (menu === 'pvp') {
     if (ctx.player.currentLocation !== 'stone_scree' && ctx.player.currentLocation !== 'rival_camp_edge') {
@@ -608,10 +613,11 @@ function dailyMenu(host: WeekHost, ctx: WeekCtx): Promise<GameResponse> {
   );
 }
 
-async function furnaceAct(host: WeekHost, ctx: WeekCtx, act: string): Promise<GameResponse> {
+async function furnaceAct(host: WeekHost, ctx: WeekCtx, payload: Record<string, unknown>): Promise<GameResponse> {
   if (!ctx.flags.furnace_placed && !ctx.flags.furnace_built) {
     throw new ActionRejectedError('Печи нет. Восемь булыжников на стане.');
   }
+  const act = String(payload.act ?? 'open');
   const fuel = flagNum(ctx.flags, 'furnace_fuel');
   const output = flagNum(ctx.flags, 'furnace_output');
   const ore = ctx.resources.IRON_ORE ?? 0;
@@ -650,6 +656,8 @@ async function furnaceAct(host: WeekHost, ctx: WeekCtx, act: string): Promise<Ga
       await setFlag(host, ctx, 'first_ingot');
       await grantMetaAchievement(host.store, ctx.player.id, 'FIRST_IRON');
     }
+    noteSmelt('IRON_ORE');
+    await noteActivity(host.store, ctx.player, { type: 'furnace', act: 'smelt', amount: 1 });
     return furnaceScreen(host, await host.load(ctx.player), `Плавка. Слиток в золе. Топливо ${nextFuel}.`);
   }
   if (act === 'cook_fish' || act === 'cook') {
@@ -669,15 +677,114 @@ async function furnaceAct(host: WeekHost, ctx: WeekCtx, act: string): Promise<Ga
     const total = (await host.store.getResources(ctx.player.id)).IRON_INGOT ?? 0;
     return furnaceScreen(host, await host.load(ctx.player), `Забрано слитков: ${output} (всего ${total}).`);
   }
+  if (act === 'ores') {
+    return furnaceOresScreen(host, ctx, Number(payload.page ?? 0));
+  }
+  if (act === 'ore') {
+    return furnaceOreScreen(host, ctx, String(payload.ore ?? ''));
+  }
+  if (act === 'smelt_ore') {
+    return smeltNamedOre(host, ctx, String(payload.ore ?? ''));
+  }
   return furnaceScreen(host, ctx);
+}
+
+function expandedSmeltRows(ctx: WeekCtx) {
+  return SMELT_ORES.filter((row) => smeltRowUnlocked(row, ctx.flags, ctx.resources));
+}
+
+function furnaceHasExpanded(ctx: WeekCtx): boolean {
+  return expandedSmeltRows(ctx).some((row) => row.ore !== 'IRON_ORE');
+}
+
+async function smeltNamedOre(host: WeekHost, ctx: WeekCtx, ore: string): Promise<GameResponse> {
+  const row = SMELT_ORES.find((item) => item.ore === ore);
+  if (!row) throw new ActionRejectedError('Эту руду печь не берёт.');
+  if (!smeltRowUnlocked(row, ctx.flags, ctx.resources)) {
+    throw new ActionRejectedError('Эта плавка ещё закрыта.');
+  }
+  if (row.ore === 'IRON_ORE') {
+    return furnaceAct(host, ctx, { act: 'smelt' });
+  }
+  const have = ctx.resources[row.ore] ?? 0;
+  const fuel = flagNum(ctx.flags, 'furnace_fuel');
+  if (have < 1) throw new InsufficientResourcesError(`Нет: ${resourceLabel(row.ore)}.`);
+  if (fuel < FURNACE.smeltCost) throw new ActionRejectedError('Не хватает топлива. Положи уголь.');
+  await host.store.addResource(ctx.player.id, row.ore, -1);
+  const nextFuel = Math.max(0, fuel - FURNACE.smeltCost);
+  await setFlag(host, ctx, 'furnace_fuel', String(nextFuel));
+  const total = await host.store.addResource(ctx.player.id, row.ingot, 1);
+  noteSmelt(row.ore);
+  await noteActivity(host.store, ctx.player, { type: 'furnace', act: 'smelt', amount: 1 });
+  const fresh = await host.load(ctx.player);
+  return furnaceOreScreen(
+    host,
+    fresh,
+    row.ore,
+    `Выплавлено: ${resourceLabel(row.ingot)} ×1 (всего ${total}). Топливо ${nextFuel}.`,
+  );
+}
+
+function furnaceOresScreen(host: WeekHost, ctx: WeekCtx, page: number): Promise<GameResponse> {
+  const rows = expandedSmeltRows(ctx);
+  const fuel = flagNum(ctx.flags, 'furnace_fuel');
+  const buttons: GameButton[] = rows.map((row) => ({
+    label: `${row.label} (${ctx.resources[row.ore] ?? 0})`,
+    action: 'FURNACE_ACT',
+    payload: { act: 'ore', ore: row.ore },
+  }));
+  if ((ctx.resources.RAW_FISH ?? 0) > 0) {
+    buttons.push({ label: 'Жарить рыбу', action: 'FURNACE_ACT', payload: { act: 'cook_fish' } });
+  }
+  const safe = Math.max(0, Math.floor(page));
+  const pageSize = 3;
+  const slice = buttons.slice(safe * pageSize, safe * pageSize + pageSize);
+  const out = [...slice];
+  if ((safe + 1) * pageSize < buttons.length) {
+    out.push({ label: '➡ Ещё', action: 'FURNACE_ACT', payload: { act: 'ores', page: safe + 1 } });
+  }
+  out.push({ label: BACK_LABEL, action: 'FURNACE_ACT', payload: { act: 'open' } });
+  return host.respond(
+    ctx.player,
+    `Плавка. Топливо: ${fuel}. 1 руда = 1 слиток. 1 топливо за плавку.`,
+    out.slice(0, 5),
+  );
+}
+
+function furnaceOreScreen(host: WeekHost, ctx: WeekCtx, ore: string, extra = ''): Promise<GameResponse> {
+  const row = SMELT_ORES.find((item) => item.ore === ore);
+  if (!row) throw new ActionRejectedError('Эту руду печь не берёт.');
+  const fuel = flagNum(ctx.flags, 'furnace_fuel');
+  const have = ctx.resources[row.ore] ?? 0;
+  const ingots = ctx.resources[row.ingot] ?? 0;
+  const can = Math.min(have, fuel);
+  const text = [
+    extra,
+    `${row.label}.`,
+    `Руда: ${have}. Топливо: ${fuel}. Слитков сейчас: ${ingots}.`,
+    `Получится за эту плавку: ${have && fuel ? 1 : 0} (можно ещё ${can}).`,
+    '1 руда = 1 слиток. 1 топливо за плавку.',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  return host.respond(ctx.player, text, [
+    { label: 'Выплавить', action: 'FURNACE_ACT', payload: { act: 'smelt_ore', ore: row.ore } },
+    { label: 'Другая руда', action: 'FURNACE_ACT', payload: { act: 'ores' } },
+    { label: BACK_LABEL, action: 'FURNACE_ACT', payload: { act: 'open' } },
+  ]);
 }
 
 function furnaceScreen(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameResponse> {
   const fuel = flagNum(ctx.flags, 'furnace_fuel');
   const output = flagNum(ctx.flags, 'furnace_output');
+  const extraOres = expandedSmeltRows(ctx)
+    .filter((row) => row.ore !== 'IRON_ORE')
+    .map((row) => `${resourceLabel(row.ore)}: ${ctx.resources[row.ore] ?? 0}`)
+    .join(', ');
   const text = [
     extra,
     `Печь. Топливо: ${fuel}. Слитки в золе: ${output}. Руда: ${ctx.resources.IRON_ORE ?? 0}.`,
+    extraOres ? `Ещё руда: ${extraOres}.` : '',
     (ctx.resources.RAW_FISH ?? 0) > 0 ? `Сырая рыба: ${ctx.resources.RAW_FISH}.` : '',
     '1 уголь = 8 плавок. 2 бревна = 3. Синее не класть.',
   ]
@@ -686,12 +793,14 @@ function furnaceScreen(host: WeekHost, ctx: WeekCtx, extra = ''): Promise<GameRe
   const buttons: GameButton[] = [
     { label: 'Положить руду', action: 'FURNACE_ACT', payload: { act: 'smelt' } },
   ];
-  if ((ctx.resources.RAW_FISH ?? 0) > 0) {
+  if (furnaceHasExpanded(ctx)) {
+    buttons.push({ label: 'Другая руда', action: 'FURNACE_ACT', payload: { act: 'ores' } });
+  } else if ((ctx.resources.RAW_FISH ?? 0) > 0) {
     buttons.push({ label: 'Жарить рыбу', action: 'FURNACE_ACT', payload: { act: 'cook_fish' } });
   }
   buttons.push({ label: 'Положить уголь', action: 'FURNACE_ACT', payload: { act: 'add_coal' } });
   buttons.push({ label: 'Забрать слитки', action: 'FURNACE_ACT', payload: { act: 'take' } });
-  if (buttons.length < 4 && ctx.flags.unknown_blue_mineral && (ctx.resources.RAW_FISH ?? 0) < 1) {
+  if (buttons.length < 4 && ctx.flags.unknown_blue_mineral && (ctx.resources.RAW_FISH ?? 0) < 1 && !furnaceHasExpanded(ctx)) {
     buttons.push({ label: 'Синее', action: 'FURNACE_ACT', payload: { act: 'smelt_blue' } });
   } else if (buttons.length < 4) {
     buttons.push({ label: 'Дрова', action: 'FURNACE_ACT', payload: { act: 'add_log' } });

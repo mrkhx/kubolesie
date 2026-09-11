@@ -871,7 +871,7 @@ async function rootlasherGate(host: WeekHost, ctx: WeekCtx): Promise<GameRespons
     buttons.push({ label: 'С дистанции', action: 'START_PVE', payload: { enemyId: 'rootlasher', move: 'bow' } });
   }
   if (!hasItem(ctx, 'root_brace') && buttons.length < 4) {
-    buttons.push({ label: 'Настил', action: 'OPEN_MENU', payload: { menu: 'items' } });
+    buttons.push({ label: 'Настил', action: 'OPEN_MENU', payload: { menu: 'materials' } });
   }
   buttons.push({ label: BACK_LABEL, action: 'OPEN_CAMP' });
   return host.respond(

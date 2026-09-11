@@ -6,7 +6,7 @@
 
 Игрок взаимодействует через сообщения сообщества: текст, кнопки, callback actions и, при необходимости, карточки.
 
-Текущая версия: **Prototype 0.0.12** — Week 6 «Заброшенный стан» поверх Week 5, Jobs, дворов, рынка, кланов, PvP и Недели 1–4.
+Текущая версия: **Prototype 0.0.13** — Mining & Crafting 2.0 поверх Week 6, Jobs, дворов, рынка, кланов, PvP и Недели 1–6.
 
 ## Архитектура
 
@@ -209,7 +209,7 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 
 ## Game commands
 
-`START_GAME` `EXPLORE` `OPEN_INVENTORY` `OPEN_CAMP` `GATHER_WOOD` `GATHER_STONE` `GATHER_IRON` `CRAFT_ITEM` `EQUIP_ITEM` `USE_ITEM` `TALK_NPC` `START_PVE` `START_PVP` `PVP_ACT` `CLAIM_REWARD` `OPEN_CRATE` `DIALOGUE_CHOICE` `INSPECT_TOKEN` `BUILD_TEMP_SHELTER` `FEED_SCAVENGER` `RETURN_IRON` `OPEN_SECRET_CHEST` `MINE_BLUE_MINERAL` `REST_NIGHT` `BEGIN_DAY_2`
+`START_GAME` `EXPLORE` `OPEN_INVENTORY` `OPEN_CAMP` `GATHER_WOOD` `GATHER_STONE` `GATHER_IRON` `MINE_ACT` `CRAFT_ITEM` `EQUIP_ITEM` `USE_ITEM` `TALK_NPC` `START_PVE` `START_PVP` `PVP_ACT` `CLAIM_REWARD` `OPEN_CRATE` `DIALOGUE_CHOICE` `INSPECT_TOKEN` `BUILD_TEMP_SHELTER` `FEED_SCAVENGER` `RETURN_IRON` `OPEN_SECRET_CHEST` `MINE_BLUE_MINERAL` `REST_NIGHT` `BEGIN_DAY_2`
 
 `GameResponse` ядра:
 
@@ -218,6 +218,12 @@ npm run test:redis          # TEST-ONLY, localhost Redis
 ```
 
 Ядро **не** собирает сырой VK keyboard JSON. Это делает VK Adapter.
+
+## Prototype 0.0.13 содержит
+
+- Mining & Crafting 2.0: повторяемая добыча, новые руды, бронза, жильный кристалл
+- additive migration `20260911120000_mining_crafting_2`
+- docs: `docs/gdd/mining-crafting-2.md`
 
 ## Prototype 0.0.12 содержит
 

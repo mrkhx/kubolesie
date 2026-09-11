@@ -24,6 +24,8 @@ export const CLAN_DONATION_VALUES: Partial<Record<ResourceType, number>> = {
   COBBLESTONE: 1,
   HIDE: 2,
   IRON_INGOT: 4,
+  BRONZE_INGOT: 6,
+  GOLD_INGOT: 10,
   MIST_RESIN: 5,
   BOG_CORE: 15,
 };
@@ -33,6 +35,8 @@ export const CLAN_DONATION_RESOURCES = [
   'COBBLESTONE',
   'HIDE',
   'IRON_INGOT',
+  'BRONZE_INGOT',
+  'GOLD_INGOT',
   'MIST_RESIN',
   'BOG_CORE',
 ] as const satisfies readonly ResourceType[];

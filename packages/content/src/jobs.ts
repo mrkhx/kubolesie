@@ -41,6 +41,9 @@ export const TOOL_RECIPES = [
   'stone_axe',
   'iron_pickaxe',
   'iron_axe',
+  'bronze_pickaxe',
+  'bronze_axe',
+  'deep_pickaxe',
   'stone_hoe',
   'iron_hoe',
 ] as const;

@@ -1,4 +1,5 @@
 import type { GameCommandType } from '@kubolesie/shared';
+import { STONE_TIER_PICKS, WOOD_TIER_PICKS } from './mining';
 
 export const GATHER_WOOD = {
   energyCost: 2,
@@ -83,16 +84,16 @@ export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequir
   GATHER_WOOD: { locations: ['forest_clearing', 'rem_camp', 'player_camp', 'ashen_wedge', 'mist_border'] },
   GATHER_STONE: {
     locations: ['stone_scree'],
-    itemsAny: ['wooden_pickaxe', 'stone_pickaxe', 'iron_pickaxe'],
+    itemsAny: [...WOOD_TIER_PICKS],
   },
   GATHER_IRON: {
     locations: ['old_adit'],
-    itemsAny: ['stone_pickaxe', 'iron_pickaxe'],
+    itemsAny: [...STONE_TIER_PICKS],
     quest: { id: 'iron_for_gate', statuses: ['ACTIVE', 'CLAIMED', 'COMPLETED'] },
   },
   GATHER_COAL: {
     locations: ['soot_fissure', 'old_adit'],
-    itemsAny: ['wooden_pickaxe', 'stone_pickaxe', 'iron_pickaxe'],
+    itemsAny: [...WOOD_TIER_PICKS],
   },
   BUILD_TEMP_SHELTER: { locations: ['forest_clearing'], once: { rewardType: 'structure', rewardRef: 'temp_shelter' } },
   FEED_SCAVENGER: { locations: ['stone_scree'] },
@@ -208,7 +209,7 @@ export const COMMAND_REQUIREMENTS: Partial<Record<GameCommandType, CommandRequir
 export const COMBAT_REQUIREMENTS: Record<string, CommandRequirement> = {
   wild_shrew: { locations: ['forest_clearing'] },
   stone_scavenger: { locations: ['stone_scree'] },
-  mine_crawler: { locations: ['old_adit'], itemsAny: ['stone_pickaxe', 'iron_pickaxe'] },
+  mine_crawler: { locations: ['old_adit'], itemsAny: [...STONE_TIER_PICKS] },
   soot_mite: { locations: ['soot_fissure'] },
   moss_boar: { locations: ['ashen_wedge'] },
   needle_runner: { locations: ['ashen_wedge'] },

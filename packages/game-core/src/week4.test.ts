@@ -348,8 +348,8 @@ describe('week 4 content canon', () => {
     expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_22')).toBe(true);
     expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_43')).toBe(false);
     expect((GAME_COMMANDS as readonly string[]).includes('WEEK4_ACT')).toBe(true);
-    expect(PROTOTYPE_VERSION).toBe('0.0.12');
-    expect(BALANCE_VERSION).toBe('0.0.12');
+    expect(PROTOTYPE_VERSION).toBe('0.0.13');
+    expect(BALANCE_VERSION).toBe('0.0.13');
   });
 });
 

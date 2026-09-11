@@ -11,8 +11,9 @@ import type {
   ResourceType,
 } from '@kubolesie/shared';
 import { BACK_LABEL } from '@kubolesie/shared';
+import { miningGatherButtons } from './mining';
 
-export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'clan_home' | 'clan_tasks' | 'clan_donate' | 'cosmetics' | 'achievements' | 'farm' | 'quarry' | 'mist' | 'lowland' | 'seal2' | 'pvp_hub' | 'pvp_history' | 'pvp_rewards' | 'market' | 'market_buy' | 'market_sell' | 'market_mine' | 'market_auc' | 'work' | 'jobs' | 'production' | 'rootwood' | 'grove' | 'mechanism' | 'seal3' | 'trail' | 'hollow' | 'warped' | 'seal4' | 'marsh' | 'basin' | 'outpost' | 'seal5' | 'station' | 'gallery' | 'switch' | 'seal6';
+export type ActionMenuId = 'hub' | 'gather' | 'craft' | 'tools' | 'weapons' | 'items' | 'materials' | 'camp' | 'wedge' | 'daily' | 'furnace' | 'trade' | 'pvp' | 'prep' | 'hero' | 'profile' | 'stats' | 'ratings' | 'ratings_global' | 'ratings_pvp' | 'ratings_weekly' | 'ratings_clans' | 'clan' | 'clan_find' | 'clan_manage' | 'clan_members' | 'clan_home' | 'clan_tasks' | 'clan_donate' | 'cosmetics' | 'achievements' | 'farm' | 'quarry' | 'mist' | 'lowland' | 'seal2' | 'pvp_hub' | 'pvp_history' | 'pvp_rewards' | 'market' | 'market_buy' | 'market_sell' | 'market_mine' | 'market_auc' | 'work' | 'jobs' | 'production' | 'rootwood' | 'grove' | 'mechanism' | 'seal3' | 'trail' | 'hollow' | 'warped' | 'seal4' | 'marsh' | 'basin' | 'outpost' | 'seal5' | 'station' | 'gallery' | 'switch' | 'seal6';
 
 export const ACTION_MENUS: readonly ActionMenuId[] = [
   'hub',
@@ -21,6 +22,7 @@ export const ACTION_MENUS: readonly ActionMenuId[] = [
   'tools',
   'weapons',
   'items',
+  'materials',
   'camp',
   'wedge',
   'daily',
@@ -79,7 +81,7 @@ export const ACTION_MENUS: readonly ActionMenuId[] = [
   'seal6',
 ];
 
-export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly string[]> = {
+export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items' | 'materials', readonly string[]> = {
   tools: [
     'wooden_pickaxe',
     'wooden_axe',
@@ -87,10 +89,27 @@ export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly s
     'stone_axe',
     'iron_pickaxe',
     'iron_axe',
+    'bronze_pickaxe',
+    'bronze_axe',
+    'deep_pickaxe',
     'stone_hoe',
     'iron_hoe',
   ],
-  weapons: ['wooden_sword', 'stone_sword', 'iron_sword', 'bow'],
+  weapons: [
+    'wooden_sword',
+    'stone_sword',
+    'iron_sword',
+    'bronze_sword',
+    'bow',
+    'hide_tunic',
+    'iron_helmet',
+    'iron_chest',
+    'iron_boots',
+    'bronze_helmet',
+    'bronze_chest',
+    'bronze_boots',
+    'shield',
+  ],
   items: [
     'planks',
     'sticks',
@@ -99,11 +118,20 @@ export const CRAFT_MENU_GROUPS: Record<'tools' | 'weapons' | 'items', readonly s
     'salvage_stone',
     'chest',
     'torch',
-    'hide_tunic',
     'furnace',
     'bucket',
-    'shield',
     'bread',
+  ],
+  materials: [
+    'bronze_ingot',
+    'copper_fitting',
+    'miner_lantern',
+    'improved_lantern',
+    'silver_charm',
+    'gold_seal',
+    'gold_band',
+    'copper_brace',
+    'deep_charm',
     'root_rope',
     'root_brace',
     'rot_binding',
@@ -149,6 +177,25 @@ const RECIPE_LABELS: Record<string, string> = {
   marsh_platform: '🪵 Топяной настил',
   haul_line: '🪢 Тяговый канат',
   mechanical_brace: '⚙ Механическая распорка',
+  bronze_ingot: '🥉 Бронза ×4',
+  copper_fitting: '🟠 Медный крепёж ×2',
+  bronze_pickaxe: '⛏ Бронзовая кирка',
+  bronze_axe: '🪓 Бронзовый топор',
+  bronze_sword: '⚔ Бронзовый меч',
+  miner_lantern: '🔦 Шахтёрский фонарь',
+  improved_lantern: '🔦 Серебряный фонарь',
+  iron_helmet: '🪖 Железный шлем',
+  iron_chest: '🛡 Железная кираса',
+  iron_boots: '🥾 Железные сапоги',
+  bronze_helmet: '🪖 Бронзовый шлем',
+  bronze_chest: '🛡 Бронзовая кираса',
+  bronze_boots: '🥾 Бронзовые сапоги',
+  silver_charm: '✨ Серебряный оберег',
+  gold_seal: '🟡 Печать стана',
+  gold_band: '🟡 Золотой обод',
+  copper_brace: '🟠 Медная стяжка',
+  deep_pickaxe: '💎 Жильная кирка',
+  deep_charm: '💎 Жильный оберег',
 };
 
 const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
@@ -158,6 +205,7 @@ const MENU_PARENT: Record<ActionMenuId, ActionMenuId | 'explore'> = {
   tools: 'craft',
   weapons: 'craft',
   items: 'craft',
+  materials: 'craft',
   camp: 'hub',
   wedge: 'hub',
   daily: 'wedge',
@@ -281,10 +329,11 @@ export function canAffordRecipe(recipe: CraftRecipe, ctx: MenuSnapshot): boolean
   );
 }
 
-export function recipeGroup(recipeId: string): 'tools' | 'weapons' | 'items' | undefined {
+export function recipeGroup(recipeId: string): 'tools' | 'weapons' | 'items' | 'materials' | undefined {
   if ((CRAFT_MENU_GROUPS.tools as readonly string[]).includes(recipeId)) return 'tools';
   if ((CRAFT_MENU_GROUPS.weapons as readonly string[]).includes(recipeId)) return 'weapons';
   if ((CRAFT_MENU_GROUPS.items as readonly string[]).includes(recipeId)) return 'items';
+  if ((CRAFT_MENU_GROUPS.materials as readonly string[]).includes(recipeId)) return 'materials';
   return undefined;
 }
 
@@ -310,7 +359,7 @@ function recipeButton(recipeId: string): GameButton | undefined {
   };
 }
 
-export function visibleRecipeButtons(group: 'tools' | 'weapons' | 'items', ctx: MenuSnapshot): GameButton[] {
+export function visibleRecipeButtons(group: 'tools' | 'weapons' | 'items' | 'materials', ctx: MenuSnapshot): GameButton[] {
   const buttons: GameButton[] = [];
   for (const recipeId of CRAFT_MENU_GROUPS[group]) {
     const recipe = getRecipe(recipeId);
@@ -320,7 +369,8 @@ export function visibleRecipeButtons(group: 'tools' | 'weapons' | 'items', ctx: 
     if (recipeId === 'campfire' && ctx.flags.camp_fire_built) continue;
     if (recipeId === 'furnace' && (ctx.flags.furnace_placed || ctx.flags.furnace_built)) continue;
     if (
-      (recipeId === 'iron_pickaxe' || recipeId === 'iron_axe' || recipeId === 'iron_sword') &&
+      (recipeId === 'iron_pickaxe' || recipeId === 'iron_axe' || recipeId === 'iron_sword' ||
+        recipeId === 'iron_helmet' || recipeId === 'iron_chest' || recipeId === 'iron_boots') &&
       !ctx.flags.first_ingot &&
       !(ctx.resources.IRON_INGOT ?? 0)
     ) {
@@ -342,6 +392,44 @@ export function visibleRecipeButtons(group: 'tools' | 'weapons' | 'items', ctx: 
     if ((recipeId === 'rot_binding' || recipeId === 'path_marker') && !ctx.flags.week_3_complete) continue;
     if ((recipeId === 'reed_rope' || recipeId === 'marsh_platform') && !ctx.flags.week_4_complete) continue;
     if ((recipeId === 'haul_line' || recipeId === 'mechanical_brace') && !ctx.flags.week_5_complete) continue;
+    if (
+      (recipeId === 'bronze_ingot' || recipeId === 'copper_fitting' || recipeId === 'miner_lantern' || recipeId === 'copper_brace') &&
+      !ctx.flags.week_1_complete &&
+      !(ctx.resources.COPPER_INGOT ?? 0) &&
+      !(ctx.resources.COPPER_ORE ?? 0)
+    ) {
+      continue;
+    }
+    if (
+      (recipeId === 'bronze_pickaxe' || recipeId === 'bronze_axe' || recipeId === 'bronze_sword' ||
+        recipeId === 'bronze_helmet' || recipeId === 'bronze_chest' || recipeId === 'bronze_boots') &&
+      !ctx.flags.week_2_complete &&
+      !(ctx.resources.BRONZE_INGOT ?? 0)
+    ) {
+      continue;
+    }
+    if (
+      (recipeId === 'improved_lantern' || recipeId === 'silver_charm') &&
+      !ctx.flags.week_3_complete &&
+      !(ctx.resources.SILVER_INGOT ?? 0)
+    ) {
+      continue;
+    }
+    if (
+      (recipeId === 'gold_seal' || recipeId === 'gold_band') &&
+      !ctx.flags.week_4_complete &&
+      !(ctx.resources.GOLD_INGOT ?? 0)
+    ) {
+      continue;
+    }
+    if (
+      (recipeId === 'deep_pickaxe' || recipeId === 'deep_charm') &&
+      !ctx.flags.week_5_complete &&
+      !ctx.flags.week_6_complete &&
+      !(ctx.resources.DEEP_CRYSTAL ?? 0)
+    ) {
+      continue;
+    }
     if (!canAffordRecipe(recipe, ctx)) continue;
     const button = recipeButton(recipeId);
     if (button) buttons.push(button);
@@ -367,31 +455,23 @@ export function hubButtons(ctx: MenuSnapshot): GameButton[] {
 }
 
 export function gatherButtons(ctx: MenuSnapshot): GameButton[] {
-  const buttons: GameButton[] = [];
-  if (canUseCommand('GATHER_WOOD', ctx)) {
-    buttons.push({ label: '🪓 Рубить дерево', action: 'GATHER_WOOD' });
-  }
-  if (canUseCommand('GATHER_STONE', ctx)) {
-    buttons.push({ label: '🪨 Добыть булыжник', action: 'GATHER_STONE' });
-  }
-  if (canUseCommand('GATHER_IRON', ctx)) {
-    buttons.push({ label: '⛏ Добыть железо', action: 'GATHER_IRON' });
-  }
-  if (canUseCommand('GATHER_COAL', ctx)) {
-    buttons.push({ label: '⚫ Добыть уголь', action: 'GATHER_COAL' });
-  }
+  const buttons = miningGatherButtons(ctx);
+  const extras: GameButton[] = [];
   if (canUseCommand('BUILD_TEMP_SHELTER', ctx) && !ctx.flags.temporary_shelter_level) {
-    buttons.push({ label: '🏕 Собрать укрытие', action: 'BUILD_TEMP_SHELTER' });
+    extras.push({ label: '🏕 Собрать укрытие', action: 'BUILD_TEMP_SHELTER' });
   }
   if (ctx.currentLocation === 'stone_scree') {
-    buttons.push({
+    extras.push({
       label: '🐾 Падальщик',
       action: 'DIALOGUE_CHOICE',
       payload: { nodeId: 'stone_scree', choiceId: 'scavenger' },
     });
   }
-  buttons.push(backButton('gather'));
-  return buttons;
+  if (!extras.length) return buttons;
+  const withoutBack = buttons.filter((button) => button.label !== BACK_LABEL);
+  const merged = [...extras, ...withoutBack].slice(0, 4);
+  merged.push(backButton('gather'));
+  return merged;
 }
 
 export function campButtons(ctx: MenuSnapshot): GameButton[] {
@@ -451,14 +531,15 @@ export function campButtons(ctx: MenuSnapshot): GameButton[] {
 
 export function craftRootButtons(): GameButton[] {
   return [
-    { label: '🛠 Инструменты', action: 'OPEN_MENU', payload: { menu: 'tools' } },
-    { label: '⚔ Оружие', action: 'OPEN_MENU', payload: { menu: 'weapons' } },
-    { label: '📦 Предметы', action: 'OPEN_MENU', payload: { menu: 'items' } },
+    { label: '🪵 Базовый', action: 'OPEN_MENU', payload: { menu: 'items' } },
+    { label: '⛏ Инструменты', action: 'OPEN_MENU', payload: { menu: 'tools' } },
+    { label: '⚔ Снаряжение', action: 'OPEN_MENU', payload: { menu: 'weapons' } },
+    { label: '🧰 Материалы', action: 'OPEN_MENU', payload: { menu: 'materials' } },
     backButton('craft'),
   ];
 }
 
-export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText = ''): BuiltMenu {
+export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText = '', page = 0): BuiltMenu {
   const location = getLocation(ctx.currentLocation)?.name ?? ctx.currentLocation;
   if (menu === 'hub') {
     return {
@@ -469,12 +550,9 @@ export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText
   }
   if (menu === 'gather') {
     const actions = gatherButtons(ctx);
-    const hasGather = actions.some((button) =>
-      ['GATHER_WOOD', 'GATHER_STONE', 'GATHER_IRON', 'GATHER_COAL'].includes(button.action),
-    );
     return {
       id: 'gather',
-      text: extraText || (hasGather ? `Добыча. ${location}` : `Здесь нечего добывать. ${location}`),
+      text: extraText || `⛏ ДОБЫЧА. ${location}\nЧем лучше кирка — тем более редкие жилы доступны.`,
       buttons: actions,
     };
   }
@@ -499,18 +577,36 @@ export function buildActionMenu(menu: ActionMenuId, ctx: MenuSnapshot, extraText
       buttons: [backButton(menu)],
     };
   }
-  const group = menu as 'tools' | 'weapons' | 'items';
-  const recipes = visibleRecipeButtons(group, ctx);
-  const titles: Record<'tools' | 'weapons' | 'items', string> = {
-    tools: 'Инструменты',
-    weapons: 'Оружие',
-    items: 'Предметы',
-  };
-  const empty = group === 'weapons' ? 'Пока нечего ковать.' : 'Пока нечего крафтить.';
+  const group = menu as 'tools' | 'weapons' | 'items' | 'materials';
+  if (group === 'tools' || group === 'weapons' || group === 'items' || group === 'materials') {
+    const recipes = visibleRecipeButtons(group, ctx);
+    const titles: Record<'tools' | 'weapons' | 'items' | 'materials', string> = {
+      tools: 'Инструменты',
+      weapons: 'Снаряжение',
+      items: 'Базовый крафт',
+      materials: 'Материалы',
+    };
+    const empty = group === 'weapons' ? 'Пока нечего ковать.' : 'Пока нечего крафтить.';
+    const safePage = Math.max(0, Math.floor(Number.isFinite(page) ? page : 0));
+    const pageSize = 3;
+    const maxPage = Math.max(0, Math.ceil(recipes.length / pageSize) - 1);
+    const usedPage = Math.min(safePage, maxPage);
+    const slice = recipes.slice(usedPage * pageSize, usedPage * pageSize + pageSize);
+    const buttons = [...slice];
+    if (usedPage < maxPage) {
+      buttons.push({ label: '➡ Ещё', action: 'OPEN_MENU', payload: { menu: group, page: usedPage + 1 } });
+    }
+    buttons.push(backButton(group));
+    return {
+      id: menu,
+      text: extraText || (recipes.length ? titles[group] : empty),
+      buttons: buttons.slice(0, 5),
+    };
+  }
   return {
-    id: menu,
-    text: extraText || (recipes.length ? titles[group] : empty),
-    buttons: [...recipes, backButton(menu)],
+    id: 'hub',
+    text: extraText,
+    buttons: hubButtons(ctx),
   };
 }
 

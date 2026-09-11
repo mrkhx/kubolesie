@@ -299,8 +299,8 @@ describe('week 2 content canon', () => {
     expect(ITEM_TEMPLATES.mist_charm.name).toBe('Туманный оберег');
     expect(QUEST_TEMPLATES.some((quest) => quest.id === 'second_seal')).toBe(true);
     expect((GAME_COMMANDS as readonly string[]).includes('BEGIN_DAY_43')).toBe(false);
-    expect(PROTOTYPE_VERSION).toBe('0.0.12');
-    expect(BALANCE_VERSION).toBe('0.0.12');
+    expect(PROTOTYPE_VERSION).toBe('0.0.13');
+    expect(BALANCE_VERSION).toBe('0.0.13');
   });
 });
 

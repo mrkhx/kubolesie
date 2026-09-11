@@ -81,7 +81,7 @@ describe('action menus', () => {
   it('4. крафт opens craft categories', async () => {
     const { runtime, vkUserId } = await boot();
     const craft = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'craft' });
-    expect(labels(craft)).toEqual(['🛠 Инструменты', '⚔ Оружие', '📦 Предметы', '⬅ Назад']);
+    expect(labels(craft)).toEqual(['🪵 Базовый', '⛏ Инструменты', '⚔ Снаряжение', '🧰 Материалы', '⬅ Назад']);
   });
 
   it('5–7. craft categories open tools, weapons and items', async () => {
@@ -227,7 +227,7 @@ describe('mock playthrough via nested menus', () => {
     expect(tools.buttons.some((button) => button.action === 'CRAFT_ITEM')).toBe(false);
 
     const backToCraft = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'craft' });
-    expect(hasLabel(backToCraft, 'Предметы')).toBe(true);
+    expect(hasLabel(backToCraft, 'Базовый')).toBe(true);
     const backToHub = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'hub' });
     expect(isMainHub(backToHub.buttons)).toBe(true);
 

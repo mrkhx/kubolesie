@@ -2,6 +2,7 @@ import { BALANCE_VERSION, PROTOTYPE_VERSION } from '@kubolesie/shared';
 import { isoWeekKey, utcDayKey } from '@kubolesie/content';
 import { pingPrisma, type StoreBundle } from '@kubolesie/database';
 import type { GameStore } from '@kubolesie/game-core';
+import { snapshotMiningMetrics } from '@kubolesie/game-core';
 import { describeVkConfig, isVkCallbackReady } from '@kubolesie/vk-bot';
 import type { AppConfig } from './app-config';
 import { incMetric, processUptimeSec, snapshotMetrics } from './metrics';
@@ -572,6 +573,7 @@ export class AnalyticsService {
       vkConfigured: isVkCallbackReady(this.config.vk),
       vk: describeVkConfig(this.config.vk),
       processMetrics: snapshotMetrics(),
+      mining: snapshotMiningMetrics(),
     };
   }
 }

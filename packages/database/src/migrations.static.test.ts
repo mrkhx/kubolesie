@@ -22,6 +22,7 @@ const EXPECTED = [
   '20260909120000_week_four',
   '20260909140000_week_five',
   '20260909180000_week_six',
+  '20260911120000_mining_crafting_2',
 ] as const;
 
 function sql(name: string): string {
@@ -96,6 +97,12 @@ describe('prisma migrations (static)', () => {
     expect(sql('20260909180000_week_six')).toMatch(/ADD VALUE 'STATION_CORE'/);
     expect(sql('20260909180000_week_six')).toMatch(/ADD VALUE 'SEAL_SHARD_2'/);
     expect(sql('20260909180000_week_six')).not.toMatch(/INSERT/i);
+    expect(sql('20260911120000_mining_crafting_2')).toMatch(/ADD VALUE 'COPPER_ORE'/);
+    expect(sql('20260911120000_mining_crafting_2')).toMatch(/ADD VALUE 'BRONZE_INGOT'/);
+    expect(sql('20260911120000_mining_crafting_2')).toMatch(/ADD VALUE 'DEEP_CRYSTAL'/);
+    expect(sql('20260911120000_mining_crafting_2')).toMatch(/ADD VALUE 'COPPER_FITTING'/);
+    expect(sql('20260911120000_mining_crafting_2')).not.toMatch(/INSERT/i);
+    expect(sql('20260911120000_mining_crafting_2')).not.toMatch(/DROP TABLE/i);
     expect(sql('20260907200000_pvp_analytics')).toMatch(/ADD VALUE 'PVP'/);
     expect(sql('20260907200000_pvp_analytics')).toMatch(/last_active_at/);
     expect(sql('20260907200000_pvp_analytics')).toMatch(/combat_matches_mode_started_at_idx/);

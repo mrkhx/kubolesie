@@ -32,6 +32,17 @@ export const TRADEABLE_RESOURCES = [
   'COAL',
   'IRON_ORE',
   'IRON_INGOT',
+  'COPPER_ORE',
+  'COPPER_INGOT',
+  'TIN_ORE',
+  'TIN_INGOT',
+  'BRONZE_INGOT',
+  'SILVER_ORE',
+  'SILVER_INGOT',
+  'GOLD_ORE',
+  'GOLD_INGOT',
+  'DEEP_CRYSTAL',
+  'COPPER_FITTING',
   'HIDE',
   'REED',
   'CLAY',
@@ -122,7 +133,7 @@ export const AUCTION = {
 
 export const MARKET_CATEGORIES: Record<string, readonly TradeableResource[]> = {
   wood: ['LOG', 'PLANK', 'STICK', 'WOOD'],
-  stone: ['COBBLESTONE', 'STONE', 'COAL', 'IRON_ORE', 'IRON_INGOT'],
+  stone: ['COBBLESTONE', 'STONE', 'COAL', 'IRON_ORE', 'IRON_INGOT', 'COPPER_ORE', 'COPPER_INGOT', 'TIN_ORE', 'TIN_INGOT', 'BRONZE_INGOT', 'SILVER_ORE', 'SILVER_INGOT', 'GOLD_ORE', 'GOLD_INGOT', 'DEEP_CRYSTAL', 'COPPER_FITTING'],
   food: ['RAW_FISH', 'COOKED_FISH', 'RAW_MEAT', 'FOOD', 'WHEAT', 'SEED'],
   mats: ['HIDE', 'REED', 'CLAY', 'FIBER', 'HERBS', 'SHREW_FUR', 'CHITIN_PLATE', 'MIST_RESIN', 'STRING', 'ROOT_FIBER', 'ROT_RESIN', 'BLACK_REED', 'GEAR_SCRAP'],
 };

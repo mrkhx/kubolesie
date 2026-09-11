@@ -47,8 +47,8 @@ describe('health and readiness', () => {
     const body = controller.health();
     expect(body.ok).toBe(true);
     expect(body.status).toBe('ok');
-    expect(body.prototypeVersion).toBe('0.0.12');
-    expect(body.balanceVersion).toBe('0.0.12');
+    expect(body.prototypeVersion).toBe('0.0.13');
+    expect(body.balanceVersion).toBe('0.0.13');
     expect(body.vkConfigured).toBe(true);
     expect(body.database.configured).toBe(true);
     expect(body.database.provider).toBe('postgresql');

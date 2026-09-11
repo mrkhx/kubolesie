@@ -16,3 +16,5 @@ export * from './week3';
 export * from './week4';
 export * from './week5';
 export * from './week6';
+export * from './mining';
+export * from './mining-metrics';
