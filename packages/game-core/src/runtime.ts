@@ -1247,7 +1247,16 @@ export class GameRuntime {
     if (template.slot && lastItem) {
       buttons.push({ label: 'Надеть', action: 'EQUIP_ITEM', payload: { itemId: lastItem.id } });
     }
-    buttons.push(...menu.buttons);
+    const menuButtons = menu.buttons;
+    if (buttons.length + menuButtons.length <= 5) {
+      buttons.push(...menuButtons);
+    } else {
+      const back = menuButtons[menuButtons.length - 1];
+      const body = menuButtons.slice(0, -1);
+      const room = Math.max(0, 5 - buttons.length - (back ? 1 : 0));
+      buttons.push(...body.slice(0, room));
+      if (back) buttons.push(back);
+    }
     const made = amount > 1 ? `Скрафчено: ${template.name} ×${amount}.` : `Скрафчено: ${template.name}.`;
     const extra = dailyNotes.length ? ` ${dailyNotes.join(' ')}` : '';
     return this.respond(ctx.player, `${made}${extra}${unlock}`, buttons);
