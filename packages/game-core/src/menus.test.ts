@@ -456,3 +456,94 @@ describe('campButtons week-act visibility', () => {
     expect(hasLabel(camp, 'Печь')).toBe(true);
   });
 });
+
+describe('camp day 5 recovery', () => {
+  async function grant(store: MemoryGameStore, playerId: string, flags: string[]) {
+    for (const flag of flags) await store.setFlag(playerId, flag, '1');
+  }
+
+  async function campLabels(
+    runtime: GameRuntime,
+    vkUserId: string,
+  ): Promise<{ first: string[]; all: string[]; firstPage: Awaited<ReturnType<typeof act>> }> {
+    const firstPage = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'camp' });
+    const all = new Set(labels(firstPage));
+    let page = firstPage;
+    for (let i = 0; i < 6 && page.buttons.some((button) => button.label.includes('Ещё')); i += 1) {
+      const more = page.buttons.find((button) => button.label.includes('Ещё'))!;
+      page = await act(runtime, vkUserId, more.action as never, more.payload ?? {});
+      for (const label of labels(page)) all.add(label);
+    }
+    return { first: labels(firstPage), all: [...all], firstPage };
+  }
+
+  const campBase = [
+    'player_camp_founded',
+    'camp_table_placed',
+    'camp_fire_built',
+    'day_2_complete',
+    'day_3_complete',
+    'furnace_placed',
+    'first_ingot',
+    'day_4_complete',
+  ];
+
+  it('keeps Начать День 5 on the first camp page after leaving day4_complete', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    await grant(store, player.id, campBase);
+    player.currentLocation = 'player_camp';
+    await store.savePlayer(player);
+    const hub = await act(runtime, vkUserId, 'OPEN_CAMP');
+    expect(hub.text).toMatch(/День 4 закрыт/);
+    expect(hub.text).toMatch(/Начать День 5/);
+    const { first, firstPage } = await campLabels(runtime, vkUserId);
+    expect(firstPage.buttons.length).toBeLessThanOrEqual(5);
+    expect(first.some((label) => label.includes('Начать День 5'))).toBe(true);
+    expect(firstPage.text).toMatch(/Начать День 5/);
+    const start = firstPage.buttons.find((button) => button.label.includes('Начать День 5'));
+    expect(start).toMatchObject({ action: 'BEGIN_DAY_5' });
+  });
+
+  it('keeps Завершить День 5 on camp after a Vel deal, and hides start', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    await grant(store, player.id, [...campBase, 'met_vel', 'traded_with_vel']);
+    player.currentLocation = 'player_camp';
+    await store.savePlayer(player);
+    const hub = await act(runtime, vkUserId, 'OPEN_CAMP');
+    expect(hub.text).toMatch(/Завершить День 5/);
+    const { first, all, firstPage } = await campLabels(runtime, vkUserId);
+    expect(first.some((label) => label.includes('Завершить День 5'))).toBe(true);
+    expect(all.some((label) => label.includes('Начать День 5'))).toBe(false);
+    expect(firstPage.buttons.length).toBeLessThanOrEqual(5);
+    const finish = firstPage.buttons.find((button) => button.label.includes('Завершить День 5'));
+    expect(finish).toMatchObject({ action: 'COMPLETE_DAY_5' });
+  });
+
+  it('keeps Начать День 6 on camp after leaving day5_complete', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    await grant(store, player.id, [...campBase, 'met_vel', 'traded_with_vel', 'day_5_complete']);
+    player.currentLocation = 'player_camp';
+    await store.savePlayer(player);
+    const hub = await act(runtime, vkUserId, 'OPEN_CAMP');
+    expect(hub.text).toMatch(/Начать День 6/);
+    const { first, firstPage } = await campLabels(runtime, vkUserId);
+    expect(first.some((label) => label.includes('Начать День 6'))).toBe(true);
+    const start = firstPage.buttons.find((button) => button.label.includes('Начать День 6'));
+    expect(start).toMatchObject({ action: 'BEGIN_DAY_6' });
+  });
+
+  it('does not show day 5 start when Vel is already at camp', async () => {
+    const { store, runtime, player, vkUserId } = await boot();
+    await grant(store, player.id, [...campBase, 'met_vel']);
+    player.currentLocation = 'player_camp';
+    await store.savePlayer(player);
+    const hub = await act(runtime, vkUserId, 'OPEN_CAMP');
+    expect(hub.text).toMatch(/День 5/);
+    expect(hub.text).toMatch(/Вел/);
+    expect(hub.text).not.toMatch(/Начать День 5/);
+    const { all } = await campLabels(runtime, vkUserId);
+    expect(all.some((label) => label.includes('Начать День 5'))).toBe(false);
+    expect(all.some((label) => label.includes('Завершить День 5'))).toBe(false);
+    expect(all.some((label) => label.includes('Вел'))).toBe(true);
+  });
+});

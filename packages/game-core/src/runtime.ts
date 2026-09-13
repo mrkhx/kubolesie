@@ -77,6 +77,7 @@ import {
 import { formatCombatLog } from './combat-log';
 import {
   buildActionMenu,
+  campDayBeatHint,
   effectiveRecipeCost,
   hasCraftingTable as playerHasTable,
   pagedButtons,
@@ -946,6 +947,7 @@ export class GameRuntime {
       ctx.flags.player_camp_founded && !ctx.flags.furnace_placed && !ctx.flags.furnace_built
         ? 'Печь ещё не стоит — 8 булыжника. Кнопка на стане и в «Базовый».'
         : '',
+      campDayBeatHint(ctx.flags, 'hub') ?? '',
     ]
       .filter(Boolean)
       .join('\n');

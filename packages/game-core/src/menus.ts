@@ -553,8 +553,38 @@ export function gatherButtons(ctx: MenuSnapshot, page = 0): GameButton[] {
   );
 }
 
+export function campDayBeatHint(
+  flags: Record<string, string>,
+  surface: 'hub' | 'camp',
+): string | undefined {
+  if (flags.week_1_complete) return undefined;
+  if (flags.day_4_complete && !flags.met_vel && !flags.day_5_complete) {
+    return surface === 'hub'
+      ? 'День 4 закрыт. Стан → Начать День 5.'
+      : 'День 4 закрыт. Нажми «Начать День 5».';
+  }
+  if (flags.met_vel && !flags.day_5_complete) {
+    if (flags.traded_with_vel || flags.vel_declined) {
+      return surface === 'hub'
+        ? 'Сделка с Велом есть. Стан → Завершить День 5.'
+        : 'Сделка с Велом есть. Нажми «Завершить День 5».';
+    }
+    return surface === 'hub'
+      ? 'День 5. Стан → Вел: купи, продай или откажись.'
+      : 'День 5. Вел ждёт: купи, продай или откажись.';
+  }
+  if (flags.day_5_complete && !flags.yara_claim_seen && !flags.day_6_complete) {
+    return surface === 'hub'
+      ? 'День 5 закрыт. Стан → Начать День 6.'
+      : 'День 5 закрыт. Нажми «Начать День 6».';
+  }
+  return undefined;
+}
+
 export function campStatusText(ctx: MenuSnapshot): string {
   const lines = ['Стан. Только нужное.'];
+  const beat = campDayBeatHint(ctx.flags, 'camp');
+  if (beat) lines.push(beat);
   if (!ctx.flags.camp_fire_built) {
     lines.push('Костёр — 3 бревна + 3 палки + 1 уголь.');
   }
@@ -566,6 +596,30 @@ export function campStatusText(ctx: MenuSnapshot): string {
 
 export function campButtons(ctx: MenuSnapshot, page = 0): GameButton[] {
   const items: GameButton[] = [];
+  if (
+    ctx.flags.day_4_complete &&
+    !ctx.flags.met_vel &&
+    !ctx.flags.day_5_complete &&
+    !ctx.flags.week_1_complete
+  ) {
+    items.push({ label: 'Начать День 5', action: 'BEGIN_DAY_5' });
+  }
+  if (
+    ctx.flags.met_vel &&
+    (ctx.flags.traded_with_vel || ctx.flags.vel_declined) &&
+    !ctx.flags.day_5_complete &&
+    !ctx.flags.week_1_complete
+  ) {
+    items.push({ label: '✅ Завершить День 5', action: 'COMPLETE_DAY_5' });
+  }
+  if (
+    ctx.flags.day_5_complete &&
+    !ctx.flags.yara_claim_seen &&
+    !ctx.flags.day_6_complete &&
+    !ctx.flags.week_1_complete
+  ) {
+    items.push({ label: 'Начать День 6', action: 'BEGIN_DAY_6' });
+  }
   if (!ctx.flags.camp_table_placed && hasCraftingTable(ctx.items)) {
     items.push({ label: '🛠 Разместить верстак', action: 'PLACE_CAMP_TABLE' });
   }

@@ -537,6 +537,42 @@ describe('day 5 vel', () => {
     await act(salvage.runtime, salvage.vkUserId, 'COMPLETE_DAY_5');
     expect((await salvage.store.getFlags(salvage.player.id)).day_5_complete).toBe('1');
   });
+
+  it('starts and finishes day 5 from camp after leaving the story beat', async () => {
+    const { store, runtime, player, vkUserId } = await seedDay4();
+    await act(runtime, vkUserId, 'OPEN_CAMP');
+    const camp = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'camp' });
+    expect(camp.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(camp, 'Начать День 5')).toBe(true);
+    const start = camp.buttons.find((button) => button.label.includes('Начать День 5'))!;
+    const started = await act(runtime, vkUserId, start.action as never, start.payload ?? {});
+    expect(started.text).toMatch(/Вел/i);
+    expect((await store.getFlags(player.id)).met_vel).toBe('1');
+
+    await act(runtime, vkUserId, 'OPEN_CAMP');
+    const waiting = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'camp' });
+    expect(hasLabel(waiting, 'Начать День 5')).toBe(false);
+    expect(hasLabel(waiting, 'Вел')).toBe(true);
+    expect(hasLabel(waiting, 'Завершить День 5')).toBe(false);
+
+    await act(runtime, vkUserId, 'TRADE_ACT', { act: 'decline' });
+    await act(runtime, vkUserId, 'OPEN_CAMP');
+    const ready = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'camp' });
+    expect(ready.buttons.length).toBeLessThanOrEqual(5);
+    expect(hasLabel(ready, 'Завершить День 5')).toBe(true);
+    const finish = ready.buttons.find((button) => button.label.includes('Завершить День 5'))!;
+    const done = await act(runtime, vkUserId, finish.action as never, finish.payload ?? {});
+    expect(done.text).toMatch(/Вел/i);
+    expect((await store.getFlags(player.id)).day_5_complete).toBe('1');
+
+    await act(runtime, vkUserId, 'OPEN_CAMP');
+    const next = await act(runtime, vkUserId, 'OPEN_MENU', { menu: 'camp' });
+    expect(hasLabel(next, 'Начать День 6')).toBe(true);
+    const day6 = next.buttons.find((button) => button.label.includes('Начать День 6'))!;
+    const began = await act(runtime, vkUserId, day6.action as never, day6.payload ?? {});
+    expect(began.text).toMatch(/вешка|осып|Я/i);
+    expect((await store.getFlags(player.id)).yara_claim_seen).toBe('1');
+  });
 });
 
 describe('day 6 async pvp', () => {
